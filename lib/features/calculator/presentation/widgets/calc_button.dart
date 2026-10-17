@@ -24,8 +24,7 @@ class CalcButton extends StatefulWidget {
   State<CalcButton> createState() => _CalcButtonState();
 }
 
-class _CalcButtonState extends State<CalcButton>
-    with SingleTickerProviderStateMixin {
+class _CalcButtonState extends State<CalcButton> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scale;
 
@@ -34,10 +33,10 @@ class _CalcButtonState extends State<CalcButton>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 100),
+      duration: const Duration(milliseconds: 80),
     );
-    _scale = Tween<double>(begin: 1.0, end: 0.92).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    _scale = Tween<double>(begin: 1.0, end: 0.85).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
   }
 
@@ -51,23 +50,30 @@ class _CalcButtonState extends State<CalcButton>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    Color bg;
-    Color fg;
+    // تعیین رنگ‌ها با گرادیانت
+    List<Color> gradientColors;
+    Color textColor;
 
     if (widget.isEqual) {
-      bg = AppColors.primary;
-      fg = Colors.white;
+      // دکمه مساوی: سبز شاد
+      gradientColors = [const Color(0xFF2A9D8F), const Color(0xFF21867A)];
+      textColor = Colors.white;
     } else if (widget.isOperator) {
-      bg = isDark
-          ? AppColors.primaryLight.withValues(alpha: 0.25)
-          : AppColors.primaryLight.withValues(alpha: 0.2);
-      fg = isDark ? AppColors.primaryLight : AppColors.primary;
+      // دکمه‌های عملیات: نارنجی
+      gradientColors = [const Color(0xFFE76F51), const Color(0xFFD65A3B)];
+      textColor = Colors.white;
     } else if (widget.isScientific) {
-      bg = isDark ? Colors.grey.shade800 : Colors.grey.shade200;
-      fg = isDark ? Colors.grey.shade300 : Colors.grey.shade700;
+      // دکمه‌های مهندسی: خاکستری تیره
+      gradientColors = isDark 
+          ? [const Color(0xFF333333), const Color(0xFF222222)]
+          : [const Color(0xFFE0E0E0), const Color(0xFFCCCCCC)];
+      textColor = isDark ? Colors.white70 : Colors.black87;
     } else {
-      bg = isDark ? AppColors.surfaceDark : AppColors.surfaceLight;
-      fg = isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+      // دکمه‌های اعداد: ظاهر شیشه‌ای
+      gradientColors = isDark 
+          ? [const Color(0xFF2C2C2C), const Color(0xFF1E1E1E)]
+          : [Colors.white, const Color(0xFFF0F0F0)];
+      textColor = isDark ? Colors.white : Colors.black87;
     }
 
     return ScaleTransition(
@@ -75,7 +81,7 @@ class _CalcButtonState extends State<CalcButton>
       child: GestureDetector(
         onTapDown: (_) {
           _controller.forward();
-          HapticFeedback.lightImpact();
+          HapticFeedback.mediumImpact();
         },
         onTapUp: (_) {
           _controller.reverse();
@@ -84,17 +90,20 @@ class _CalcButtonState extends State<CalcButton>
         onTapCancel: () => _controller.reverse(),
         child: Container(
           width: widget.isWide ? double.infinity : null,
-          height: 64,
+          margin: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(18),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: gradientColors,
+            ),
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
-              if (!isDark)
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
+              BoxShadow(
+                color: gradientColors.first.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
             ],
           ),
           child: Center(
@@ -102,9 +111,9 @@ class _CalcButtonState extends State<CalcButton>
               widget.label,
               style: TextStyle(
                 fontFamily: 'Vazirmatn',
-                fontSize: widget.isScientific ? 16 : 22,
-                fontWeight: FontWeight.w600,
-                color: fg,
+                fontSize: widget.isScientific ? 18 : 26,
+                fontWeight: FontWeight.bold,
+                color: textColor,
               ),
             ),
           ),

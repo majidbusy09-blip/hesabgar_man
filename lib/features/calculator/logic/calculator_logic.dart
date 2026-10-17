@@ -28,6 +28,14 @@ class CalculatorLogic {
     _result = _expression;
   }
 
+  // قابلیت جدید: پاک کردن آخرین کاراکتر
+  void backspace() {
+    if (_expression.isNotEmpty) {
+      _expression = _expression.substring(0, _expression.length - 1);
+      _result = _expression.isEmpty ? '0' : _expression;
+    }
+  }
+
   void _calculate() {
     if (_expression.isEmpty) return;
     try {

@@ -1,0 +1,51 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Generate Android platform files
+        run: |
+          flutter create . --platforms=android --project-name hesabgar_man --org com.example
+          rm -f lib/main.dart.bak || true
+
+      - name: Download Vazirmatn Font
+        run: |
+          mkdir -p assets/fonts
+          curl -L -o vazir.zip https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip
+          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Regular.ttf" -d assets/fonts/
+          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Medium.ttf" -d assets/fonts/
+          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Bold.ttf" -d assets/fonts/
+          ls -la assets/fonts/
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hesabgar-apk
+          path: build/app/outputs/flutter-apk/app-release.apk

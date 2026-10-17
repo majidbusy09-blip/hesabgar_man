@@ -17,182 +17,180 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   void _onButton(String value) {
     setState(() {
       if (value == '⌫') {
-        _logic.backspace(); // این متد رو در منطق اضافه کردم
+        _logic.backspace();
       } else {
         _logic.input(value);
       }
     });
   }
 
+  void _showHistory() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return _logic.history.isEmpty 
+          ? const Center(child: Text('تاریخچه خالی است', style: TextStyle(fontFamily: 'Vazirmatn')))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _logic.history.length,
+              itemBuilder: (context, index) {
+                final item = _logic.history[index];
+                return ListTile(
+                  title: Text(item['exp']!, style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 18)),
+                  trailing: Text('= ${item['res']}', style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 20, fontWeight: FontWeight.bold, color: Colors.teal)),
+                  onTap: () {
+                    setState(() {
+                      _logic.clear();
+                      _logic.input(item['res']!);
+                    });
+                    Navigator.pop(context);
+                  },
+                );
+              },
+            );
+      },
+    );
+  }
+
+  void _showConverter() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('مبدل واحد', style: TextStyle(fontFamily: 'Vazirmatn')),
+        content: const Text('این بخش در فاز بعدی تکمیل می‌شود.\n(تبدیل دما، طول، وزن و...)', style: TextStyle(fontFamily: 'Vazirmatn')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('باشه')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
+    if (isLandscape) _isScientific = true;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: isLandscape ? null : AppBar(
         title: const Text('حسابگر من'),
         actions: [
+          IconButton(icon: const Icon(Icons.history), onPressed: _showHistory, tooltip: 'تاریخچه'),
+          IconButton(icon: const Icon(Icons.swap_horiz), onPressed: _showConverter, tooltip: 'مبدل واحد'),
           IconButton(
-            icon: Icon(
-              _isScientific ? Icons.calculate : Icons.functions,
-              color: const Color(0xFF2A9D8F),
-              size: 28,
-            ),
+            icon: Icon(_isScientific ? Icons.calculate : Icons.functions, color: AppColors.primary),
             onPressed: () => setState(() => _isScientific = !_isScientific),
-            tooltip: _isScientific ? 'حالت ساده' : 'حالت مهندسی',
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // نمایشگر زیبا
-            Expanded(
-              flex: 2,
-              child: Container(
-                width: double.infinity,
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      _logic.expression.isEmpty ? '0' : _logic.expression,
-                      style: TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontSize: 24,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.grey[400] : Colors.grey[500],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textDirection: TextDirection.ltr,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _logic.result,
-                      style: TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontSize: 52,
-                        fontWeight: FontWeight.w800,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textDirection: TextDirection.ltr,
-                    ),
-                  ],
-                ),
-              ),
+        child: isLandscape
+            ? _buildLandscapeLayout(isDark)
+            : _buildPortraitLayout(isDark),
+      ),
+    );
+  }
+
+  Widget _buildPortraitLayout(bool isDark) {
+    return Column(
+      children: [
+        _buildDisplay(isDark),
+        Expanded(
+          flex: _isScientific ? 6 : 5,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Column(
+              children: [
+                if (_isScientific) ...[
+                  Expanded(child: Row(children: [_buildSci('sin'), _buildSci('cos'), _buildSci('tan'), _buildSci('log')])),
+                  Expanded(child: Row(children: [_buildSci('ln'), _buildSci('√'), _buildSci('x²'), _buildSci('π')])),
+                ],
+                Expanded(child: Row(children: [_buildBtn('C', isOperator: true), _buildBtn('⌫', isOperator: true), _buildBtn('(', isOperator: true), _buildBtn(')', isOperator: true)])),
+                Expanded(child: Row(children: [_buildBtn('÷', isOperator: true), _buildBtn('7'), _buildBtn('8'), _buildBtn('9')])),
+                Expanded(child: Row(children: [_buildBtn('×', isOperator: true), _buildBtn('4'), _buildBtn('5'), _buildBtn('6')])),
+                Expanded(child: Row(children: [_buildBtn('-', isOperator: true), _buildBtn('1'), _buildBtn('2'), _buildBtn('3')])),
+                Expanded(child: Row(children: [_buildBtn('+', isOperator: true), _buildBtn('0'), _buildBtn('.'), _buildBtn('=', isEqual: true)])),
+              ],
             ),
+          ),
+        ),
+      ],
+    );
+  }
 
-            // دکمه‌ها
-            Expanded(
-              flex: _isScientific ? 6 : 5,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Column(
+  Widget _buildLandscapeLayout(bool isDark) {
+    return Row(
+      children: [
+        Expanded(
+          flex: 4,
+          child: Column(
+            children: [
+              _buildDisplay(isDark),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    if (_isScientific) ...[
-                      Expanded(
-                        child: Row(
-                          children: [
-                            _buildSci('sin'), _buildSci('cos'),
-                            _buildSci('tan'), _buildSci('log'),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: Row(
-                          children: [
-                            _buildSci('ln'), _buildSci('√'),
-                            _buildSci('x²'), _buildSci('π'),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    
-                    // ردیف اول: C, ⌫, (, )
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildBtn('C', isOperator: true),
-                          _buildBtn('⌫', isOperator: true),
-                          _buildBtn('(', isOperator: true),
-                          _buildBtn(')', isOperator: true),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // ردیف دوم: ÷, 7, 8, 9
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildBtn('÷', isOperator: true),
-                          _buildBtn('7'),
-                          _buildBtn('8'),
-                          _buildBtn('9'),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // ردیف سوم: ×, 4, 5, 6
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildBtn('×', isOperator: true),
-                          _buildBtn('4'),
-                          _buildBtn('5'),
-                          _buildBtn('6'),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // ردیف چهارم: -, 1, 2, 3
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildBtn('-', isOperator: true),
-                          _buildBtn('1'),
-                          _buildBtn('2'),
-                          _buildBtn('3'),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // ردیف پنجم: +, 0, ., =
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildBtn('+', isOperator: true),
-                          _buildBtn('0'),
-                          _buildBtn('.'),
-                          _buildBtn('=', isEqual: true),
-                        ],
-                      ),
-                    ),
+                    IconButton(icon: Icon(Icons.history, color: isDark ? Colors.white : Colors.black), onPressed: _showHistory),
+                    IconButton(icon: Icon(Icons.swap_horiz, color: isDark ? Colors.white : Colors.black), onPressed: _showConverter),
                   ],
                 ),
-              ),
+              )
+            ],
+          ),
+        ),
+        Expanded(
+          flex: 6,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Column(
+              children: [
+                Expanded(child: Row(children: [_buildSci('sin'), _buildSci('cos'), _buildSci('tan'), _buildBtn('C', isOperator: true)])),
+                Expanded(child: Row(children: [_buildSci('ln'), _buildSci('log'), _buildSci('√'), _buildBtn('⌫', isOperator: true)])),
+                Expanded(child: Row(children: [_buildBtn('(', isOperator: true), _buildBtn(')'), _buildBtn('÷', isOperator: true), _buildBtn('×', isOperator: true)])),
+                Expanded(child: Row(children: [_buildBtn('7'), _buildBtn('8'), _buildBtn('9'), _buildBtn('-', isOperator: true)])),
+                Expanded(child: Row(children: [_buildBtn('4'), _buildBtn('5'), _buildBtn('6'), _buildBtn('+', isOperator: true)])),
+                Expanded(child: Row(children: [_buildBtn('1'), _buildBtn('2'), _buildBtn('3'), _buildBtn('=', isEqual: true)])),
+                Expanded(child: Row(children: [_buildBtn('0'), _buildBtn('.'), _buildBtn('π'), _buildBtn('e', isScientific: true)])),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDisplay(bool isDark) {
+    return Expanded(
+      flex: 2,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              _logic.expression.isEmpty ? '0' : _logic.expression,
+              style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 20, color: isDark ? Colors.grey[400] : Colors.grey[600]),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textDirection: TextDirection.ltr,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _logic.result,
+              style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 40, fontWeight: FontWeight.w800, color: isDark ? Colors.white : Colors.black87),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textDirection: TextDirection.ltr,
             ),
           ],
         ),
@@ -200,26 +198,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  Widget _buildBtn(String label, {bool isOperator = false, bool isEqual = false, bool isWide = false, int flex = 1}) {
-    return Expanded(
-      flex: flex,
-      child: CalcButton(
-        label: label,
-        isOperator: isOperator,
-        isEqual: isEqual,
-        isWide: isWide,
-        onTap: () => _onButton(label),
-      ),
-    );
+  Widget _buildBtn(String label, {bool isOperator = false, bool isEqual = false}) {
+    return Expanded(child: CalcButton(label: label, isOperator: isOperator, isEqual: isEqual, onTap: () => _onButton(label)));
   }
 
   Widget _buildSci(String label) {
-    return Expanded(
-      child: CalcButton(
-        label: label,
-        isScientific: true,
-        onTap: () => _onButton(label),
-      ),
-    );
+    return Expanded(child: CalcButton(label: label, isScientific: true, onTap: () => _onButton(label)));
   }
 }

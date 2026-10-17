@@ -16,7 +16,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   void _onButton(String value) {
     setState(() {
-      _logic.input(value);
+      if (value == '⌫') {
+        _logic.backspace(); // این متد رو در منطق اضافه کردم
+      } else {
+        _logic.input(value);
+      }
     });
   }
 
@@ -31,23 +35,36 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           IconButton(
             icon: Icon(
               _isScientific ? Icons.calculate : Icons.functions,
-              color: AppColors.primary,
+              color: const Color(0xFF2A9D8F),
+              size: 28,
             ),
-            onPressed: () {
-              setState(() => _isScientific = !_isScientific);
-            },
+            onPressed: () => setState(() => _isScientific = !_isScientific),
             tooltip: _isScientific ? 'حالت ساده' : 'حالت مهندسی',
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(
         child: Column(
           children: [
+            // نمایشگر زیبا
             Expanded(
               flex: 2,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -56,25 +73,22 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                       _logic.expression.isEmpty ? '0' : _logic.expression,
                       style: TextStyle(
                         fontFamily: 'Vazirmatn',
-                        fontSize: 22,
-                        color: isDark
-                            ? AppColors.textSecondaryDark
-                            : AppColors.textSecondaryLight,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.grey[400] : Colors.grey[500],
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textDirection: TextDirection.ltr,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     Text(
                       _logic.result,
                       style: TextStyle(
                         fontFamily: 'Vazirmatn',
-                        fontSize: 48,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? AppColors.textPrimaryDark
-                            : AppColors.textPrimaryLight,
+                        fontSize: 52,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : Colors.black87,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -84,23 +98,20 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                 ),
               ),
             ),
+
+            // دکمه‌ها
             Expanded(
-              flex: _isScientific ? 5 : 4,
+              flex: _isScientific ? 6 : 5,
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Column(
                   children: [
                     if (_isScientific) ...[
                       Expanded(
                         child: Row(
                           children: [
-                            _buildSci('sin'),
-                            const SizedBox(width: 8),
-                            _buildSci('cos'),
-                            const SizedBox(width: 8),
-                            _buildSci('tan'),
-                            const SizedBox(width: 8),
-                            _buildSci('log'),
+                            _buildSci('sin'), _buildSci('cos'),
+                            _buildSci('tan'), _buildSci('log'),
                           ],
                         ),
                       ),
@@ -108,81 +119,73 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                       Expanded(
                         child: Row(
                           children: [
-                            _buildSci('ln'),
-                            const SizedBox(width: 8),
-                            _buildSci('√'),
-                            const SizedBox(width: 8),
-                            _buildSci('x²'),
-                            const SizedBox(width: 8),
-                            _buildSci('π'),
+                            _buildSci('ln'), _buildSci('√'),
+                            _buildSci('x²'), _buildSci('π'),
                           ],
                         ),
                       ),
                       const SizedBox(height: 8),
                     ],
+                    
+                    // ردیف اول: C, ⌫, (, )
                     Expanded(
                       child: Row(
                         children: [
                           _buildBtn('C', isOperator: true),
-                          const SizedBox(width: 8),
+                          _buildBtn('⌫', isOperator: true),
                           _buildBtn('(', isOperator: true),
-                          const SizedBox(width: 8),
                           _buildBtn(')', isOperator: true),
-                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // ردیف دوم: ÷, 7, 8, 9
+                    Expanded(
+                      child: Row(
+                        children: [
                           _buildBtn('÷', isOperator: true),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: Row(
-                        children: [
                           _buildBtn('7'),
-                          const SizedBox(width: 8),
                           _buildBtn('8'),
-                          const SizedBox(width: 8),
                           _buildBtn('9'),
-                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // ردیف سوم: ×, 4, 5, 6
+                    Expanded(
+                      child: Row(
+                        children: [
                           _buildBtn('×', isOperator: true),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: Row(
-                        children: [
                           _buildBtn('4'),
-                          const SizedBox(width: 8),
                           _buildBtn('5'),
-                          const SizedBox(width: 8),
                           _buildBtn('6'),
-                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // ردیف چهارم: -, 1, 2, 3
+                    Expanded(
+                      child: Row(
+                        children: [
                           _buildBtn('-', isOperator: true),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: Row(
-                        children: [
                           _buildBtn('1'),
-                          const SizedBox(width: 8),
                           _buildBtn('2'),
-                          const SizedBox(width: 8),
                           _buildBtn('3'),
-                          const SizedBox(width: 8),
-                          _buildBtn('+', isOperator: true),
                         ],
                       ),
                     ),
                     const SizedBox(height: 8),
+
+                    // ردیف پنجم: +, 0, ., =
                     Expanded(
                       child: Row(
                         children: [
-                          _buildBtn('0', isWide: true, flex: 2),
-                          const SizedBox(width: 8),
+                          _buildBtn('+', isOperator: true),
+                          _buildBtn('0'),
                           _buildBtn('.'),
-                          const SizedBox(width: 8),
                           _buildBtn('=', isEqual: true),
                         ],
                       ),
@@ -197,11 +200,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  Widget _buildBtn(String label,
-      {bool isOperator = false,
-      bool isEqual = false,
-      bool isWide = false,
-      int flex = 1}) {
+  Widget _buildBtn(String label, {bool isOperator = false, bool isEqual = false, bool isWide = false, int flex = 1}) {
     return Expanded(
       flex: flex,
       child: CalcButton(
@@ -219,11 +218,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       child: CalcButton(
         label: label,
         isScientific: true,
-        onTap: () {
-          setState(() {
-            _logic.input(label);
-          });
-        },
+        onTap: () => _onButton(label),
       ),
     );
   }

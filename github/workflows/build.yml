@@ -24,10 +24,20 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Backup lib folder
+        run: |
+          mkdir -p /tmp/backup_lib
+          cp -r lib /tmp/backup_lib/
+
       - name: Generate Android platform files
         run: |
           flutter create . --platforms=android --project-name hesabgar_man --org com.example
-          rm -f lib/main.dart.bak || true
+
+      - name: Restore lib folder
+        run: |
+          rm -rf lib
+          cp -r /tmp/backup_lib/lib .
+          ls -la lib/
 
       - name: Download Vazirmatn Font
         run: |

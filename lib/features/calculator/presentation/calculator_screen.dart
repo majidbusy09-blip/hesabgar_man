@@ -198,8 +198,17 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  Widget _buildBtn(String label, {bool isOperator = false, bool isEqual = false}) {
-    return Expanded(child: CalcButton(label: label, isOperator: isOperator, isEqual: isEqual, onTap: () => _onButton(label)));
+  // این بخش اصلاح شد تا پارامتر isScientific رو هم قبول کنه
+  Widget _buildBtn(String label, {bool isOperator = false, bool isEqual = false, bool isScientific = false}) {
+    return Expanded(
+      child: CalcButton(
+        label: label, 
+        isOperator: isOperator, 
+        isEqual: isEqual, 
+        isScientific: isScientific, // این خط اضافه شد
+        onTap: () => _onButton(label)
+      )
+    );
   }
 
   Widget _buildSci(String label) {

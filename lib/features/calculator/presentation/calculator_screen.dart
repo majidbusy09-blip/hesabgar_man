@@ -108,7 +108,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
     return Scaffold(
       appBar: isLandscape
-          ? null
+          ? null // در حالت افقی نوار بالا حذف می‌شود تا فضا آزاد شود
           : AppBar(
               title: const Text('حسابگر من'),
               actions: [
@@ -121,84 +121,151 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               ],
             ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // نمایشگر با ارتفاع محدود و ثابت تا فضا را اشغال نکند
-            Container(
-              height: 160,
-              margin: const EdgeInsets.all(12),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: isDark ? Colors.grey[800]! : Colors.grey[300]!),
+        child: isLandscape 
+            ? _buildLandscapeLayout(isDark) 
+            : _buildPortraitLayout(isDark),
+      ),
+    );
+  }
+
+  // ================= حالت عمودی (Portrait) =================
+  Widget _buildPortraitLayout(bool isDark) {
+    return Column(
+      children: [
+        _buildDisplay(isDark, 160),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: GridView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  childAspectRatio: 1.2,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                ),
+                itemCount: _isScientific ? _sciButtons.length : _simpleButtons.length,
+                itemBuilder: (context, index) {
+                  final btnData = _isScientific ? _sciButtons[index] : _simpleButtons[index];
+                  return _buildBtn(
+                    btnData['label']!,
+                    isOp: btnData['isOp'] ?? false,
+                    isEq: btnData['isEq'] ?? false,
+                    isSci: btnData['isSci'] ?? false,
+                    isMemory: btnData['isMemory'] ?? false,
+                  );
+                },
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisAlignment: MainAxisAlignment.end,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ================= حالت افقی (Landscape) =================
+  Widget _buildLandscapeLayout(bool isDark) {
+    return Row(
+      children: [
+        // سمت راست: نمایشگر و دکمه‌های تنظیمات
+        Expanded(
+          flex: 3,
+          child: Column(
+            children: [
+              _buildDisplay(isDark, 120),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _logic.memoryDisplay,
-                        style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 14, color: Colors.amber, fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        _logic.angleMode,
-                        style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14, color: isDark ? Colors.grey[500] : Colors.grey[600]),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Text(
-                    _logic.expression.isEmpty ? '0' : _logic.expression,
-                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 18, color: isDark ? Colors.grey[400] : Colors.grey[600]),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textDirection: TextDirection.ltr,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _logic.result,
-                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 36, fontWeight: FontWeight.w800, color: isDark ? Colors.white : Colors.black87),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textDirection: TextDirection.ltr,
-                  ),
+                  IconButton(icon: const Icon(Icons.keyboard), onPressed: _showFormulaDialog, tooltip: 'تایپ فرمول'),
+                  IconButton(icon: const Icon(Icons.history), onPressed: _showHistory, tooltip: 'تاریخچه'),
+                  IconButton(icon: const Icon(Icons.settings_backup_restore), onPressed: () => setState(() => _isScientific = false), tooltip: 'بازگشت'),
                 ],
               ),
-            ),
-
-            // صفحه کلید با استفاده از Wrap برای جلوگیری از به‌هم‌ریختگی
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: Directionality(
-                  textDirection: TextDirection.ltr, // چیدمان اعداد از چپ به راست
-                  child: Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    alignment: WrapAlignment.center,
-                    children: (isLandscape ? _landscapeButtons : (_isScientific ? _sciButtons : _simpleButtons))
-                        .map((btn) => SizedBox(
-                              width: (MediaQuery.of(context).size.width / (isLandscape ? 6 : 4)) - 10,
-                              height: isLandscape ? 50 : 65,
-                              child: _buildBtn(
-                                btn['label']!,
-                                isOp: btn['isOp'] ?? false,
-                                isEq: btn['isEq'] ?? false,
-                                isSci: btn['isSci'] ?? false,
-                                isMemory: btn['isMemory'] ?? false,
-                              ),
-                            ))
-                        .toList(),
-                  ),
+            ],
+          ),
+        ),
+        
+        // سمت چپ: دکمه‌ها (شبکه ۶ ستونه)
+        Expanded(
+          flex: 7,
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: GridView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 6,
+                  childAspectRatio: 1.3,
+                  crossAxisSpacing: 6,
+                  mainAxisSpacing: 6,
                 ),
+                itemCount: _landscapeButtons.length,
+                itemBuilder: (context, index) {
+                  final btnData = _landscapeButtons[index];
+                  return _buildBtn(
+                    btnData['label']!,
+                    isOp: btnData['isOp'] ?? false,
+                    isEq: btnData['isEq'] ?? false,
+                    isSci: btnData['isSci'] ?? false,
+                    isMemory: btnData['isMemory'] ?? false,
+                  );
+                },
               ),
             ),
-          ],
+          ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildDisplay(bool isDark, double height) {
+    return Container(
+      height: height,
+      width: double.infinity,
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: isDark ? Colors.grey[800]! : Colors.grey[300]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _logic.memoryDisplay,
+                style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 14, color: Colors.amber, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                _logic.angleMode,
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14, color: isDark ? Colors.grey[500] : Colors.grey[600]),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            _logic.expression.isEmpty ? '0' : _logic.expression,
+            style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 18, color: isDark ? Colors.grey[400] : Colors.grey[600]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textDirection: TextDirection.ltr,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _logic.result,
+            style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 36, fontWeight: FontWeight.w800, color: isDark ? Colors.white : Colors.black87),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textDirection: TextDirection.ltr,
+          ),
+        ],
       ),
     );
   }

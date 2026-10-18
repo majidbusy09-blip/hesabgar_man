@@ -31,3 +31,13 @@ flutter:
           weight: 500
         - asset: assets/fonts/Vazirmatn-Bold.ttf
           weight: 700
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  provider: ^6.1.2
+  shared_preferences: ^2.3.2
+  math_expressions: ^2.4.0
+  google_mlkit_digital_ink_recognition: ^0.13.0

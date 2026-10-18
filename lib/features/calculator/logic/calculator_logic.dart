@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:math_expressions/math_expressions.dart';
 
 class CalculatorLogic {
@@ -18,7 +17,6 @@ class CalculatorLogic {
     _isDegree = !_isDegree;
   }
 
-  // توابع حافظه
   void memoryClear() => _memory = 0;
   void memoryRecall() {
     if (_memory != 0) input(_memory.toString());
@@ -38,24 +36,13 @@ class CalculatorLogic {
     }
 
     if (value == '=') {
-      _calculate();
+      calculateFromKeyboard(_expression); // محاسبه فرمول فعلی
       return;
     }
 
-    // تبدیل توابع به فرمت قابل فهم برای math_expressions
     if (value == '×') value = '*';
     if (value == '÷') value = '/';
-    if (value == 'π') value = 'pi';
-    if (value == 'e') value = 'e';
-
-    // تبدیل توابع مثلثاتی بر اساس حالت درجه/رادیان
-    if (value == 'sin' || value == 'cos' || value == 'tan') {
-      if (_isDegree) {
-        // در حالت درجه، باید مقدار را به رادیان تبدیل کنیم
-        // برای سادگی فعلاً از دکمه‌های مستقیم استفاده می‌کنیم
-      }
-    }
-
+    
     if (_isOperator(value) && _expression.isNotEmpty) {
       final last = _expression[_expression.length - 1];
       if (_isOperator(last)) {
@@ -67,32 +54,22 @@ class CalculatorLogic {
     _result = _expression;
   }
 
-  void backspace() {
-    if (_expression.isNotEmpty) {
-      _expression = _expression.substring(0, _expression.length - 1);
-      _result = _expression.isEmpty ? '0' : _expression;
-    }
-  }
-
-  void _calculate() {
-    if (_expression.isEmpty) return;
+  // تابع جدید: محاسبه فرمولی که کاربر با کیبورد تایپ کرده
+  void calculateFromKeyboard(String formula) {
+    if (formula.trim().isEmpty) return;
     try {
-      String finalExpr = _expression;
-
-      // تبدیل نمادهای ریاضی به فرمت کتابخانه
-      finalExpr = finalExpr.replaceAll('×', '*').replaceAll('÷', '/');
-      finalExpr = finalExpr.replaceAll('π', 'pi');
-      finalExpr = finalExpr.replaceAll('√', 'sqrt');
-      
-      // اگر در حالت درجه هستیم، باید توابع مثلثاتی را دستی محاسبه کنیم
-      if (_isDegree) {
-        // این بخش برای سادگی در این نسخه نادیده گرفته می‌شود
-        // در نسخه نهایی باید توابع sin/cos/tan را با تبدیل درجه پیاده‌سازی کرد
-      }
+      // تبدیل نمادهای فارسی/عربی به استاندارد
+      String finalExpr = formula
+          .replaceAll('×', '*')
+          .replaceAll('÷', '/')
+          .replaceAll('π', 'pi')
+          .replaceAll('√', 'sqrt');
 
       Parser p = Parser();
       Expression exp = p.parse(finalExpr);
       ContextModel cm = ContextModel();
+      
+      // برای پشتیبانی از توابع مثلثاتی (در این نسخه ساده، رادیان محاسبه می‌شود)
       double eval = exp.evaluate(EvaluationType.REAL, cm);
 
       String calculatedResult;
@@ -102,11 +79,18 @@ class CalculatorLogic {
         calculatedResult = eval.toStringAsFixed(6).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
       }
 
-      _history.insert(0, {'exp': _expression, 'res': calculatedResult});
+      _history.insert(0, {'exp': formula, 'res': calculatedResult});
       _result = calculatedResult;
       _expression = calculatedResult;
     } catch (e) {
-      _result = 'خطا';
+      _result = 'خطا در فرمول';
+    }
+  }
+
+  void backspace() {
+    if (_expression.isNotEmpty) {
+      _expression = _expression.substring(0, _expression.length - 1);
+      _result = _expression.isEmpty ? '0' : _expression;
     }
   }
 

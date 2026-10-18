@@ -77,19 +77,25 @@ class _CalcButtonState extends State<CalcButton> with SingleTickerProviderStateM
         },
         onTapCancel: () => _controller.reverse(),
         child: Container(
-          margin: const EdgeInsets.all(3),
+          margin: const EdgeInsets.all(1.5),
           decoration: BoxDecoration(
             color: bgColor,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Center(
-            child: Text(
-              widget.label,
-              style: TextStyle(
-                fontFamily: 'Vazirmatn',
-                fontSize: widget.isScientific || widget.isMemory ? 14 : 22,
-                fontWeight: FontWeight.bold,
-                color: textColor,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  widget.label,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: widget.isScientific || widget.isMemory ? 13 : 20,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  ),
+                ),
               ),
             ),
           ),

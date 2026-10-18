@@ -7,6 +7,7 @@ class CalcButton extends StatefulWidget {
   final bool isOperator;
   final bool isEqual;
   final bool isScientific;
+  final bool isMemory;
 
   const CalcButton({
     super.key,
@@ -15,6 +16,7 @@ class CalcButton extends StatefulWidget {
     this.isOperator = false,
     this.isEqual = false,
     this.isScientific = false,
+    this.isMemory = false,
   });
 
   @override
@@ -28,8 +30,8 @@ class _CalcButtonState extends State<CalcButton> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 80));
-    _scale = Tween<double>(begin: 1.0, end: 0.9).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 60));
+    _scale = Tween<double>(begin: 1.0, end: 0.92).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -51,6 +53,9 @@ class _CalcButtonState extends State<CalcButton> with SingleTickerProviderStateM
     } else if (widget.isOperator) {
       bgColor = const Color(0xFFE76F51);
       textColor = Colors.white;
+    } else if (widget.isMemory) {
+      bgColor = isDark ? const Color(0xFF3A3A3A) : const Color(0xFFD0D0D0);
+      textColor = isDark ? Colors.amber : Colors.brown;
     } else if (widget.isScientific) {
       bgColor = isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE0E0E0);
       textColor = isDark ? Colors.white70 : Colors.black87;
@@ -64,7 +69,7 @@ class _CalcButtonState extends State<CalcButton> with SingleTickerProviderStateM
       child: GestureDetector(
         onTapDown: (_) {
           _controller.forward();
-          HapticFeedback.mediumImpact();
+          HapticFeedback.lightImpact();
         },
         onTapUp: (_) {
           _controller.reverse();
@@ -72,17 +77,17 @@ class _CalcButtonState extends State<CalcButton> with SingleTickerProviderStateM
         },
         onTapCancel: () => _controller.reverse(),
         child: Container(
-          margin: const EdgeInsets.all(4),
+          margin: const EdgeInsets.all(3),
           decoration: BoxDecoration(
             color: bgColor,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Center(
             child: Text(
               widget.label,
               style: TextStyle(
                 fontFamily: 'Vazirmatn',
-                fontSize: widget.isScientific ? 16 : 24,
+                fontSize: widget.isScientific || widget.isMemory ? 14 : 22,
                 fontWeight: FontWeight.bold,
                 color: textColor,
               ),

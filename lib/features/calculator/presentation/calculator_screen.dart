@@ -68,37 +68,17 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
 
-    // دکمه‌های حالت پرتره (۴ ستون)
-    final List<Widget> portraitButtons = [
-      // ردیف ۱: حافظه و تنظیمات
+    // لیست دکمه‌ها
+    final List<Widget> buttons = [
       _buildBtn('MC', isMemory: true), _buildBtn('MR', isMemory: true), _buildBtn('M+', isMemory: true), _buildBtn('M-', isMemory: true),
-      // ردیف ۲: توابع علمی و پاک کردن
       _buildBtn('sin', isSci: true), _buildBtn('cos', isSci: true), _buildBtn('tan', isSci: true), _buildBtn('C', isOp: true),
-      // ردیف ۳: توابع پیشرفته
       _buildBtn('ln', isSci: true), _buildBtn('log', isSci: true), _buildBtn('√', isSci: true), _buildBtn('⌫', isOp: true),
-      // ردیف ۴: پرانتز و توان
       _buildBtn('(', isOp: true), _buildBtn(')', isOp: true), _buildBtn('x²', isSci: true), _buildBtn('^', isOp: true),
-      // ردیف ۵: اعداد ۷ ۸ ۹ و تقسیم
       _buildBtn('7'), _buildBtn('8'), _buildBtn('9'), _buildBtn('÷', isOp: true),
-      // ردیف ۶: اعداد ۴ ۵ ۶ و ضرب
       _buildBtn('4'), _buildBtn('5'), _buildBtn('6'), _buildBtn('×', isOp: true),
-      // ردیف ۷: اعداد ۱ ۲ ۳ و منها
       _buildBtn('1'), _buildBtn('2'), _buildBtn('3'), _buildBtn('-', isOp: true),
-      // ردیف ۸: صفر، ممیز، پی و جمع
       _buildBtn('0'), _buildBtn('.'), _buildBtn('π', isSci: true), _buildBtn('+', isOp: true),
-      // ردیف ۹: مساوی
       _buildBtn('=', isEq: true),
-    ];
-
-    // دکمه‌های حالت افقی (۶ ستون)
-    final List<Widget> landscapeButtons = [
-      _buildBtn('MC', isMemory: true), _buildBtn('MR', isMemory: true), _buildBtn('M+', isMemory: true), _buildBtn('M-', isMemory: true), _buildBtn('DEG', isSci: true), _buildBtn('C', isOp: true),
-      _buildBtn('sin', isSci: true), _buildBtn('cos', isSci: true), _buildBtn('tan', isSci: true), _buildBtn('ln', isSci: true), _buildBtn('log', isSci: true), _buildBtn('⌫', isOp: true),
-      _buildBtn('(', isOp: true), _buildBtn(')', isOp: true), _buildBtn('√', isSci: true), _buildBtn('x²', isSci: true), _buildBtn('^', isOp: true), _buildBtn('π', isSci: true),
-      _buildBtn('7'), _buildBtn('8'), _buildBtn('9'), _buildBtn('÷', isOp: true), _buildBtn('e', isSci: true), _buildBtn('!', isSci: true),
-      _buildBtn('4'), _buildBtn('5'), _buildBtn('6'), _buildBtn('×', isOp: true), _buildBtn('1/x', isSci: true), _buildBtn('%', isSci: true),
-      _buildBtn('1'), _buildBtn('2'), _buildBtn('3'), _buildBtn('-', isOp: true), _buildBtn('0'), _buildBtn('.'),
-      _buildBtn('+', isOp: true), _buildBtn('=', isEq: true),
     ];
 
     return Scaffold(
@@ -115,35 +95,31 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // نمایشگر
             _buildDisplay(isDark),
-            
-            // دکمه‌ها
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: isLandscape
-                    ? _buildGrid(landscapeButtons, 6)
-                    : _buildGrid(portraitButtons, 4),
+                padding: const EdgeInsets.all(8),
+                // استفاده از Directionality برای چپ‌چین کردن دکمه‌ها در حالت راست‌چین
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    alignment: WrapAlignment.center,
+                    children: buttons.map((btn) => SizedBox(
+                      width: isLandscape 
+                          ? (MediaQuery.of(context).size.width / 8) - 12 
+                          : (MediaQuery.of(context).size.width / 4) - 12,
+                      height: isLandscape ? 50 : 70,
+                      child: btn,
+                    )).toList(),
+                  ),
+                ),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildGrid(List<Widget> buttons, int crossAxisCount) {
-    return GridView.builder(
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        childAspectRatio: 1.2, // نسبت ابعاد دکمه‌ها
-      ),
-      itemCount: buttons.length,
-      // این خط مهم است: چیدمان از چپ به راست مثل ماشین‌حساب واقعی
-      textDirection: TextDirection.ltr, 
-      itemBuilder: (context, index) => buttons[index],
     );
   }
 
@@ -163,13 +139,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            // ردیف بالا: نشانگر حافظه و حالت زاویه
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   _logic.memoryDisplay,
-                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14, color: Colors.amber, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 14, color: Colors.amber, fontWeight: FontWeight.bold),
                 ),
                 Text(
                   _logic.angleMode,

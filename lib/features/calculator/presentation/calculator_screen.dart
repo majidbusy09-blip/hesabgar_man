@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../logic/calculator_logic.dart';
 import 'widgets/calc_button.dart';
+import 'widgets/drawing_canvas.dart'; // اضافه شد
 
 class CalculatorScreen extends StatefulWidget {
   const CalculatorScreen({super.key});
@@ -35,9 +36,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     });
   }
 
-  // دیالوگ برای تایپ دستی فرمول
   void _showFormulaDialog() {
-    _textController.text = _logic.expression; // فرمول فعلی رو نشون بده
+    _textController.text = _logic.expression;
     showDialog(
       context: context,
       builder: (context) {
@@ -70,6 +70,24 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           ],
         );
       },
+    );
+  }
+
+  // متد جدید برای باز کردن بوم طراحی
+  void _openDrawingCanvas() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DrawingCanvas(
+          onTextRecognized: (text) {
+            setState(() {
+              // متنی که هوش مصنوعی تشخیص داده رو به ماشین حساب می‌فرستیم
+              _logic.calculateFromKeyboard(text);
+            });
+            Navigator.pop(context); // بستن صفحه طراحی
+          },
+        ),
+      ),
     );
   }
 
@@ -111,7 +129,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       appBar: isLandscape ? null : AppBar(
         title: const Text('حسابگر من'),
         actions: [
-          // دکمه جدید: تایپ فرمول
+          // دکمه جدید: نوشتن با دست (قلم)
+          IconButton(icon: const Icon(Icons.draw), onPressed: _openDrawingCanvas, tooltip: 'نوشتن با دست'),
+          
           IconButton(icon: const Icon(Icons.keyboard), onPressed: _showFormulaDialog, tooltip: 'تایپ فرمول'),
           IconButton(icon: const Icon(Icons.history), onPressed: _showHistory, tooltip: 'تاریخچه'),
           IconButton(
@@ -127,14 +147,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(4),
-                // استفاده از GridView برای رفع مشکل مخفی شدن دکمه‌ها
                 child: GridView.builder(
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: isLandscape ? 6 : 4,
                     childAspectRatio: 1.3,
                   ),
-                  // در راست‌چین اعداد برعکس می‌شن، این خط ترتیب رو از چپ به راست می‌کنه
                   textDirection: TextDirection.ltr, 
                   itemCount: _isScientific ? _sciButtons.length : _simpleButtons.length,
                   itemBuilder: (context, index) {
@@ -218,7 +236,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  // تعریف دکمه‌های حالت ساده
   final List<Map<String, dynamic>> _simpleButtons = [
     {'label': 'C', 'isOp': true}, {'label': '⌫', 'isOp': true}, {'label': '÷', 'isOp': true}, {'label': '×', 'isOp': true},
     {'label': '7'}, {'label': '8'}, {'label': '9'}, {'label': '-', 'isOp': true},
@@ -227,7 +244,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '0'}, {'label': '.'}, {'label': 'π', 'isSci': true}, {'label': '(', 'isOp': true},
   ];
 
-  // تعریف دکمه‌های حالت مهندسی (تعداد بیشتر، چیدمان منظم)
   final List<Map<String, dynamic>> _sciButtons = [
     {'label': 'MC', 'isMemory': true}, {'label': 'MR', 'isMemory': true}, {'label': 'M+', 'isMemory': true}, {'label': 'M-', 'isMemory': true},
     {'label': 'sin', 'isSci': true}, {'label': 'cos', 'isSci': true}, {'label': 'tan', 'isSci': true}, {'label': 'C', 'isOp': true},

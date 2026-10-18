@@ -13,6 +13,7 @@ class CalculatorScreen extends StatefulWidget {
 class _CalculatorScreenState extends State<CalculatorScreen> {
   final _logic = CalculatorLogic();
   bool _isScientific = false;
+  final TextEditingController _textController = TextEditingController();
 
   void _onButton(String value) {
     setState(() {
@@ -26,12 +27,50 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _logic.memoryAdd();
       } else if (value == 'M-') {
         _logic.memorySubtract();
-      } else if (value == 'DEG' || value == 'RAD') {
+      } else if (value == 'DEG') {
         _logic.toggleAngleMode();
       } else {
         _logic.input(value);
       }
     });
+  }
+
+  // دیالوگ برای تایپ دستی فرمول
+  void _showFormulaDialog() {
+    _textController.text = _logic.expression; // فرمول فعلی رو نشون بده
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('تایپ دستی فرمول', style: TextStyle(fontFamily: 'Vazirmatn')),
+          content: TextField(
+            controller: _textController,
+            autofocus: true,
+            textDirection: TextDirection.ltr,
+            decoration: const InputDecoration(
+              hintText: 'مثال: sin(1.5) + 5^2 * 3',
+              hintStyle: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+            ),
+            style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 18),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('انصراف', style: TextStyle(fontFamily: 'Vazirmatn')),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _logic.calculateFromKeyboard(_textController.text);
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('محاسبه', style: TextStyle(fontFamily: 'Vazirmatn')),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _showHistory() {
@@ -68,23 +107,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
 
-    // لیست دکمه‌ها
-    final List<Widget> buttons = [
-      _buildBtn('MC', isMemory: true), _buildBtn('MR', isMemory: true), _buildBtn('M+', isMemory: true), _buildBtn('M-', isMemory: true),
-      _buildBtn('sin', isSci: true), _buildBtn('cos', isSci: true), _buildBtn('tan', isSci: true), _buildBtn('C', isOp: true),
-      _buildBtn('ln', isSci: true), _buildBtn('log', isSci: true), _buildBtn('√', isSci: true), _buildBtn('⌫', isOp: true),
-      _buildBtn('(', isOp: true), _buildBtn(')', isOp: true), _buildBtn('x²', isSci: true), _buildBtn('^', isOp: true),
-      _buildBtn('7'), _buildBtn('8'), _buildBtn('9'), _buildBtn('÷', isOp: true),
-      _buildBtn('4'), _buildBtn('5'), _buildBtn('6'), _buildBtn('×', isOp: true),
-      _buildBtn('1'), _buildBtn('2'), _buildBtn('3'), _buildBtn('-', isOp: true),
-      _buildBtn('0'), _buildBtn('.'), _buildBtn('π', isSci: true), _buildBtn('+', isOp: true),
-      _buildBtn('=', isEq: true),
-    ];
-
     return Scaffold(
       appBar: isLandscape ? null : AppBar(
         title: const Text('حسابگر من'),
         actions: [
+          // دکمه جدید: تایپ فرمول
+          IconButton(icon: const Icon(Icons.keyboard), onPressed: _showFormulaDialog, tooltip: 'تایپ فرمول'),
           IconButton(icon: const Icon(Icons.history), onPressed: _showHistory, tooltip: 'تاریخچه'),
           IconButton(
             icon: Icon(_isScientific ? Icons.calculate : Icons.functions, color: AppColors.primary),
@@ -98,22 +126,27 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             _buildDisplay(isDark),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(8),
-                // استفاده از Directionality برای چپ‌چین کردن دکمه‌ها در حالت راست‌چین
-                child: Directionality(
-                  textDirection: TextDirection.ltr,
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    alignment: WrapAlignment.center,
-                    children: buttons.map((btn) => SizedBox(
-                      width: isLandscape 
-                          ? (MediaQuery.of(context).size.width / 8) - 12 
-                          : (MediaQuery.of(context).size.width / 4) - 12,
-                      height: isLandscape ? 50 : 70,
-                      child: btn,
-                    )).toList(),
+                padding: const EdgeInsets.all(4),
+                // استفاده از GridView برای رفع مشکل مخفی شدن دکمه‌ها
+                child: GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: isLandscape ? 6 : 4,
+                    childAspectRatio: 1.3,
                   ),
+                  // در راست‌چین اعداد برعکس می‌شن، این خط ترتیب رو از چپ به راست می‌کنه
+                  textDirection: TextDirection.ltr, 
+                  itemCount: _isScientific ? _sciButtons.length : _simpleButtons.length,
+                  itemBuilder: (context, index) {
+                    final btnData = _isScientific ? _sciButtons[index] : _simpleButtons[index];
+                    return _buildBtn(
+                      btnData['label']!, 
+                      isOp: btnData['isOp'] ?? false, 
+                      isEq: btnData['isEq'] ?? false, 
+                      isSci: btnData['isSci'] ?? false, 
+                      isMemory: btnData['isMemory'] ?? false
+                    );
+                  },
                 ),
               ),
             ),
@@ -184,4 +217,26 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       onTap: () => _onButton(label),
     );
   }
+
+  // تعریف دکمه‌های حالت ساده
+  final List<Map<String, dynamic>> _simpleButtons = [
+    {'label': 'C', 'isOp': true}, {'label': '⌫', 'isOp': true}, {'label': '÷', 'isOp': true}, {'label': '×', 'isOp': true},
+    {'label': '7'}, {'label': '8'}, {'label': '9'}, {'label': '-', 'isOp': true},
+    {'label': '4'}, {'label': '5'}, {'label': '6'}, {'label': '+', 'isOp': true},
+    {'label': '1'}, {'label': '2'}, {'label': '3'}, {'label': '=', 'isEq': true},
+    {'label': '0'}, {'label': '.'}, {'label': 'π', 'isSci': true}, {'label': '(', 'isOp': true},
+  ];
+
+  // تعریف دکمه‌های حالت مهندسی (تعداد بیشتر، چیدمان منظم)
+  final List<Map<String, dynamic>> _sciButtons = [
+    {'label': 'MC', 'isMemory': true}, {'label': 'MR', 'isMemory': true}, {'label': 'M+', 'isMemory': true}, {'label': 'M-', 'isMemory': true},
+    {'label': 'sin', 'isSci': true}, {'label': 'cos', 'isSci': true}, {'label': 'tan', 'isSci': true}, {'label': 'C', 'isOp': true},
+    {'label': 'ln', 'isSci': true}, {'label': 'log', 'isSci': true}, {'label': '√', 'isSci': true}, {'label': '⌫', 'isOp': true},
+    {'label': 'x²', 'isSci': true}, {'label': '^', 'isOp': true}, {'label': '(', 'isOp': true}, {'label': ')', 'isOp': true},
+    {'label': '7'}, {'label': '8'}, {'label': '9'}, {'label': '÷', 'isOp': true},
+    {'label': '4'}, {'label': '5'}, {'label': '6'}, {'label': '×', 'isOp': true},
+    {'label': '1'}, {'label': '2'}, {'label': '3'}, {'label': '-', 'isOp': true},
+    {'label': '0'}, {'label': '.'}, {'label': 'π', 'isSci': true}, {'label': '+', 'isOp': true},
+    {'label': '=', 'isEq': true},
+  ];
 }

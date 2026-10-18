@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../logic/calculator_logic.dart';
 import 'widgets/calc_button.dart';
-import 'widgets/drawing_canvas.dart'; // اضافه شد
 
 class CalculatorScreen extends StatefulWidget {
   const CalculatorScreen({super.key});
@@ -73,24 +72,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  // متد جدید برای باز کردن بوم طراحی
-  void _openDrawingCanvas() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => DrawingCanvas(
-          onTextRecognized: (text) {
-            setState(() {
-              // متنی که هوش مصنوعی تشخیص داده رو به ماشین حساب می‌فرستیم
-              _logic.calculateFromKeyboard(text);
-            });
-            Navigator.pop(context); // بستن صفحه طراحی
-          },
-        ),
-      ),
-    );
-  }
-
   void _showHistory() {
     showModalBottomSheet(
       context: context,
@@ -129,9 +110,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       appBar: isLandscape ? null : AppBar(
         title: const Text('حسابگر من'),
         actions: [
-          // دکمه جدید: نوشتن با دست (قلم)
-          IconButton(icon: const Icon(Icons.draw), onPressed: _openDrawingCanvas, tooltip: 'نوشتن با دست'),
-          
           IconButton(icon: const Icon(Icons.keyboard), onPressed: _showFormulaDialog, tooltip: 'تایپ فرمول'),
           IconButton(icon: const Icon(Icons.history), onPressed: _showHistory, tooltip: 'تاریخچه'),
           IconButton(
@@ -147,24 +125,27 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(4),
-                child: GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: isLandscape ? 6 : 4,
-                    childAspectRatio: 1.3,
+                // حل قطعی مشکل راست‌چین شدن اعداد با استفاده از Directionality
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: GridView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: isLandscape ? 6 : 4,
+                      childAspectRatio: 1.3,
+                    ),
+                    itemCount: _isScientific ? _sciButtons.length : _simpleButtons.length,
+                    itemBuilder: (context, index) {
+                      final btnData = _isScientific ? _sciButtons[index] : _simpleButtons[index];
+                      return _buildBtn(
+                        btnData['label']!, 
+                        isOp: btnData['isOp'] ?? false, 
+                        isEq: btnData['isEq'] ?? false, 
+                        isSci: btnData['isSci'] ?? false, 
+                        isMemory: btnData['isMemory'] ?? false
+                      );
+                    },
                   ),
-                  textDirection: TextDirection.ltr, 
-                  itemCount: _isScientific ? _sciButtons.length : _simpleButtons.length,
-                  itemBuilder: (context, index) {
-                    final btnData = _isScientific ? _sciButtons[index] : _simpleButtons[index];
-                    return _buildBtn(
-                      btnData['label']!, 
-                      isOp: btnData['isOp'] ?? false, 
-                      isEq: btnData['isEq'] ?? false, 
-                      isSci: btnData['isSci'] ?? false, 
-                      isMemory: btnData['isMemory'] ?? false
-                    );
-                  },
                 ),
               ),
             ),

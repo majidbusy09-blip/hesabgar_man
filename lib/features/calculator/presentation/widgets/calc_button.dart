@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../../../../core/providers/feedback_provider.dart';
 
 class CalcButton extends StatefulWidget {
   final String label;
@@ -53,11 +55,10 @@ class _CalcButtonState extends State<CalcButton>
 
   void _press() {
     _controller.forward();
-    if (widget.isEqual) {
-      HapticFeedback.mediumImpact();
-    } else if (widget.isOperator) {
-      HapticFeedback.selectionClick();
-    } else {
+    try {
+      final fb = context.read<FeedbackProvider>();
+      fb.playTap(strong: widget.isEqual);
+    } catch (_) {
       HapticFeedback.lightImpact();
     }
   }
@@ -98,7 +99,6 @@ class _CalcButtonState extends State<CalcButton>
         color: bgColor,
         borderRadius: BorderRadius.circular(12),
         elevation: widget.isEqual ? 2 : 0,
-        shadowColor: scheme.primary.withValues(alpha: 0.4),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTapDown: (_) => _press(),

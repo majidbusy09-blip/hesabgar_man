@@ -8,6 +8,7 @@ class Expense {
   final String category;
   final DateTime date;
   final String? note;
+  final bool isIncome; // true = درآمد
 
   Expense({
     required this.id,
@@ -16,6 +17,7 @@ class Expense {
     required this.category,
     required this.date,
     this.note,
+    this.isIncome = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -25,18 +27,20 @@ class Expense {
         'category': category,
         'date': date.toIso8601String(),
         'note': note,
+        'isIncome': isIncome,
       };
 
   factory Expense.fromJson(Map<String, dynamic> json) => Expense(
         id: json['id'] as String,
         title: json['title'] as String,
         amount: (json['amount'] as num).toDouble(),
-        category: json['category'] as String,
-        date: DateTime.parse(json['date'] as String),
+        category: json['category'] as String? ?? 'سایر',
+        date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
         note: json['note'] as String?,
+        isIncome: json['isIncome'] as bool? ?? false,
       );
 
-  static const categories = [
+  static const expenseCategories = [
     'خوراک',
     'حمل‌ونقل',
     'مسکن',
@@ -45,34 +49,82 @@ class Expense {
     'آموزش',
     'تفریح',
     'پوشاک',
+    'خرید',
     'سایر',
+  ];
+
+  static const incomeCategories = [
+    'حقوق',
+    'فروش',
+    'هدیه',
+    'سود',
+    'سایر درآمد',
   ];
 }
 
 class ExpenseStore {
-  static const _key = 'expenses_v1';
+  static const _key = 'expenses_v2';
   List<Expense> _items = [];
 
   List<Expense> get items => List.unmodifiable(_items);
 
-  double get total => _items.fold(0.0, (s, e) => s + e.amount);
+  List<Expense> get expenses =>
+      _items.where((e) => !e.isIncome).toList();
+  List<Expense> get incomes =>
+      _items.where((e) => e.isIncome).toList();
 
-  double totalForCategory(String cat) => _items
-      .where((e) => e.category == cat)
+  double get totalExpense =>
+      expenses.fold(0.0, (s, e) => s + e.amount);
+  double get totalIncome =>
+      incomes.fold(0.0, (s, e) => s + e.amount);
+  double get balance => totalIncome - totalExpense;
+
+  List<Expense> forMonth(int year, int month) => _items
+      .where((e) => e.date.year == year && e.date.month == month)
+      .toList();
+
+  double expenseInMonth(int year, int month) => forMonth(year, month)
+      .where((e) => !e.isIncome)
       .fold(0.0, (s, e) => s + e.amount);
 
-  Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
-    if (raw == null || raw.isEmpty) {
-      _items = [];
-      return;
+  double incomeInMonth(int year, int month) => forMonth(year, month)
+      .where((e) => e.isIncome)
+      .fold(0.0, (s, e) => s + e.amount);
+
+  Map<String, double> categoryTotals({bool income = false, int? year, int? month}) {
+    final map = <String, double>{};
+    for (final e in _items) {
+      if (e.isIncome != income) continue;
+      if (year != null && e.date.year != year) continue;
+      if (month != null && e.date.month != month) continue;
+      map[e.category] = (map[e.category] ?? 0) + e.amount;
     }
-    final list = jsonDecode(raw) as List;
-    _items = list
-        .map((e) => Expense.fromJson(e as Map<String, dynamic>))
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    return map;
+  }
+
+  Future<void> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key) ?? prefs.getString('expenses_v1');
+      if (raw == null || raw.isEmpty) {
+        _items = [];
+        return;
+      }
+      final list = jsonDecode(raw) as List;
+      _items = list
+          .map((e) {
+            try {
+              return Expense.fromJson(e as Map<String, dynamic>);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<Expense>()
+          .toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+    } catch (_) {
+      _items = [];
+    }
   }
 
   Future<void> add(Expense expense) async {
@@ -91,8 +143,10 @@ class ExpenseStore {
   }
 
   Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
-    await prefs.setString(_key, raw);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
+      await prefs.setString(_key, raw);
+    } catch (_) {}
   }
 }

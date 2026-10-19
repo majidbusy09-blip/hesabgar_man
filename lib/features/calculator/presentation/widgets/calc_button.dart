@@ -32,15 +32,39 @@ class _CalcButtonState extends State<CalcButton>
   void initState() {
     super.initState();
     _controller = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 60));
-    _scale = Tween<double>(begin: 1.0, end: 0.92)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+      vsync: this,
+      duration: const Duration(milliseconds: 90),
+      reverseDuration: const Duration(milliseconds: 140),
+    );
+    _scale = Tween<double>(begin: 1.0, end: 0.88).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeOutBack,
+      ),
+    );
   }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  void _press() {
+    _controller.forward();
+    if (widget.isEqual) {
+      HapticFeedback.mediumImpact();
+    } else if (widget.isOperator) {
+      HapticFeedback.selectionClick();
+    } else {
+      HapticFeedback.lightImpact();
+    }
+  }
+
+  void _release() {
+    _controller.reverse();
+    widget.onTap();
   }
 
   @override
@@ -61,7 +85,7 @@ class _CalcButtonState extends State<CalcButton>
       bgColor = isDark ? const Color(0xFF3A3A3A) : const Color(0xFFD0D0D0);
       textColor = isDark ? Colors.amber : Colors.brown;
     } else if (widget.isScientific) {
-      bgColor = isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE0E0E0);
+      bgColor = isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE8E8E8);
       textColor = isDark ? Colors.white70 : Colors.black87;
     } else {
       bgColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
@@ -70,23 +94,19 @@ class _CalcButtonState extends State<CalcButton>
 
     return ScaleTransition(
       scale: _scale,
-      child: GestureDetector(
-        onTapDown: (_) {
-          _controller.forward();
-          HapticFeedback.lightImpact();
-        },
-        onTapUp: (_) {
-          _controller.reverse();
-          widget.onTap();
-        },
-        onTapCancel: () => _controller.reverse(),
-        child: Container(
-          margin: const EdgeInsets.all(1.5),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Center(
+      child: Material(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        elevation: widget.isEqual ? 2 : 0,
+        shadowColor: scheme.primary.withValues(alpha: 0.4),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTapDown: (_) => _press(),
+          onTapUp: (_) => _release(),
+          onTapCancel: () => _controller.reverse(),
+          child: Container(
+            margin: const EdgeInsets.all(1.5),
+            alignment: Alignment.center,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               child: Padding(
@@ -96,7 +116,7 @@ class _CalcButtonState extends State<CalcButton>
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize:
-                        widget.isScientific || widget.isMemory ? 13 : 20,
+                        widget.isScientific || widget.isMemory ? 12 : 20,
                     fontWeight: FontWeight.bold,
                     color: textColor,
                   ),

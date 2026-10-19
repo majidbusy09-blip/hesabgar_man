@@ -17,15 +17,25 @@ class _ThemeGalleryScreenState extends State<ThemeGalleryScreen> {
 
   Future<void> _pickFromImage() async {
     setState(() => _extracting = true);
-    final ok = await context.read<ThemeProvider>().pickImageAndGenerateTheme();
+    final provider = context.read<ThemeProvider>();
+    final ok = await provider.pickImageAndGenerateTheme();
     if (!mounted) return;
     setState(() => _extracting = false);
+    final err = provider.lastError;
+    String msg;
+    if (ok) {
+      msg = 'تم از عکس ساخته شد ✓';
+    } else if (err == 'cancelled') {
+      msg = 'انتخاب عکس لغو شد';
+    } else if (err != null && err.isNotEmpty) {
+      msg = 'خطا: $err';
+    } else {
+      msg = 'خطا در ساخت تم از عکس';
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          ok ? 'تم از عکس ساخته شد ✓' : 'انتخاب عکس لغو شد یا خطا رخ داد',
-          style: const TextStyle(fontFamily: 'Vazirmatn'),
-        ),
+        content: Text(msg, style: const TextStyle(fontFamily: 'Vazirmatn')),
+        duration: const Duration(seconds: 3),
       ),
     );
   }

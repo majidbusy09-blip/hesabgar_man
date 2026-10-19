@@ -24,20 +24,50 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Backup lib folder
+      # مهم: lib و pubspec را قبل از flutter create نگه می‌داریم
+      - name: Backup source files
         run: |
-          mkdir -p /tmp/backup_lib
-          cp -r lib /tmp/backup_lib/
+          mkdir -p /tmp/backup
+          cp -r lib /tmp/backup/
+          cp pubspec.yaml /tmp/backup/
+          if [ -f pubspec.lock ]; then cp pubspec.lock /tmp/backup/; fi
+          if [ -f analysis_options.yaml ]; then cp analysis_options.yaml /tmp/backup/; fi
+          ls -la /tmp/backup/
 
       - name: Generate Android platform files
         run: |
           flutter create . --platforms=android --project-name hesabgar_man --org com.example
 
-      - name: Restore lib folder
+      - name: Restore source files
         run: |
           rm -rf lib
-          cp -r /tmp/backup_lib/lib .
-          ls -la lib/
+          cp -r /tmp/backup/lib .
+          cp /tmp/backup/pubspec.yaml .
+          if [ -f /tmp/backup/pubspec.lock ]; then cp /tmp/backup/pubspec.lock .; fi
+          if [ -f /tmp/backup/analysis_options.yaml ]; then cp /tmp/backup/analysis_options.yaml .; fi
+          echo "=== pubspec dependencies ==="
+          grep -A30 "^dependencies:" pubspec.yaml
+          ls -la lib/core/providers/ || true
+
+      - name: Add gallery permission to AndroidManifest
+        run: |
+          python3 - <<'PY'
+from pathlib import Path
+p = Path("android/app/src/main/AndroidManifest.xml")
+t = p.read_text()
+if "READ_MEDIA_IMAGES" not in t:
+    t = t.replace(
+        "<application",
+        """  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+    <application""",
+        1,
+    )
+    p.write_text(t)
+    print("permissions added")
+else:
+    print("permissions already present")
+PY
 
       - name: Download Vazirmatn Font
         run: |
@@ -49,7 +79,9 @@ jobs:
           ls -la assets/fonts/
 
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          flutter pub get
+          flutter pub deps | head -40
 
       - name: Build APK
         run: flutter build apk --release

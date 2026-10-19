@@ -119,31 +119,46 @@ class ThemeProvider extends ChangeNotifier {
     }
   }
 
+  String? lastError;
+
   Future<bool> pickImageAndGenerateTheme() async {
+    lastError = null;
     try {
       final picker = ImagePicker();
       final xfile = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1200,
-        maxHeight: 1200,
-        imageQuality: 85,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 70,
+        requestFullMetadata: false,
       );
-      if (xfile == null) return false;
+      if (xfile == null) {
+        lastError = 'cancelled';
+        return false;
+      }
 
-      String destPath = xfile.path;
+      // خواندن بایت — بدون وابستگی به مسیر فایل (مشکل رایج اندروید)
+      final bytes = await xfile.readAsBytes();
+      if (bytes.isEmpty) {
+        lastError = 'فایل خالی است';
+        return false;
+      }
+
+      String? destPath;
       try {
         final dir = await getApplicationDocumentsDirectory();
-        destPath = p.join(dir.path, 'theme_bg${p.extension(xfile.path)}');
-        await File(xfile.path).copy(destPath);
+        final ext = p.extension(xfile.path).isEmpty ? '.jpg' : p.extension(xfile.path);
+        destPath = p.join(dir.path, 'theme_bg$ext');
+        await File(destPath).writeAsBytes(bytes, flush: true);
       } catch (e) {
-        debugPrint('copy image fallback: $e');
-        destPath = xfile.path;
+        debugPrint('save image fallback: $e');
+        destPath = null;
       }
 
       final palette = await PaletteGenerator.fromImageProvider(
-        FileImage(File(destPath)),
-        maximumColorCount: 12,
-        size: const Size(200, 200),
+        MemoryImage(bytes),
+        maximumColorCount: 8,
+        size: const Size(120, 120),
       );
 
       final dominant = palette.dominantColor?.color ??
@@ -167,6 +182,7 @@ class ThemeProvider extends ChangeNotifier {
       _customSecondary = secondary;
       _customDark = isDark;
       _imagePath = destPath;
+      // اگر ذخیره نشد، فقط رنگ‌ها اعمال می‌شوند
       _useCustom = true;
       notifyListeners();
 
@@ -175,11 +191,14 @@ class ThemeProvider extends ChangeNotifier {
       await prefs.setInt(_keyCustomSeed, _colorToInt(_customSeed));
       await prefs.setInt(_keyCustomSecondary, _colorToInt(_customSecondary));
       await prefs.setBool(_keyCustomDark, _customDark);
-      await prefs.setString(_keyImagePath, destPath);
+      if (destPath != null) {
+        await prefs.setString(_keyImagePath, destPath);
+      }
 
       return true;
     } catch (e, st) {
       debugPrint('Theme from image error: $e\n$st');
+      lastError = e.toString();
       return false;
     }
   }

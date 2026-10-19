@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../core/providers/theme_provider.dart';
 import '../../../core/providers/feedback_provider.dart';
 import 'theme_gallery_screen.dart';
+import '../../../shared/widgets/brand_signature.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -129,19 +130,17 @@ class SettingsScreen extends StatelessWidget {
                   style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
               trailing: const Icon(Icons.chevron_left),
               onTap: () {
-                showAboutDialog(
+                showDialog(
                   context: context,
-                  applicationName: 'حسابگر من',
-                  applicationVersion: '۱.۰.۰',
-                  applicationLegalese: 'ماشین‌حساب و ابزارهای مالی شخصی',
-                  children: const [
-                    SizedBox(height: 12),
-                    Text(
-                      'ماشین‌حساب علمی، مبدل واحد، مالی، هزینه و درآمد، تقویم شمسی و تم‌های متنوع.',
-                      style:
-                          TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+                  builder: (ctx) => Dialog(
+                    backgroundColor: const Color(0xFFFF8A42),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24)),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+                      child: BrandSignature(),
                     ),
-                  ],
+                  ),
                 );
               },
             ),

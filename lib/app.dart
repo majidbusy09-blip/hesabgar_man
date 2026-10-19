@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'core/providers/theme_provider.dart';
+import 'core/providers/feedback_provider.dart';
 import 'shared/widgets/main_scaffold.dart';
 
 class HesabgarManApp extends StatelessWidget {
@@ -9,8 +10,11 @@ class HesabgarManApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => FeedbackProvider()),
+      ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
           if (themeProvider.loading) {

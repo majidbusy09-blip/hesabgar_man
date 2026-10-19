@@ -1,7 +1,8 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
+import 'core/providers/theme_provider.dart';
 import 'shared/widgets/main_scaffold.dart';
 
 class HesabgarManApp extends StatelessWidget {
@@ -9,20 +10,27 @@ class HesabgarManApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'حسابگر من',
-      debugShowCheckedModeBanner: false,
-      locale: const Locale('fa', 'IR'),
-      supportedLocales: const [Locale('fa', 'IR')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
-      home: const MainScaffold(),
+    return ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: Consumer<ThemeProvider>(
+        builder: (context, theme, _) {
+          return MaterialApp(
+            title: 'حسابگر من',
+            debugShowCheckedModeBanner: false,
+            locale: const Locale('fa', 'IR'),
+            supportedLocales: const [Locale('fa', 'IR')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            theme: AppTheme.light,
+            darkTheme: AppTheme.dark,
+            themeMode: theme.mode,
+            home: const MainScaffold(),
+          );
+        },
+      ),
     );
   }
 }

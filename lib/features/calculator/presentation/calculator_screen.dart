@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../logic/calculator_logic.dart';
 import 'widgets/calc_button.dart';
@@ -37,6 +38,32 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     });
   }
 
+  Future<void> _copyResult() async {
+    final text = _logic.livePreview.isNotEmpty
+        ? _logic.livePreview
+        : (_logic.result == 'خطا' ? '' : _logic.result);
+    if (text.isEmpty || text == '0' && _logic.expression.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('چیزی برای کپی نیست',
+              style: TextStyle(fontFamily: 'Vazirmatn')),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: text));
+    HapticFeedback.mediumImpact();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('کپی شد: $text',
+            style: const TextStyle(fontFamily: 'Vazirmatn')),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
   void _showFormulaDialog() {
     _textController.text = _logic.expression;
     showDialog(
@@ -50,7 +77,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             autofocus: true,
             textDirection: TextDirection.ltr,
             decoration: const InputDecoration(
-              hintText: 'مثال: sin(30) + 5^2 * 3',
+              hintText: 'مثال: sin(30)+sqrt(16)^2',
               hintStyle: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
             ),
             style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 18),
@@ -80,43 +107,101 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   void _showHistory() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
-        return _logic.history.isEmpty
-            ? const SizedBox(
-                height: 200,
-                child: Center(
-                    child: Text('تاریخچه خالی است',
-                        style: TextStyle(fontFamily: 'Vazirmatn'))),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _logic.history.length,
-                itemBuilder: (context, index) {
-                  final item = _logic.history[index];
-                  return ListTile(
-                    title: Text(item['exp']!,
-                        style: const TextStyle(
-                            fontFamily: 'Vazirmatn', fontSize: 16),
-                        textDirection: TextDirection.ltr),
-                    trailing: Text('= ${item['res']}',
-                        style: const TextStyle(
-                            fontFamily: 'Vazirmatn',
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.teal)),
-                    onTap: () {
-                      setState(() {
-                        _logic.clear();
-                        _logic.input(item['res']!);
-                      });
-                      Navigator.pop(context);
-                    },
-                  );
-                },
-              );
+        return StatefulBuilder(
+          builder: (context, setModal) {
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.5,
+              minChildSize: 0.3,
+              maxChildSize: 0.85,
+              builder: (context, scrollController) {
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                      child: Row(
+                        children: [
+                          const Text('تاریخچه',
+                              style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold)),
+                          const Spacer(),
+                          if (_logic.history.isNotEmpty)
+                            TextButton.icon(
+                              onPressed: () {
+                                setState(() => _logic.clearHistory());
+                                setModal(() {});
+                              },
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              label: const Text('پاک کردن',
+                                  style: TextStyle(fontFamily: 'Vazirmatn')),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: _logic.history.isEmpty
+                          ? const Center(
+                              child: Text('تاریخچه خالی است',
+                                  style: TextStyle(fontFamily: 'Vazirmatn')))
+                          : ListView.builder(
+                              controller: scrollController,
+                              padding: const EdgeInsets.all(12),
+                              itemCount: _logic.history.length,
+                              itemBuilder: (context, index) {
+                                final item = _logic.history[index];
+                                return Card(
+                                  child: ListTile(
+                                    title: Text(item['exp']!,
+                                        style: const TextStyle(
+                                            fontFamily: 'Vazirmatn',
+                                            fontSize: 15),
+                                        textDirection: TextDirection.ltr),
+                                    trailing: Text('= ${item['res']}',
+                                        style: const TextStyle(
+                                            fontFamily: 'Vazirmatn',
+                                            fontSize: 17,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.teal)),
+                                    onTap: () {
+                                      setState(() {
+                                        _logic.clear();
+                                        _logic.input(item['res']!);
+                                      });
+                                      Navigator.pop(context);
+                                    },
+                                    onLongPress: () async {
+                                      await Clipboard.setData(
+                                          ClipboardData(text: item['res']!));
+                                      HapticFeedback.lightImpact();
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
       },
+    );
+  }
+
+  void _showQuickCalc() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const _QuickCalcSheet(),
     );
   }
 
@@ -139,26 +224,33 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               title: const Text('حسابگر من'),
               actions: [
                 IconButton(
-                    icon: const Icon(Icons.straighten),
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => const ConverterScreen()),
-                      );
-                    },
-                    tooltip: 'مبدل واحد'),
+                  icon: const Icon(Icons.flash_on_outlined),
+                  onPressed: _showQuickCalc,
+                  tooltip: 'محاسبه سریع',
+                ),
                 IconButton(
-                    icon: const Icon(Icons.keyboard),
-                    onPressed: _showFormulaDialog,
-                    tooltip: 'تایپ فرمول'),
+                  icon: const Icon(Icons.straighten),
+                  onPressed: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ConverterScreen()));
+                  },
+                  tooltip: 'مبدل واحد',
+                ),
                 IconButton(
-                    icon: const Icon(Icons.history),
-                    onPressed: _showHistory,
-                    tooltip: 'تاریخچه'),
+                  icon: const Icon(Icons.keyboard),
+                  onPressed: _showFormulaDialog,
+                  tooltip: 'تایپ فرمول',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.history),
+                  onPressed: _showHistory,
+                  tooltip: 'تاریخچه',
+                ),
                 IconButton(
                   icon: Icon(
-                      _isScientific ? Icons.calculate : Icons.functions,
-                      color: AppColors.primary),
+                    _isScientific ? Icons.calculate : Icons.functions,
+                    color: AppColors.primary,
+                  ),
                   onPressed: () =>
                       setState(() => _isScientific = !_isScientific),
                   tooltip: _isScientific ? 'ساده' : 'علمی',
@@ -173,24 +265,22 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  // ================= حالت عمودی =================
   Widget _buildPortraitLayout(bool isDark) {
     final buttons = _isScientific ? _sciButtons : _simpleButtons;
     const crossCount = 4;
 
     return Column(
       children: [
-        _buildDisplay(isDark, 140),
+        _buildDisplay(isDark, 150),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
               final rows = (buttons.length / crossCount).ceil();
-              final availableHeight = constraints.maxHeight - 8;
-              final availableWidth = constraints.maxWidth - 16;
-              final btnHeight = (availableHeight - (rows - 1) * 6) / rows;
-              final btnWidth =
-                  (availableWidth - (crossCount - 1) * 6) / crossCount;
-              final aspect = btnWidth / btnHeight;
+              final h = constraints.maxHeight - 8;
+              final w = constraints.maxWidth - 16;
+              final btnH = (h - (rows - 1) * 5) / rows;
+              final btnW = (w - (crossCount - 1) * 5) / crossCount;
+              final aspect = btnW / btnH;
 
               return Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
@@ -200,9 +290,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: crossCount,
-                      childAspectRatio: aspect.clamp(0.9, 1.6),
-                      crossAxisSpacing: 6,
-                      mainAxisSpacing: 6,
+                      childAspectRatio: aspect.clamp(0.85, 1.7),
+                      crossAxisSpacing: 5,
+                      mainAxisSpacing: 5,
                     ),
                     itemCount: buttons.length,
                     itemBuilder: (context, index) {
@@ -225,9 +315,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  // ================= حالت افقی =================
   Widget _buildLandscapeLayout(bool isDark) {
-    // هر ردیف دقیقاً ۶ دکمه — بدون سلول خالی
     final rows = <List<Map<String, dynamic>>>[
       [
         {'label': 'MC', 'isMemory': true},
@@ -249,7 +337,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         {'label': '(', 'isOp': true},
         {'label': ')', 'isOp': true},
         {'label': '√', 'isSci': true},
-        {'label': 'x²', 'isSci': true},
+        {'label': '∛', 'isSci': true},
         {'label': '^', 'isOp': true},
         {'label': 'π', 'isSci': true},
       ],
@@ -266,7 +354,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         {'label': '5'},
         {'label': '6'},
         {'label': '×', 'isOp': true},
-        {'label': '1/x', 'isSci': true},
+        {'label': 'abs', 'isSci': true},
         {'label': '%', 'isSci': true},
       ],
       [
@@ -278,8 +366,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         {'label': '.'},
       ],
     ];
-
-    // ردیف آخر: + و = (عرض بیشتر برای =)
     final lastRow = [
       {'label': '+', 'isOp': true, 'flex': 2},
       {'label': '=', 'isEq': true, 'flex': 4},
@@ -287,7 +373,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
     return Row(
       children: [
-        // سمت راست: نمایشگر + اکشن‌ها
         Expanded(
           flex: 3,
           child: Column(
@@ -299,21 +384,26 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     IconButton(
+                        icon: const Icon(Icons.flash_on_outlined, size: 22),
+                        onPressed: _showQuickCalc),
+                    IconButton(
+                        icon: const Icon(Icons.straighten, size: 22),
+                        onPressed: () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => const ConverterScreen()));
+                        }),
+                    IconButton(
                         icon: const Icon(Icons.keyboard, size: 22),
-                        onPressed: _showFormulaDialog,
-                        tooltip: 'تایپ فرمول'),
+                        onPressed: _showFormulaDialog),
                     IconButton(
                         icon: const Icon(Icons.history, size: 22),
-                        onPressed: _showHistory,
-                        tooltip: 'تاریخچه'),
+                        onPressed: _showHistory),
                   ],
                 ),
               ),
             ],
           ),
         ),
-
-        // سمت چپ: دکمه‌ها با Column از Rowها
         Expanded(
           flex: 7,
           child: Padding(
@@ -322,8 +412,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               textDirection: TextDirection.ltr,
               child: Column(
                 children: [
-                  // ۶ ردیف اول
-                  for (final row in rows.sublist(0, 6))
+                  for (final row in rows)
                     Expanded(
                       child: Row(
                         children: [
@@ -343,7 +432,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                         ],
                       ),
                     ),
-                  // ردیف آخر: + و = با عرض بیشتر
                   Expanded(
                     child: Row(
                       children: [
@@ -356,7 +444,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                                 btn['label'] as String,
                                 isOp: btn['isOp'] == true,
                                 isEq: btn['isEq'] == true,
-                                isSci: btn['isSci'] == true,
                               ),
                             ),
                           ),
@@ -373,69 +460,102 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   Widget _buildDisplay(bool isDark, double height) {
-    return Container(
-      height: height == double.infinity ? null : height,
-      width: double.infinity,
-      margin: const EdgeInsets.all(10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-            color: isDark ? Colors.grey[800]! : Colors.grey[300]!),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _logic.memoryDisplay,
-                style: const TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 13,
-                    color: Colors.amber,
-                    fontWeight: FontWeight.bold),
-              ),
-              Text(
-                _logic.angleMode,
-                style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 13,
-                    color: isDark ? Colors.grey[500] : Colors.grey[600]),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            _logic.expression.isEmpty ? '' : _logic.expression,
-            style: TextStyle(
-                fontFamily: 'Vazirmatn',
-                fontSize: 16,
-                color: isDark ? Colors.grey[400] : Colors.grey[600]),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textDirection: TextDirection.ltr,
-            textAlign: TextAlign.left,
-          ),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerRight,
-            child: Text(
-              _logic.result,
+    final preview = _logic.livePreview;
+    final showPreview = preview.isNotEmpty && preview != _logic.expression;
+
+    return GestureDetector(
+      onLongPress: _copyResult,
+      child: Container(
+        height: height == double.infinity ? null : height,
+        width: double.infinity,
+        margin: const EdgeInsets.all(10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: isDark ? Colors.grey[800]! : Colors.grey[300]!),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _logic.memoryDisplay,
+                  style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 13,
+                      color: Colors.amber,
+                      fontWeight: FontWeight.bold),
+                ),
+                Row(
+                  children: [
+                    Icon(Icons.copy,
+                        size: 14,
+                        color: isDark ? Colors.grey[600] : Colors.grey[400]),
+                    const SizedBox(width: 6),
+                    Text(
+                      _logic.angleMode,
+                      style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 13,
+                          color:
+                              isDark ? Colors.grey[500] : Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const Spacer(),
+            Text(
+              _logic.expression.isEmpty ? '' : _logic.expression,
               style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 16,
+                  color: isDark ? Colors.grey[400] : Colors.grey[600]),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textDirection: TextDirection.ltr,
+              textAlign: TextAlign.left,
+            ),
+            const SizedBox(height: 4),
+            // نتیجه اصلی یا پیش‌نمایش زنده
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                showPreview
+                    ? preview
+                    : (_logic.result.isEmpty ? '0' : _logic.result),
+                style: TextStyle(
                   fontFamily: 'Vazirmatn',
                   fontSize: 36,
                   fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : Colors.black87),
-              maxLines: 1,
-              textDirection: TextDirection.ltr,
+                  color: showPreview
+                      ? (isDark ? Colors.tealAccent[100] : Colors.teal[700])
+                      : (isDark ? Colors.white : Colors.black87),
+                ),
+                maxLines: 1,
+                textDirection: TextDirection.ltr,
+              ),
             ),
-          ),
-        ],
+            if (showPreview)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  'پیش‌نمایش — لمس طولانی برای کپی',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 10,
+                    color: isDark ? Colors.grey[600] : Colors.grey[500],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -460,7 +580,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  // ---------- دکمه‌های ساده (۴×۵ = ۲۰) ----------
   static const List<Map<String, dynamic>> _simpleButtons = [
     {'label': 'C', 'isOp': true},
     {'label': '⌫', 'isOp': true},
@@ -484,7 +603,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '=', 'isEq': true},
   ];
 
-// ---------- دکمه‌های علمی عمودی (۴×۹ = ۳۶) ----------
   static const List<Map<String, dynamic>> _sciButtons = [
     {'label': 'MC', 'isMemory': true},
     {'label': 'MR', 'isMemory': true},
@@ -494,18 +612,22 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': 'cos', 'isSci': true},
     {'label': 'tan', 'isSci': true},
     {'label': 'C', 'isOp': true},
+    {'label': 'asin', 'isSci': true},
+    {'label': 'acos', 'isSci': true},
+    {'label': 'atan', 'isSci': true},
+    {'label': '⌫', 'isOp': true},
     {'label': 'ln', 'isSci': true},
     {'label': 'log', 'isSci': true},
     {'label': '√', 'isSci': true},
-    {'label': '⌫', 'isOp': true},
+    {'label': '∛', 'isSci': true},
     {'label': 'x²', 'isSci': true},
-    {'label': '^', 'isOp': true},
+    {'label': 'x³', 'isSci': true},
     {'label': '(', 'isOp': true},
     {'label': ')', 'isOp': true},
     {'label': 'π', 'isSci': true},
     {'label': 'e', 'isSci': true},
-    {'label': '!', 'isSci': true},
-    {'label': '%', 'isSci': true},
+    {'label': '10ˣ', 'isSci': true},
+    {'label': 'eˣ', 'isSci': true},
     {'label': '7'},
     {'label': '8'},
     {'label': '9'},
@@ -523,4 +645,142 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '+', 'isOp': true},
     {'label': '=', 'isEq': true},
   ];
+}
+
+/// محاسبه سریع — شبیه ویجت داخل اپ
+class _QuickCalcSheet extends StatefulWidget {
+  const _QuickCalcSheet();
+
+  @override
+  State<_QuickCalcSheet> createState() => _QuickCalcSheetState();
+}
+
+class _QuickCalcSheetState extends State<_QuickCalcSheet> {
+  final _logic = CalculatorLogic();
+
+  void _tap(String v) {
+    setState(() {
+      if (v == '⌫') {
+        _logic.backspace();
+      } else {
+        _logic.input(v);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final keys = [
+      ['C', '⌫', '%', '÷'],
+      ['7', '8', '9', '×'],
+      ['4', '5', '6', '-'],
+      ['1', '2', '3', '+'],
+      ['()', '0', '.', '='],
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewPadding.bottom + 12,
+        top: 12,
+        left: 16,
+        right: 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey[400],
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('محاسبه سریع',
+              style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _logic.expression.isEmpty ? ' ' : _logic.expression,
+                  style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 14,
+                      color: Colors.grey[600]),
+                  textDirection: TextDirection.ltr,
+                ),
+                Text(
+                  _logic.livePreview.isNotEmpty
+                      ? _logic.livePreview
+                      : _logic.result,
+                  style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: scheme.primary),
+                  textDirection: TextDirection.ltr,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final row in keys)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  for (final k in row)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: SizedBox(
+                          height: 52,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: k == '='
+                                  ? scheme.primary
+                                  : (['÷', '×', '-', '+', '%', 'C', '⌫', '()']
+                                          .contains(k)
+                                      ? scheme.secondaryContainer
+                                      : scheme.surfaceContainerHighest),
+                              foregroundColor: k == '='
+                                  ? scheme.onPrimary
+                                  : scheme.onSurface,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                            ),
+                            onPressed: () => _tap(k),
+                            child: Text(k,
+                                style: const TextStyle(
+                                    fontFamily: 'Vazirmatn',
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

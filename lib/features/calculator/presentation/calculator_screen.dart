@@ -671,7 +671,8 @@ class _QuickCalcSheetState extends State<_QuickCalcSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final keys = [
+    // ترتیب استاندارد چپ‌به‌راست
+    const keys = [
       ['C', '⌫', '%', '÷'],
       ['7', '8', '9', '×'],
       ['4', '5', '6', '-'],
@@ -741,44 +742,61 @@ class _QuickCalcSheetState extends State<_QuickCalcSheet> {
             ),
           ),
           const SizedBox(height: 12),
-          for (final row in keys)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  for (final k in row)
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: SizedBox(
-                          height: 52,
-                          child: FilledButton(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: k == '='
-                                  ? scheme.primary
-                                  : (['÷', '×', '-', '+', '%', 'C', '⌫', '()']
-                                          .contains(k)
-                                      ? scheme.secondaryContainer
-                                      : scheme.surfaceContainerHighest),
-                              foregroundColor: k == '='
-                                  ? scheme.onPrimary
-                                  : scheme.onSurface,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14)),
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Column(
+              children: [
+                for (final row in keys)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        for (final k in row)
+                          Expanded(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              child: SizedBox(
+                                height: 52,
+                                child: FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: k == '='
+                                        ? scheme.primary
+                                        : ([
+                                            '÷',
+                                            '×',
+                                            '-',
+                                            '+',
+                                            '%',
+                                            'C',
+                                            '⌫',
+                                            '()'
+                                          ].contains(k)
+                                            ? scheme.secondaryContainer
+                                            : scheme.surfaceContainerHighest),
+                                    foregroundColor: k == '='
+                                        ? scheme.onPrimary
+                                        : scheme.onSurface,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14)),
+                                  ),
+                                  onPressed: () => _tap(k),
+                                  child: Text(k,
+                                      style: const TextStyle(
+                                          fontFamily: 'Vazirmatn',
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold)),
+                                ),
+                              ),
                             ),
-                            onPressed: () => _tap(k),
-                            child: Text(k,
-                                style: const TextStyle(
-                                    fontFamily: 'Vazirmatn',
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold)),
                           ),
-                        ),
-                      ),
+                      ],
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
+          ),
         ],
       ),
     );

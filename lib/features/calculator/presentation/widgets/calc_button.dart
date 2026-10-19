@@ -23,15 +23,18 @@ class CalcButton extends StatefulWidget {
   State<CalcButton> createState() => _CalcButtonState();
 }
 
-class _CalcButtonState extends State<CalcButton> with SingleTickerProviderStateMixin {
+class _CalcButtonState extends State<CalcButton>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scale;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 60));
-    _scale = Tween<double>(begin: 1.0, end: 0.92).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _controller = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 60));
+    _scale = Tween<double>(begin: 1.0, end: 0.92)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -43,16 +46,17 @@ class _CalcButtonState extends State<CalcButton> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+    final scheme = Theme.of(context).colorScheme;
+
     Color bgColor;
     Color textColor;
 
     if (widget.isEqual) {
-      bgColor = const Color(0xFF2A9D8F);
-      textColor = Colors.white;
+      bgColor = scheme.primary;
+      textColor = scheme.onPrimary;
     } else if (widget.isOperator) {
-      bgColor = const Color(0xFFE76F51);
-      textColor = Colors.white;
+      bgColor = scheme.secondary;
+      textColor = scheme.onSecondary;
     } else if (widget.isMemory) {
       bgColor = isDark ? const Color(0xFF3A3A3A) : const Color(0xFFD0D0D0);
       textColor = isDark ? Colors.amber : Colors.brown;
@@ -91,7 +95,8 @@ class _CalcButtonState extends State<CalcButton> with SingleTickerProviderStateM
                   widget.label,
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
-                    fontSize: widget.isScientific || widget.isMemory ? 13 : 20,
+                    fontSize:
+                        widget.isScientific || widget.isMemory ? 13 : 20,
                     fontWeight: FontWeight.bold,
                     color: textColor,
                   ),

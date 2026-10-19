@@ -31,7 +31,6 @@ jobs:
           cp pubspec.yaml /tmp/backup/
           if [ -d assets ]; then cp -r assets /tmp/backup/; fi
           if [ -f pubspec.lock ]; then cp pubspec.lock /tmp/backup/; fi
-          ls -la /tmp/backup/
 
       - name: Generate Android platform files
         run: flutter create . --platforms=android --project-name hesabgar_man --org com.example
@@ -43,18 +42,124 @@ jobs:
           cp /tmp/backup/pubspec.yaml .
           if [ -d /tmp/backup/assets ]; then rm -rf assets; cp -r /tmp/backup/assets .; fi
           if [ -f /tmp/backup/pubspec.lock ]; then cp /tmp/backup/pubspec.lock .; fi
-          echo "=== pubspec ==="
-          grep -A40 "^dependencies:" pubspec.yaml
-          ls -la assets/brand/ || true
+
+      - name: Setup release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "NO_RELEASE_KEY=1" >> $GITHUB_ENV
+            echo "No KEYSTORE_BASE64 secret — using default debug signing"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/hesabgar-release.jks
+          printf '%s\n' \
+            "storePassword=$KEYSTORE_PASSWORD" \
+            "keyPassword=$KEY_PASSWORD" \
+            "keyAlias=$KEY_ALIAS" \
+            "storeFile=hesabgar-release.jks" \
+            > android/key.properties
+          echo "NO_RELEASE_KEY=0" >> $GITHUB_ENV
+          ls -la android/app/hesabgar-release.jks android/key.properties
+
+      - name: Configure Gradle signing
+        if: env.NO_RELEASE_KEY == '0'
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          import re
+
+          candidates = [
+              Path("android/app/build.gradle"),
+              Path("android/app/build.gradle.kts"),
+          ]
+          path = next((p for p in candidates if p.exists()), None)
+          if path is None:
+              raise SystemExit("No app build.gradle found")
+
+          text = path.read_text()
+          if "signingConfigs" in text and "key.properties" in text:
+              print("Already configured")
+              raise SystemExit(0)
+
+          if path.suffix == ".kts":
+              # Convert approach: prepend groovy is hard; patch kts simply
+              header = '''
+          import java.util.Properties
+          import java.io.FileInputStream
+
+          val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+              text = header + text
+              # inject signingConfigs into android { }
+              text = text.replace(
+                  "android {",
+                  '''android {
+              signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String?
+                      keyPassword = keystoreProperties["keyPassword"] as String?
+                      storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
+                      storePassword = keystoreProperties["storePassword"] as String?
+                  }
+              }
+          ''',
+                  1,
+              )
+              text = re.sub(
+                  r'(release\s*\{)',
+                  r'\1\n            signingConfig = signingConfigs.getByName("release")',
+                  text,
+                  count=1,
+              )
+          else:
+              header = '''
+          def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file('key.properties')
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+              text = header + text
+              text = text.replace(
+                  "android {",
+                  '''android {
+              signingConfigs {
+                  release {
+                      keyAlias keystoreProperties['keyAlias']
+                      keyPassword keystoreProperties['keyPassword']
+                      storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+                      storePassword keystoreProperties['storePassword']
+                  }
+              }
+          ''',
+                  1,
+              )
+              text = re.sub(
+                  r'(release\s*\{)',
+                  r'\1\n            signingConfig signingConfigs.release',
+                  text,
+                  count=1,
+              )
+
+          path.write_text(text)
+          print(f"Patched {path}")
+          PY
 
       - name: Add gallery permission
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if ! grep -q "READ_MEDIA_IMAGES" "$MANIFEST"; then
             sed -i 's|<application|  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>\n  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application|' "$MANIFEST"
-            echo "permissions added"
-          else
-            echo "permissions already present"
           fi
 
       - name: Download Vazirmatn Font
@@ -69,7 +174,7 @@ jobs:
         run: flutter pub get
 
       - name: Generate launcher icons
-        run: dart run flutter_launcher_icons
+        run: dart run flutter_launcher_icons || true
 
       - name: Build APK
         run: flutter build apk --release

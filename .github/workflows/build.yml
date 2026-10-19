@@ -29,6 +29,7 @@ jobs:
           mkdir -p /tmp/backup
           cp -r lib /tmp/backup/
           cp pubspec.yaml /tmp/backup/
+          if [ -d assets ]; then cp -r assets /tmp/backup/; fi
           if [ -f pubspec.lock ]; then cp pubspec.lock /tmp/backup/; fi
           ls -la /tmp/backup/
 
@@ -40,9 +41,11 @@ jobs:
           rm -rf lib
           cp -r /tmp/backup/lib .
           cp /tmp/backup/pubspec.yaml .
+          if [ -d /tmp/backup/assets ]; then rm -rf assets; cp -r /tmp/backup/assets .; fi
           if [ -f /tmp/backup/pubspec.lock ]; then cp /tmp/backup/pubspec.lock .; fi
-          echo "=== pubspec dependencies ==="
-          grep -A30 "^dependencies:" pubspec.yaml
+          echo "=== pubspec ==="
+          grep -A40 "^dependencies:" pubspec.yaml
+          ls -la assets/brand/ || true
 
       - name: Add gallery permission
         run: |
@@ -53,7 +56,6 @@ jobs:
           else
             echo "permissions already present"
           fi
-          head -25 "$MANIFEST"
 
       - name: Download Vazirmatn Font
         run: |
@@ -62,10 +64,12 @@ jobs:
           unzip -j vazir.zip "fonts/ttf/Vazirmatn-Regular.ttf" -d assets/fonts/
           unzip -j vazir.zip "fonts/ttf/Vazirmatn-Medium.ttf" -d assets/fonts/
           unzip -j vazir.zip "fonts/ttf/Vazirmatn-Bold.ttf" -d assets/fonts/
-          ls -la assets/fonts/
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
 
       - name: Build APK
         run: flutter build apk --release

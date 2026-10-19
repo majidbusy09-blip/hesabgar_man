@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/providers/theme_provider.dart';
+import '../../../core/providers/feedback_provider.dart';
 import 'theme_gallery_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -10,6 +11,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
+    final feedback = context.watch<FeedbackProvider>();
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -17,7 +19,6 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // کارت تم فعلی
           Card(
             clipBehavior: Clip.antiAlias,
             child: InkWell(
@@ -38,6 +39,12 @@ class SettingsScreen extends StatelessWidget {
                       child: Image.file(
                         File(themeProvider.imagePath!),
                         fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: scheme.primaryContainer,
+                          alignment: Alignment.center,
+                          child: const Text('🎨',
+                              style: TextStyle(fontSize: 36)),
+                        ),
                       ),
                     )
                   else
@@ -45,10 +52,7 @@ class SettingsScreen extends StatelessWidget {
                       height: 80,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [
-                            scheme.primary,
-                            scheme.secondary,
-                          ],
+                          colors: [scheme.primary, scheme.secondary],
                         ),
                       ),
                       child: Center(
@@ -61,7 +65,8 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ),
                   ListTile(
-                    leading: Icon(Icons.palette_outlined, color: scheme.primary),
+                    leading:
+                        Icon(Icons.palette_outlined, color: scheme.primary),
                     title: const Text('تم و ظاهر',
                         style: TextStyle(
                             fontFamily: 'Vazirmatn',
@@ -77,18 +82,44 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: Text(
-              'تم‌های مردانه، زنانه، فصلی و ساخت تم از عکس در گالری تم‌ها',
-              style: TextStyle(
-                  fontFamily: 'Vazirmatn', fontSize: 12, color: Colors.grey),
+          const SizedBox(height: 12),
+
+          // صدا و ویبره
+          Card(
+            child: Column(
+              children: [
+                const ListTile(
+                  leading: Icon(Icons.tune),
+                  title: Text('بازخورد دکمه‌ها',
+                      style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w600)),
+                  subtitle: Text('برای ماشین‌حساب و منوها',
+                      style:
+                          TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                ),
+                SwitchListTile(
+                  title: const Text('ویبره',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                  secondary: const Icon(Icons.vibration),
+                  value: feedback.hapticEnabled,
+                  onChanged: (v) => feedback.setHaptic(v),
+                ),
+                SwitchListTile(
+                  title: const Text('صدای کلیک',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                  secondary: const Icon(Icons.volume_up_outlined),
+                  value: feedback.soundEnabled,
+                  onChanged: (v) {
+                    feedback.setSound(v);
+                    if (v) feedback.playTap();
+                  },
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
 
-          // درباره
           Card(
             child: ListTile(
               leading: Icon(Icons.info_outline, color: scheme.primary),
@@ -106,25 +137,13 @@ class SettingsScreen extends StatelessWidget {
                   children: const [
                     SizedBox(height: 12),
                     Text(
-                      'شامل ماشین‌حساب علمی، محاسبات مالی، ردیاب هزینه، تقویم شمسی و تم‌های متنوع.',
-                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+                      'ماشین‌حساب علمی، مبدل واحد، مالی، هزینه و درآمد، تقویم شمسی و تم‌های متنوع.',
+                      style:
+                          TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
                     ),
                   ],
                 );
               },
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          Card(
-            child: ListTile(
-              leading: Icon(Icons.calculate_outlined, color: scheme.primary),
-              title: const Text('امکانات',
-                  style: TextStyle(fontFamily: 'Vazirmatn')),
-              subtitle: const Text(
-                'ماشین‌حساب • مالی • هزینه‌ها • تقویم • تم‌ها',
-                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
-              ),
             ),
           ),
         ],

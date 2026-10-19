@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../logic/calculator_logic.dart';
 import 'widgets/calc_button.dart';
+import '../../converter/presentation/converter_screen.dart';
 
 class CalculatorScreen extends StatefulWidget {
   const CalculatorScreen({super.key});
@@ -137,6 +138,15 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           : AppBar(
               title: const Text('حسابگر من'),
               actions: [
+                IconButton(
+                    icon: const Icon(Icons.straighten),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const ConverterScreen()),
+                      );
+                    },
+                    tooltip: 'مبدل واحد'),
                 IconButton(
                     icon: const Icon(Icons.keyboard),
                     onPressed: _showFormulaDialog,
@@ -454,7 +464,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   static const List<Map<String, dynamic>> _simpleButtons = [
     {'label': 'C', 'isOp': true},
     {'label': '⌫', 'isOp': true},
-    {'label': '%', 'isSci': true},
+    {'label': '()', 'isOp': true},
     {'label': '÷', 'isOp': true},
     {'label': '7'},
     {'label': '8'},
@@ -470,11 +480,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '+', 'isOp': true},
     {'label': '0'},
     {'label': '.'},
-    {'label': 'π', 'isSci': true},
+    {'label': '%', 'isSci': true},
     {'label': '=', 'isEq': true},
   ];
 
-  // ---------- دکمه‌های علمی عمودی (۴×۸ = ۳۲) ----------
+// ---------- دکمه‌های علمی عمودی (۴×۹ = ۳۶) ----------
   static const List<Map<String, dynamic>> _sciButtons = [
     {'label': 'MC', 'isMemory': true},
     {'label': 'MR', 'isMemory': true},
@@ -492,6 +502,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '^', 'isOp': true},
     {'label': '(', 'isOp': true},
     {'label': ')', 'isOp': true},
+    {'label': 'π', 'isSci': true},
+    {'label': 'e', 'isSci': true},
+    {'label': '!', 'isSci': true},
+    {'label': '%', 'isSci': true},
     {'label': '7'},
     {'label': '8'},
     {'label': '9'},

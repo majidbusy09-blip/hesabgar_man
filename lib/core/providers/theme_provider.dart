@@ -1,10 +1,13 @@
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:palette_generator/palette_generator.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../theme/app_theme.dart';
 import '../theme/app_theme_presets.dart';
 
@@ -28,6 +31,9 @@ class ThemeProvider extends ChangeNotifier {
   bool get useCustom => _useCustom;
   String? get imagePath => _imagePath;
   bool get loading => _loading;
+  bool get customDark => _customDark;
+  Color get customSeed => _customSeed;
+  Color get customSecondary => _customSecondary;
 
   AppThemePreset get currentPreset => AppThemePresets.byId(_presetId);
 
@@ -42,7 +48,7 @@ class ThemeProvider extends ChangeNotifier {
     return AppTheme.fromPreset(currentPreset);
   }
 
-  /// برای سازگاری با MaterialApp: همیشه light می‌گذاریم و theme را خودمان می‌دهیم
+  /// سازگاری با کد قدیمی (دیگر استفاده نمی‌شود)
   ThemeMode get mode => ThemeMode.light;
 
   String get label {
@@ -54,26 +60,40 @@ class ThemeProvider extends ChangeNotifier {
     _load();
   }
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    _presetId = prefs.getString(_keyPreset) ?? 'default';
-    _useCustom = prefs.getBool(_keyUseCustom) ?? false;
-    _customDark = prefs.getBool(_keyCustomDark) ?? false;
-    _imagePath = prefs.getString(_keyImagePath);
-
-    final seedVal = prefs.getInt(_keyCustomSeed);
-    final secVal = prefs.getInt(_keyCustomSecondary);
-    if (seedVal != null) _customSeed = Color(seedVal);
-    if (secVal != null) _customSecondary = Color(secVal);
-
-    // بررسی وجود فایل عکس
-    if (_imagePath != null && !File(_imagePath!).existsSync()) {
-      _imagePath = null;
-      if (_useCustom) {
-        _useCustom = false;
-      }
+  int _colorToInt(Color c) {
+    // سازگار با Flutter جدید و قدیم
+    try {
+      // ignore: deprecated_member_use
+      return c.value;
+    } catch (_) {
+      final a = (c.a * 255.0).round() & 0xff;
+      final r = (c.r * 255.0).round() & 0xff;
+      final g = (c.g * 255.0).round() & 0xff;
+      final b = (c.b * 255.0).round() & 0xff;
+      return (a << 24) | (r << 16) | (g << 8) | b;
     }
+  }
 
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _presetId = prefs.getString(_keyPreset) ?? 'default';
+      _useCustom = prefs.getBool(_keyUseCustom) ?? false;
+      _customDark = prefs.getBool(_keyCustomDark) ?? false;
+      _imagePath = prefs.getString(_keyImagePath);
+
+      final seedVal = prefs.getInt(_keyCustomSeed);
+      final secVal = prefs.getInt(_keyCustomSecondary);
+      if (seedVal != null) _customSeed = Color(seedVal);
+      if (secVal != null) _customSecondary = Color(secVal);
+
+      if (_imagePath != null && !File(_imagePath!).existsSync()) {
+        _imagePath = null;
+        if (_useCustom) _useCustom = false;
+      }
+    } catch (e) {
+      debugPrint('ThemeProvider load error: $e');
+    }
     _loading = false;
     notifyListeners();
   }
@@ -87,7 +107,18 @@ class ThemeProvider extends ChangeNotifier {
     await prefs.setBool(_keyUseCustom, false);
   }
 
-  /// انتخاب عکس از گالری و استخراج رنگ‌ها
+  /// سازگاری با settings_screen قدیمی
+  Future<void> setMode(ThemeMode mode) async {
+    // اگر کسی هنوز setMode صدا زد، به preset روشن/تاریک نگاشت می‌کنیم
+    if (mode == ThemeMode.dark) {
+      await setPreset('night');
+    } else if (mode == ThemeMode.light) {
+      await setPreset('default');
+    } else {
+      await setPreset('default');
+    }
+  }
+
   Future<bool> pickImageAndGenerateTheme() async {
     try {
       final picker = ImagePicker();
@@ -99,54 +130,56 @@ class ThemeProvider extends ChangeNotifier {
       );
       if (xfile == null) return false;
 
-      // کپی به حافظه دائم اپ
-      final dir = await getApplicationDocumentsDirectory();
-      final dest = p.join(dir.path, 'theme_bg${p.extension(xfile.path)}');
-      await File(xfile.path).copy(dest);
+      String destPath = xfile.path;
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        destPath = p.join(dir.path, 'theme_bg${p.extension(xfile.path)}');
+        await File(xfile.path).copy(destPath);
+      } catch (e) {
+        debugPrint('copy image fallback: $e');
+        destPath = xfile.path;
+      }
 
-      final imageProvider = FileImage(File(dest));
       final palette = await PaletteGenerator.fromImageProvider(
-        imageProvider,
+        FileImage(File(destPath)),
         maximumColorCount: 12,
         size: const Size(200, 200),
       );
 
-      // انتخاب بهترین رنگ‌ها
       final dominant = palette.dominantColor?.color ??
           palette.vibrantColor?.color ??
           palette.mutedColor?.color ??
           const Color(0xFF2A9D8F);
 
-      final secondary = palette.vibrantColor?.color ??
+      var secondary = palette.vibrantColor?.color ??
           palette.lightVibrantColor?.color ??
           palette.darkVibrantColor?.color ??
           palette.mutedColor?.color ??
           dominant;
 
-      // تشخیص روشن/تاریک بودن بر اساس روشنایی dominant
-      final luminance = dominant.computeLuminance();
-      final isDark = luminance < 0.35;
+      if (secondary == dominant) {
+        secondary = Color.lerp(dominant, Colors.orange, 0.4)!;
+      }
+
+      final isDark = dominant.computeLuminance() < 0.35;
 
       _customSeed = dominant;
-      _customSecondary = secondary == dominant
-          ? Color.lerp(dominant, Colors.orange, 0.4)!
-          : secondary;
+      _customSecondary = secondary;
       _customDark = isDark;
-      _imagePath = dest;
+      _imagePath = destPath;
       _useCustom = true;
-
       notifyListeners();
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_keyUseCustom, true);
-      await prefs.setInt(_keyCustomSeed, _customSeed.value);
-      await prefs.setInt(_keyCustomSecondary, _customSecondary.value);
+      await prefs.setInt(_keyCustomSeed, _colorToInt(_customSeed));
+      await prefs.setInt(_keyCustomSecondary, _colorToInt(_customSecondary));
       await prefs.setBool(_keyCustomDark, _customDark);
-      await prefs.setString(_keyImagePath, dest);
+      await prefs.setString(_keyImagePath, destPath);
 
       return true;
-    } catch (e) {
-      debugPrint('Theme from image error: $e');
+    } catch (e, st) {
+      debugPrint('Theme from image error: $e\n$st');
       return false;
     }
   }
@@ -166,7 +199,6 @@ class ThemeProvider extends ChangeNotifier {
     await prefs.remove(_keyImagePath);
   }
 
-  /// تغییر دستی تاریک/روشن برای تم سفارشی
   Future<void> toggleCustomDark(bool value) async {
     if (!_useCustom) return;
     _customDark = value;
@@ -174,8 +206,4 @@ class ThemeProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyCustomDark, value);
   }
-
-  bool get customDark => _customDark;
-  Color get customSeed => _customSeed;
-  Color get customSecondary => _customSecondary;
 }

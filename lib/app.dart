@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
-import 'core/theme/app_theme.dart';
 import 'core/providers/theme_provider.dart';
 import 'shared/widgets/main_scaffold.dart';
 
@@ -13,7 +12,16 @@ class HesabgarManApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => ThemeProvider(),
       child: Consumer<ThemeProvider>(
-        builder: (context, theme, _) {
+        builder: (context, themeProvider, _) {
+          if (themeProvider.loading) {
+            return const MaterialApp(
+              debugShowCheckedModeBanner: false,
+              home: Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              ),
+            );
+          }
+
           return MaterialApp(
             title: 'حسابگر من',
             debugShowCheckedModeBanner: false,
@@ -24,9 +32,7 @@ class HesabgarManApp extends StatelessWidget {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-            theme: AppTheme.light,
-            darkTheme: AppTheme.dark,
-            themeMode: theme.mode,
+            theme: themeProvider.theme,
             home: const MainScaffold(),
           );
         },

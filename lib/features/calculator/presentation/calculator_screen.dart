@@ -4,6 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../logic/calculator_logic.dart';
 import 'widgets/calc_button.dart';
 import '../../converter/presentation/converter_screen.dart';
+import '../../compound/presentation/compound_screen.dart';
 
 class CalculatorScreen extends StatefulWidget {
   const CalculatorScreen({super.key});
@@ -227,6 +228,14 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   icon: const Icon(Icons.flash_on_outlined),
                   onPressed: _showQuickCalc,
                   tooltip: 'محاسبه سریع',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.school_outlined),
+                  onPressed: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const CompoundScreen()));
+                  },
+                  tooltip: 'جمع مرکب',
                 ),
                 IconButton(
                   icon: const Icon(Icons.straighten),

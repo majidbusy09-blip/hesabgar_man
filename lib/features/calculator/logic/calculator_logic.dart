@@ -4,6 +4,7 @@ import 'package:math_expressions/math_expressions.dart';
 class CalculatorLogic {
   String _expression = '';
   String _result = '0';
+  String _livePreview = '';
   double _memory = 0;
   bool _isDegree = true;
   int _openParens = 0;
@@ -11,6 +12,7 @@ class CalculatorLogic {
 
   String get expression => _expression;
   String get result => _result;
+  String get livePreview => _livePreview;
   String get memoryDisplay => _memory != 0 ? 'M' : '';
   String get angleMode => _isDegree ? 'DEG' : 'RAD';
   List<Map<String, String>> get history => List.unmodifiable(_history);
@@ -20,9 +22,7 @@ class CalculatorLogic {
   void memoryClear() => _memory = 0;
 
   void memoryRecall() {
-    if (_memory != 0) {
-      _appendToken(_formatNumber(_memory));
-    }
+    if (_memory != 0) _appendToken(_formatNumber(_memory));
   }
 
   void memoryAdd() {
@@ -37,7 +37,6 @@ class CalculatorLogic {
     } catch (_) {}
   }
 
-  /// دکمه () مثل سامسونگ: یک‌بار باز، یک‌بار بسته
   void toggleParen() {
     if (_openParens > 0 && !_needsOpenParen()) {
       _expression += ')';
@@ -47,7 +46,7 @@ class CalculatorLogic {
       _expression += '(';
       _openParens++;
     }
-    _result = _expression.isEmpty ? '0' : _expression;
+    _syncDisplay();
   }
 
   bool _needsOpenParen() {
@@ -78,25 +77,49 @@ class CalculatorLogic {
       'sin': 'sin(',
       'cos': 'cos(',
       'tan': 'tan(',
+      'asin': 'asin(',
+      'acos': 'acos(',
+      'atan': 'atan(',
       'ln': 'ln(',
       'log': 'log(',
       '√': 'sqrt(',
+      '∛': 'cbrt(',
+      'abs': 'abs(',
+      'exp': 'exp(',
     };
 
     if (functions.containsKey(value)) {
       _maybeImplicitMul();
       _expression += functions[value]!;
       _openParens++;
-      _result = _expression;
+      _syncDisplay();
       return;
     }
 
     if (value == 'x²') {
       _expression += '^2';
-      _result = _expression;
+      _syncDisplay();
       return;
     }
-
+    if (value == 'x³') {
+      _expression += '^3';
+      _syncDisplay();
+      return;
+    }
+    if (value == '10ˣ') {
+      _maybeImplicitMul();
+      _expression += '10^(';
+      _openParens++;
+      _syncDisplay();
+      return;
+    }
+    if (value == 'eˣ') {
+      _maybeImplicitMul();
+      _expression += 'exp(';
+      _openParens++;
+      _syncDisplay();
+      return;
+    }
     if (value == '1/x') {
       if (_expression.isEmpty || _result == '0') {
         _expression = '1/';
@@ -104,59 +127,52 @@ class CalculatorLogic {
         _expression = '1/($_expression)';
         _openParens = 0;
       }
-      _result = _expression;
+      _syncDisplay();
       return;
     }
-
     if (value == '%') {
       _expression += '/100';
-      _result = _expression;
+      _syncDisplay();
       return;
     }
-
     if (value == '!') {
       _expression += '!';
-      _result = _expression;
+      _syncDisplay();
       return;
     }
-
     if (value == 'π') {
       _maybeImplicitMul();
       _expression += 'π';
-      _result = _expression;
+      _syncDisplay();
       return;
     }
-
     if (value == 'e') {
       _maybeImplicitMul();
       _expression += 'e';
-      _result = _expression;
+      _syncDisplay();
       return;
     }
-
     if (value == '(') {
       _maybeImplicitMul();
       _expression += '(';
       _openParens++;
-      _result = _expression;
+      _syncDisplay();
       return;
     }
-
     if (value == ')') {
       if (_openParens > 0) {
         _expression += ')';
         _openParens--;
-        _result = _expression;
+        _syncDisplay();
       }
       return;
     }
 
-    // عملگر
     if (_isOperator(value)) {
       if (_expression.isEmpty) {
         if (value == '-') {
           _expression = '-';
-          _result = _expression;
+          _syncDisplay();
         }
         return;
       }
@@ -166,25 +182,23 @@ class CalculatorLogic {
       }
       if (last == '(' && value != '-') return;
       _expression += value;
-      _result = _expression;
+      _syncDisplay();
       return;
     }
 
-    // عدد یا نقطه
     if (value == '.') {
       if (!_canAddDot()) return;
     }
     _expression += value;
-    _result = _expression;
+    _syncDisplay();
   }
 
   void _appendToken(String token) {
     _maybeImplicitMul();
     _expression += token;
-    _result = _expression;
+    _syncDisplay();
   }
 
-  /// اگر قبل از ثابت/پرانتز/عدد، عدد یا ) یا π یا e باشد → ضرب ضمنی
   void _maybeImplicitMul() {
     if (_expression.isEmpty) return;
     final last = _expression[_expression.length - 1];
@@ -194,7 +208,6 @@ class CalculatorLogic {
   }
 
   bool _canAddDot() {
-    // فقط یک نقطه در آخرین عدد
     final parts = _expression.split(RegExp(r'[+\-×÷*/^()]'));
     final last = parts.isEmpty ? '' : parts.last;
     return !last.contains('.');
@@ -203,11 +216,11 @@ class CalculatorLogic {
   void _toggleSign() {
     if (_expression.isEmpty) {
       _expression = '-';
-      _result = _expression;
+      _syncDisplay();
       return;
     }
-    // علامت آخرین عدد را عوض کن
-    final match = RegExp(r'([+\-×÷*/^]?)(\d+\.?\d*)$').firstMatch(_expression);
+    final match =
+        RegExp(r'([+\-×÷*/^]?)(\d+\.?\d*)$').firstMatch(_expression);
     if (match != null) {
       final op = match.group(1) ?? '';
       final num = match.group(2)!;
@@ -221,43 +234,85 @@ class CalculatorLogic {
       } else {
         _expression = '${_expression.substring(0, start)}$op(-$num)';
       }
-      _result = _expression;
+      _syncDisplay();
     }
   }
 
-  void calculate() {
-    if (_expression.trim().isEmpty) return;
-    // بستن پرانتزهای باز
-    var expr = _expression;
-    while (_openParens > 0) {
-      expr += ')';
-      _openParens--;
+  void _syncDisplay() {
+    if (_expression.isEmpty) {
+      _result = '0';
+      _livePreview = '';
+      return;
     }
-    calculateFromKeyboard(expr);
+    _result = _expression;
+    _livePreview = _tryEvaluatePreview(_expression) ?? '';
   }
 
-  void calculateFromKeyboard(String formula) {
-    if (formula.trim().isEmpty) return;
+  /// نتیجه زنده — بدون ذخیره در تاریخچه
+  String? _tryEvaluatePreview(String formula) {
+    try {
+      var expr = formula;
+      var open = _openParens;
+      while (open > 0) {
+        expr += ')';
+        open--;
+      }
+      // اگر به عملگر ختم شود قابل محاسبه نیست
+      if (expr.isEmpty) return null;
+      final last = expr[expr.length - 1];
+      if (_isOperator(last) || last == '(') return null;
 
+      final value = _evaluateRaw(expr);
+      if (value == null) return null;
+      return _formatNumber(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  double? _evaluateRaw(String formula) {
     try {
       String expr = formula
           .replaceAll('×', '*')
           .replaceAll('÷', '/')
           .replaceAll('π', '(${math.pi})')
-          .replaceAll('√', 'sqrt');
+          .replaceAll('√', 'sqrt')
+          .replaceAll('∛', 'cbrt');
 
-      // e به‌عنوان ثابت (نه بخشی از کلمه‌ای مثل exp)
       expr = expr.replaceAllMapped(
         RegExp(r'(?<![a-zA-Z])e(?![a-zA-Z0-9(])'),
         (_) => '(${math.e})',
       );
 
-      // log پایه ۱۰ و ln
+      // cbrt(x) → (x)^(1/3)
+      expr = expr.replaceAllMapped(
+        RegExp(r'cbrt\(([^()]+)\)'),
+        (m) => '((${m[1]})^(1/3))',
+      );
+
+      // abs
+      expr = expr.replaceAllMapped(
+        RegExp(r'abs\(([^()]+)\)'),
+        (m) => 'abs(${m[1]})',
+      );
+
+      // log10 و ln
       expr = expr.replaceAllMapped(
         RegExp(r'log\(([^()]+)\)'),
         (m) => '(log(${m[1]})/log(10))',
       );
       expr = expr.replaceAll('ln(', 'log(');
+
+      // exp
+      expr = expr.replaceAllMapped(
+        RegExp(r'exp\(([^()]+)\)'),
+        (m) => 'e^(${m[1]})',
+      );
+      // بعد از exp ممکن است e دوباره آمده باشد
+      expr = expr.replaceAllMapped(
+        RegExp(r'(?<![a-zA-Z0-9.])e(?=\^)'),
+        (_) => '(${math.e})',
+      );
 
       expr = _replaceFactorial(expr);
 
@@ -269,25 +324,59 @@ class CalculatorLogic {
       final exp = p.parse(expr);
       final cm = ContextModel();
       final eval = exp.evaluate(EvaluationType.REAL, cm);
-      final calculatedResult = _formatNumber(eval);
-
-      _history.insert(0, {'exp': formula, 'res': calculatedResult});
-      if (_history.length > 50) _history.removeLast();
-
-      _result = calculatedResult;
-      _expression = calculatedResult;
-      _openParens = 0;
-    } catch (e) {
-      _result = 'خطا';
+      if (eval is! num || eval.isNaN || eval.isInfinite) return null;
+      return eval.toDouble();
+    } catch (_) {
+      return null;
     }
   }
 
+  void calculate() {
+    if (_expression.trim().isEmpty) return;
+    var expr = _expression;
+    while (_openParens > 0) {
+      expr += ')';
+      _openParens--;
+    }
+    final value = _evaluateRaw(expr);
+    if (value == null) {
+      _result = 'خطا';
+      _livePreview = '';
+      return;
+    }
+    final calculatedResult = _formatNumber(value);
+    _history.insert(0, {'exp': expr, 'res': calculatedResult});
+    if (_history.length > 50) _history.removeLast();
+    _result = calculatedResult;
+    _expression = calculatedResult;
+    _livePreview = '';
+    _openParens = 0;
+  }
+
+  void calculateFromKeyboard(String formula) {
+    if (formula.trim().isEmpty) return;
+    _expression = formula;
+    _openParens = 0;
+    // شمارش پرانتز
+    for (final ch in formula.split('')) {
+      if (ch == '(') _openParens++;
+      if (ch == ')' && _openParens > 0) _openParens--;
+    }
+    calculate();
+  }
+
   String _convertTrigToDegree(String expr) {
-    const funcs = ['sin', 'cos', 'tan'];
-    for (final f in funcs) {
+    for (final f in ['sin', 'cos', 'tan']) {
       expr = expr.replaceAllMapped(
         RegExp('$f\\(([^()]+)\\)'),
         (m) => '$f((${m[1]})*${math.pi}/180)',
+      );
+    }
+    // معکوس‌ها خروجی را از رادیان به درجه
+    for (final f in ['asin', 'acos', 'atan']) {
+      expr = expr.replaceAllMapped(
+        RegExp('$f\\(([^()]+)\\)'),
+        (m) => '(($f(${m[1]}))*180/${math.pi})',
       );
     }
     return expr;
@@ -326,7 +415,7 @@ class CalculatorLogic {
     if (last == '(') _openParens = (_openParens - 1).clamp(0, 99);
     if (last == ')') _openParens++;
     _expression = _expression.substring(0, _expression.length - 1);
-    _result = _expression.isEmpty ? '0' : _expression;
+    _syncDisplay();
   }
 
   bool _isOperator(String s) =>
@@ -335,6 +424,7 @@ class CalculatorLogic {
   void clear() {
     _expression = '';
     _result = '0';
+    _livePreview = '';
     _openParens = 0;
   }
 

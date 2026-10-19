@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/providers/feedback_provider.dart';
 import 'shared/widgets/main_scaffold.dart';
+import 'shared/widgets/brand_signature.dart';
 
 class HesabgarManApp extends StatelessWidget {
   const HesabgarManApp({super.key});
@@ -37,7 +38,7 @@ class HesabgarManApp extends StatelessWidget {
               GlobalCupertinoLocalizations.delegate,
             ],
             theme: themeProvider.theme,
-            home: const MainScaffold(),
+            home: const BrandSplash(child: MainScaffold()),
           );
         },
       ),

@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
+import '../../../core/storage/local_store.dart';
 
 class Expense {
   final String id;
@@ -8,7 +9,7 @@ class Expense {
   final String category;
   final DateTime date;
   final String? note;
-  final bool isIncome; // true = درآمد
+  final bool isIncome;
 
   Expense({
     required this.id,
@@ -91,7 +92,8 @@ class ExpenseStore {
       .where((e) => e.isIncome)
       .fold(0.0, (s, e) => s + e.amount);
 
-  Map<String, double> categoryTotals({bool income = false, int? year, int? month}) {
+  Map<String, double> categoryTotals(
+      {bool income = false, int? year, int? month}) {
     final map = <String, double>{};
     for (final e in _items) {
       if (e.isIncome != income) continue;
@@ -104,8 +106,8 @@ class ExpenseStore {
 
   Future<void> load() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_key) ?? prefs.getString('expenses_v1');
+      final store = await LocalStore.instance;
+      final raw = store.getString(_key);
       if (raw == null || raw.isEmpty) {
         _items = [];
         return;
@@ -122,7 +124,8 @@ class ExpenseStore {
           .whereType<Expense>()
           .toList()
         ..sort((a, b) => b.date.compareTo(a.date));
-    } catch (_) {
+    } catch (e) {
+      debugPrint('ExpenseStore load: $e');
       _items = [];
     }
   }
@@ -144,9 +147,11 @@ class ExpenseStore {
 
   Future<void> _save() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final store = await LocalStore.instance;
       final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
-      await prefs.setString(_key, raw);
-    } catch (_) {}
+      await store.setString(_key, raw);
+    } catch (e) {
+      debugPrint('ExpenseStore save: $e');
+    }
   }
 }

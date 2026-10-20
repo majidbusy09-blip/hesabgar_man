@@ -494,21 +494,25 @@ class _CalcButtonState extends State<CalcButton>
 
   void _press() {
     _controller.forward();
-    // همیشه سعی کن بازخورد بدهی
+    // ویبره مستقیم + از Provider
+    try {
+      Feedback.forTap(context);
+    } catch (_) {}
+    try {
+      if (widget.isEqual) {
+        HapticFeedback.heavyImpact();
+      } else {
+        HapticFeedback.mediumImpact();
+      }
+      HapticFeedback.vibrate();
+    } catch (_) {}
+    try {
+      SystemSound.play(SystemSoundType.click);
+    } catch (_) {}
     try {
       final fb = Provider.of<FeedbackProvider>(context, listen: false);
       fb.playTap(strong: widget.isEqual);
-    } catch (_) {
-      // اگر Provider نبود، ویبره مستقیم
-      if (widget.isEqual) {
-        HapticFeedback.mediumImpact();
-      } else {
-        HapticFeedback.lightImpact();
-      }
-      try {
-        SystemSound.play(SystemSoundType.click);
-      } catch (_) {}
-    }
+    } catch (_) {}
   }
 
   void _release() {
@@ -1595,6 +1599,21 @@ class FinanceLogic {
 }
 
 // ---------- features/finance/presentation/finance_screen.dart ----------
+
+
+/// فرمت‌دهنده ورودی عددی با جداکننده هزارگان
+class GroupedNumberFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final text = NumFmt.groupTyping(newValue.text);
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+}
+
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
 
@@ -1660,9 +1679,9 @@ class _LoanTabState extends State<_LoanTab> {
   Map<String, double>? _result;
 
   void _calc() {
-    final p = double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
-    final r = double.tryParse(_rate.text) ?? 0;
-    final m = int.tryParse(_months.text) ?? 0;
+    final p = NumFmt.parse(_principal.text);
+    final r = NumFmt.parse(_rate.text);
+    final m = NumFmt.parse(_months.text).round();
     setState(() {
       _result = FinanceLogic.loanSummary(
         principal: p,
@@ -1729,7 +1748,7 @@ class _DepositTabState extends State<_DepositTab> {
   double? _profit;
 
   void _calc() {
-    final p = double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
+    final p = NumFmt.parse(_principal.text);
     final r = double.tryParse(_rate.text) ?? 0;
     final y = double.tryParse(_years.text) ?? 0;
     final f = FinanceLogic.compoundInterest(
@@ -1797,7 +1816,7 @@ class _VatTabState extends State<_VatTab> {
   Map<String, double>? _result;
 
   void _calc() {
-    final a = double.tryParse(_amount.text.replaceAll(',', '')) ?? 0;
+    final a = NumFmt.parse(_amount.text);
     final r = double.tryParse(_rate.text) ?? 9;
     setState(() {
       _result = _reverse
@@ -1866,7 +1885,17 @@ Widget _field(TextEditingController c, String label, IconData icon,
     keyboardType: TextInputType.numberWithOptions(decimal: !integer),
     inputFormatters: [
       FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+      GroupedNumberFormatter(),
     ],
+    onChanged: (_) {
+      final g = NumFmt.groupTyping(c.text);
+      if (g != c.text) {
+        c.value = TextEditingValue(
+          text: g,
+          selection: TextSelection.collapsed(offset: g.length),
+        );
+      }
+    },
     style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 16),
     decoration: InputDecoration(
       labelText: label,
@@ -2077,12 +2106,15 @@ class _ExpensesScreenState extends State<ExpensesScreen>
   bool _loading = true;
   String? _error;
   late TabController _tab;
-  int _filterMonth = DateTime.now().month;
-  int _filterYear = DateTime.now().year;
+  late int _filterMonth;
+  late int _filterYear;
 
   @override
   void initState() {
     super.initState();
+    final j = Jalali.fromDateTime(DateTime.now());
+    _filterYear = j.year;
+    _filterMonth = j.month;
     _tab = TabController(length: 3, vsync: this);
     _load();
   }
@@ -2159,14 +2191,23 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     }
   }
 
-  List<Expense> get _monthItems =>
-      _store.forMonth(_filterYear, _filterMonth);
+  List<Expense> get _monthItems {
+    return _store.items.where((e) {
+      final j = Jalali.fromDateTime(e.date);
+      return j.year == _filterYear && j.month == _filterMonth;
+    }).toList();
+  }
+
+  double get _monthExp =>
+      _monthItems.where((e) => !e.isIncome).fold(0.0, (s, e) => s + e.amount);
+  double get _monthInc =>
+      _monthItems.where((e) => e.isIncome).fold(0.0, (s, e) => s + e.amount);
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final monthExp = _store.expenseInMonth(_filterYear, _filterMonth);
-    final monthInc = _store.incomeInMonth(_filterYear, _filterMonth);
+    final monthExp = _monthExp;
+    final monthInc = _monthInc;
     final monthBal = monthInc - monthExp;
 
     return Scaffold(
@@ -2288,7 +2329,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                           ),
                           Expanded(
                             child: Text(
-                              '$_filterYear / $_filterMonth',
+                              '$_filterYear / ${Jalali.monthNames[_filterMonth - 1]}',
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                   fontFamily: 'Vazirmatn',
@@ -2397,8 +2438,10 @@ class _ExpensesScreenState extends State<ExpensesScreen>
       );
     }
 
-    final catMap = _store.categoryTotals(
-        income: false, year: _filterYear, month: _filterMonth);
+    final catMap = <String, double>{};
+    for (final e in _monthItems.where((e) => !e.isIncome)) {
+      catMap[e.category] = (catMap[e.category] ?? 0) + e.amount;
+    }
     final total = catMap.values.fold(0.0, (a, b) => a + b);
 
     return ListView(
@@ -2514,7 +2557,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                   style: const TextStyle(
                       fontFamily: 'Vazirmatn', fontWeight: FontWeight.w600)),
               subtitle: Text(
-                '${e.category} • ${e.date.year}/${e.date.month}/${e.date.day}',
+                '${e.category} • ${Jalali.fromDateTime(e.date)}',
                 style:
                     const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
               ),
@@ -2536,10 +2579,15 @@ class _ExpensesScreenState extends State<ExpensesScreen>
   }
 
   Widget _buildCategories(ColorScheme scheme) {
-    final expMap = _store.categoryTotals(
-        income: false, year: _filterYear, month: _filterMonth);
-    final incMap = _store.categoryTotals(
-        income: true, year: _filterYear, month: _filterMonth);
+    final expMap = <String, double>{};
+    final incMap = <String, double>{};
+    for (final e in _monthItems) {
+      if (e.isIncome) {
+        incMap[e.category] = (incMap[e.category] ?? 0) + e.amount;
+      } else {
+        expMap[e.category] = (expMap[e.category] ?? 0) + e.amount;
+      }
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
@@ -2629,7 +2677,7 @@ class _AddSheetState extends State<_AddSheet> {
 
   void _submit() {
     final title = _title.text.trim();
-    final amount = double.tryParse(_amount.text.replaceAll(',', '')) ?? 0;
+    final amount = NumFmt.parse(_amount.text);
     if (title.isEmpty || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('عنوان و مبلغ را درست وارد کنید',
@@ -2711,7 +2759,17 @@ class _AddSheetState extends State<_AddSheet> {
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+                GroupedNumberFormatter(),
               ],
+              onChanged: (v) {
+                final g = NumFmt.groupTyping(v);
+                if (g != v) {
+                  _amount.value = TextEditingValue(
+                    text: g,
+                    selection: TextSelection.collapsed(offset: g.length),
+                  );
+                }
+              },
               style: const TextStyle(fontFamily: 'Vazirmatn'),
               decoration: InputDecoration(
                 labelText: 'مبلغ (تومان)',
@@ -2926,6 +2984,120 @@ class Jalali {
 }
 
 // ---------- features/calendar/presentation/calendar_screen.dart ----------
+
+// ---------- تقویم چندگانه + مناسبت‌ها ----------
+class HijriDate {
+  final int year, month, day;
+  const HijriDate(this.year, this.month, this.day);
+
+  static const monthNames = [
+    'محرم', 'صفر', 'ربیع‌الاول', 'ربیع‌الثانی', 'جمادی‌الاول', 'جمادی‌الثانی',
+    'رجب', 'شعبان', 'رمضان', 'شوال', 'ذیقعده', 'ذیحجه',
+  ];
+
+  /// تقریب استاندارد تبدیل میلادی → قمری
+  static HijriDate fromGregorian(DateTime dt) {
+    final jd = _gregorianToJd(dt.year, dt.month, dt.day);
+    return _jdToHijri(jd);
+  }
+
+  static int _gregorianToJd(int y, int m, int d) {
+    final a = ((14 - m) ~/ 12);
+    final y2 = y + 4800 - a;
+    final m2 = m + 12 * a - 3;
+    return d + ((153 * m2 + 2) ~/ 5) + 365 * y2 + (y2 ~/ 4) - (y2 ~/ 100) + (y2 ~/ 400) - 32045;
+  }
+
+  static HijriDate _jdToHijri(int jd) {
+    final l = jd - 1948440 + 10632;
+    final n = ((l - 1) ~/ 10631);
+    final l2 = l - 10631 * n + 354;
+    final j = ((10985 - l2) ~/ 5316) * ((50 * l2) ~/ 17719) + (l2 ~/ 5670) * ((43 * l2) ~/ 15238);
+    final l3 = l2 - ((30 - j) ~/ 15) * ((17719 * j) ~/ 50) - (j ~/ 16) * ((15238 * j) ~/ 43) + 29;
+    var m = (24 * l3) ~/ 709;
+    var d = l3 - (709 * m) ~/ 24;
+    var y = 30 * n + j - 30;
+    if (d < 1) d = 1;
+    if (m < 1) m = 1;
+    if (m > 12) m = 12;
+    return HijriDate(y, m, d);
+  }
+
+  @override
+  String toString() => '$day ${monthNames[month - 1]} $year';
+}
+
+class CalendarOccasion {
+  final int month; // در سیستم همان تقویم
+  final int day;
+  final String title;
+  final bool isHoliday;
+  const CalendarOccasion(this.month, this.day, this.title, {this.isHoliday = false});
+}
+
+class OccasionData {
+  /// مناسبت‌های ثابت شمسی (ملی/مذهبی رایج)
+  static const jalali = <CalendarOccasion>[
+    CalendarOccasion(1, 1, 'عید نوروز', isHoliday: true),
+    CalendarOccasion(1, 2, 'عید نوروز', isHoliday: true),
+    CalendarOccasion(1, 3, 'عید نوروز', isHoliday: true),
+    CalendarOccasion(1, 4, 'عید نوروز', isHoliday: true),
+    CalendarOccasion(1, 12, 'روز جمهوری اسلامی', isHoliday: true),
+    CalendarOccasion(1, 13, 'روز طبیعت (سیزده‌به‌در)', isHoliday: true),
+    CalendarOccasion(3, 14, 'رحلت امام خمینی', isHoliday: true),
+    CalendarOccasion(3, 15, 'قیام ۱۵ خرداد', isHoliday: true),
+    CalendarOccasion(11, 22, 'پیروزی انقلاب اسلامی', isHoliday: true),
+    CalendarOccasion(12, 29, 'ملی شدن صنعت نفت', isHoliday: true),
+    CalendarOccasion(7, 13, 'روز نیروی دریایی'),
+    CalendarOccasion(8, 4, 'روز ارتش'),
+    CalendarOccasion(9, 16, 'روز دانشجو'),
+    CalendarOccasion(10, 12, 'روز میلاد حضرت رسول (تقریبی ملی)'),
+    CalendarOccasion(2, 25, 'روز بزرگداشت فردوسی'),
+    CalendarOccasion(5, 15, 'روز مهر'),
+  ];
+
+  static const gregorian = <CalendarOccasion>[
+    CalendarOccasion(1, 1, 'سال نو میلادی'),
+    CalendarOccasion(2, 14, 'ولنتاین'),
+    CalendarOccasion(3, 8, 'روز جهانی زن'),
+    CalendarOccasion(4, 22, 'روز زمین'),
+    CalendarOccasion(5, 1, 'روز جهانی کارگر'),
+    CalendarOccasion(6, 5, 'روز محیط زیست'),
+    CalendarOccasion(10, 31, 'هالووین'),
+    CalendarOccasion(12, 25, 'کریسمس'),
+    CalendarOccasion(12, 31, 'شب سال نو'),
+  ];
+
+  static const hijri = <CalendarOccasion>[
+    CalendarOccasion(1, 10, 'عاشورای حسینی', isHoliday: true),
+    CalendarOccasion(1, 9, 'تاسوعای حسینی', isHoliday: true),
+    CalendarOccasion(2, 20, 'اربعین حسینی', isHoliday: true),
+    CalendarOccasion(2, 28, 'رحلت پیامبر و شهادت امام حسن', isHoliday: true),
+    CalendarOccasion(3, 17, 'میلاد پیامبر و امام صادق', isHoliday: true),
+    CalendarOccasion(7, 13, 'ولادت امام علی', isHoliday: true),
+    CalendarOccasion(7, 27, 'مبعث پیامبر', isHoliday: true),
+    CalendarOccasion(8, 15, 'ولادت امام زمان', isHoliday: true),
+    CalendarOccasion(9, 21, 'شهادت امام علی', isHoliday: true),
+    CalendarOccasion(10, 1, 'عید فطر', isHoliday: true),
+    CalendarOccasion(10, 2, 'تعطیلی عید فطر', isHoliday: true),
+    CalendarOccasion(12, 10, 'عید قربان', isHoliday: true),
+    CalendarOccasion(12, 18, 'عید غدیر', isHoliday: true),
+  ];
+
+  static List<CalendarOccasion> forDay({
+    required String system,
+    required int month,
+    required int day,
+  }) {
+    final list = system == 'gregorian'
+        ? gregorian
+        : system == 'hijri'
+            ? hijri
+            : jalali;
+    return list.where((o) => o.month == month && o.day == day).toList();
+  }
+}
+
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
 
@@ -2934,206 +3106,357 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  late Jalali _focused;
-  late Jalali _today;
+  /// jalali | gregorian | hijri
+  String _system = 'jalali';
+  late int _year;
+  late int _month;
+  DateTime? _selectedG; // روز انتخاب‌شده به میلادی برای تبدیل
+
+  static const _jalaliMonths = Jalali.monthNames;
+  static const _gregorianMonths = [
+    'ژانویه', 'فوریه', 'مارس', 'آوریل', 'مه', 'ژوئن',
+    'ژوئیه', 'اوت', 'سپتامبر', 'اکتبر', 'نوامبر', 'دسامبر',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _today = Jalali.fromDateTime(DateTime.now());
-    _focused = Jalali(_today.year, _today.month, 1);
+    final j = Jalali.fromDateTime(DateTime.now());
+    _year = j.year;
+    _month = j.month;
+    _selectedG = DateTime.now();
   }
 
-  void _prevMonth() => setState(() => _focused = _focused.addMonths(-1));
-  void _nextMonth() => setState(() => _focused = _focused.addMonths(1));
-  void _goToday() =>
-      setState(() => _focused = Jalali(_today.year, _today.month, 1));
+  void _setSystem(String s) {
+    final g = _selectedG ?? DateTime.now();
+    setState(() {
+      _system = s;
+      if (s == 'jalali') {
+        final j = Jalali.fromDateTime(g);
+        _year = j.year;
+        _month = j.month;
+      } else if (s == 'gregorian') {
+        _year = g.year;
+        _month = g.month;
+      } else {
+        final h = HijriDate.fromGregorian(g);
+        _year = h.year;
+        _month = h.month;
+      }
+    });
+  }
+
+  int _daysInMonth() {
+    if (_system == 'jalali') {
+      return Jalali(_year, _month, 1).monthLength;
+    }
+    if (_system == 'gregorian') {
+      return DateTime(_year, _month + 1, 0).day;
+    }
+    // قمری: تقریباً ۲۹ یا ۳۰
+    return 30;
+  }
+
+  int _leadingEmpty() {
+    if (_system == 'jalali') {
+      return Jalali(_year, _month, 1).weekdayIndex;
+    }
+    DateTime first;
+    if (_system == 'gregorian') {
+      first = DateTime(_year, _month, 1);
+    } else {
+      first = _hijriToApproxGregorian(_year, _month, 1);
+    }
+    // Sat=0 ... Fri=6
+    return (first.weekday + 1) % 7;
+  }
+
+  DateTime _hijriToApproxGregorian(int hy, int hm, int hd) {
+    // reverse approx via search around estimate
+    final est = DateTime.now();
+    for (var delta = -400; delta < 400; delta++) {
+      final d = est.add(Duration(days: delta));
+      final h = HijriDate.fromGregorian(d);
+      if (h.year == hy && h.month == hm && h.day == hd) return d;
+    }
+    return est;
+  }
+
+  DateTime _cellToGregorian(int day) {
+    if (_system == 'jalali') {
+      return Jalali(_year, _month, day).toDateTime();
+    }
+    if (_system == 'gregorian') {
+      return DateTime(_year, _month, day);
+    }
+    return _hijriToApproxGregorian(_year, _month, day);
+  }
+
+  void _prev() {
+    setState(() {
+      _month--;
+      if (_month < 1) {
+        _month = 12;
+        _year--;
+      }
+    });
+  }
+
+  void _next() {
+    setState(() {
+      _month++;
+      if (_month > 12) {
+        _month = 1;
+        _year++;
+      }
+    });
+  }
+
+  void _goToday() {
+    final now = DateTime.now();
+    setState(() {
+      _selectedG = now;
+      if (_system == 'jalali') {
+        final j = Jalali.fromDateTime(now);
+        _year = j.year;
+        _month = j.month;
+      } else if (_system == 'gregorian') {
+        _year = now.year;
+        _month = now.month;
+      } else {
+        final h = HijriDate.fromGregorian(now);
+        _year = h.year;
+        _month = h.month;
+      }
+    });
+  }
+
+  String get _monthTitle {
+    if (_system == 'jalali') return '${_jalaliMonths[_month - 1]} $_year';
+    if (_system == 'gregorian') return '${_gregorianMonths[_month - 1]} $_year';
+    return '${HijriDate.monthNames[_month - 1]} $_year';
+  }
+
+  void _onDayTap(int day) {
+    final g = _cellToGregorian(day);
+    setState(() => _selectedG = g);
+    final occasions = OccasionData.forDay(system: _system, month: _month, day: day);
+    // مناسبت‌های سیستم‌های دیگر برای همان روز میلادی
+    final j = Jalali.fromDateTime(g);
+    final h = HijriDate.fromGregorian(g);
+    final all = <String>[
+      ...occasions.map((o) => o.title),
+      ...OccasionData.forDay(system: 'jalali', month: j.month, day: j.day).map((o) => 'شمسی: ${o.title}'),
+      ...OccasionData.forDay(system: 'gregorian', month: g.month, day: g.day).map((o) => 'میلادی: ${o.title}'),
+      ...OccasionData.forDay(system: 'hijri', month: h.month, day: h.day).map((o) => 'قمری: ${o.title}'),
+    ];
+    // unique
+    final seen = <String>{};
+    final uniq = <String>[];
+    for (final x in all) {
+      final key = x.replaceFirst(RegExp(r'^(شمسی|میلادی|قمری): '), '');
+      if (seen.add(key)) uniq.add(x);
+    }
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'روز $day — $_monthTitle',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'شمسی: $j\nمیلادی: ${g.year}/${g.month}/${g.day}\nقمری: $h',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 13, height: 1.6),
+              ),
+              const Divider(height: 24),
+              const Text('مناسبت‌ها',
+                  style: TextStyle(
+                      fontFamily: 'Vazirmatn', fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              if (uniq.isEmpty)
+                const Text('مناسبت ثبت‌شده‌ای برای این روز نیست',
+                    style: TextStyle(fontFamily: 'Vazirmatn', color: Colors.grey))
+              else
+                ...uniq.map((e) => ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.event, size: 20),
+                      title: Text(e, style: const TextStyle(fontFamily: 'Vazirmatn')),
+                    )),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final daysInMonth = _focused.monthLength;
-    final firstWeekday = Jalali(_focused.year, _focused.month, 1).weekdayIndex;
-    // تعداد خانه خالی قبل از روز ۱
-    final leading = firstWeekday;
-    final totalCells = leading + daysInMonth;
-    final rows = (totalCells / 7).ceil();
+    final scheme = Theme.of(context).colorScheme;
+    final days = _daysInMonth();
+    final leading = _leadingEmpty();
+    final weekDays = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تقویم شمسی'),
+        title: const Text('تقویم'),
         actions: [
           TextButton(
             onPressed: _goToday,
-            child: const Text('امروز',
-                style: TextStyle(fontFamily: 'Vazirmatn', color: AppColors.primary)),
+            child: Text('امروز',
+                style: TextStyle(fontFamily: 'Vazirmatn', color: scheme.primary)),
           ),
         ],
       ),
       body: Column(
         children: [
-          // هدر ماه
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                IconButton(
-                  onPressed: _nextMonth,
-                  icon: const Icon(Icons.chevron_left),
-                ),
-                Text(
-                  '${_focused.monthName} ${_focused.year}',
-                  style: const TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  onPressed: _prevMonth,
-                  icon: const Icon(Icons.chevron_right),
-                ),
-              ],
-            ),
-          ),
-
-          // روزهای هفته
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: Jalali.weekDays
-                  .map((d) => Expanded(
-                        child: Center(
-                          child: Text(
-                            d.substring(0, d.length >= 2 ? 2 : 1),
-                            style: TextStyle(
-                              fontFamily: 'Vazirmatn',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: d == 'جمعه'
-                                  ? AppColors.secondary
-                                  : (isDark
-                                      ? Colors.grey[400]
-                                      : Colors.grey[600]),
-                            ),
-                          ),
-                        ),
-                      ))
-                  .toList(),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // شبکه روزها
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: GridView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7,
-                  childAspectRatio: 1,
-                ),
-                itemCount: rows * 7,
-                itemBuilder: (context, index) {
-                  final dayNum = index - leading + 1;
-                  if (dayNum < 1 || dayNum > daysInMonth) {
-                    return const SizedBox.shrink();
-                  }
-
-                  final isToday = _focused.year == _today.year &&
-                      _focused.month == _today.month &&
-                      dayNum == _today.day;
-
-                  final cellDate =
-                      Jalali(_focused.year, _focused.month, dayNum);
-                  final isFriday = cellDate.weekdayIndex == 6;
-
-                  return Container(
-                    margin: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: isToday
-                          ? AppColors.primary
-                          : (isDark
-                              ? const Color(0xFF1E1E1E)
-                              : Colors.grey[100]),
-                      borderRadius: BorderRadius.circular(10),
-                      border: isToday
-                          ? null
-                          : Border.all(
-                              color: isDark
-                                  ? Colors.grey[800]!
-                                  : Colors.grey[300]!,
-                              width: 0.5,
-                            ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        '$dayNum',
-                        style: TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          fontSize: 16,
-                          fontWeight:
-                              isToday ? FontWeight.bold : FontWeight.w500,
-                          color: isToday
-                              ? Colors.white
-                              : (isFriday
-                                  ? AppColors.secondary
-                                  : (isDark ? Colors.white : Colors.black87)),
-                        ),
+                for (final e in [
+                  ('jalali', 'شمسی'),
+                  ('gregorian', 'میلادی'),
+                  ('hijri', 'قمری'),
+                ])
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: ChoiceChip(
+                        label: Center(
+                            child: Text(e.$2,
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: 13,
+                                  color: _system == e.$1 ? scheme.onPrimary : null,
+                                ))),
+                        selected: _system == e.$1,
+                        selectedColor: scheme.primary,
+                        onSelected: (_) => _setSystem(e.$1),
                       ),
                     ),
-                  );
-                },
-              ),
+                  ),
+              ],
             ),
           ),
-
-          // اطلاعات امروز
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-              ),
-            ),
-            child: Column(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
               children: [
-                Text(
-                  'امروز: ${Jalali.weekDays[_today.weekdayIndex]}',
-                  style: const TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 14,
-                    color: AppColors.primary,
+                IconButton(onPressed: _next, icon: const Icon(Icons.chevron_left)),
+                Expanded(
+                  child: Text(
+                    _monthTitle,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${_today.day} ${_today.monthName} ${_today.year}',
-                  style: const TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  () {
-                    final g = DateTime.now();
-                    return 'معادل میلادی: ${g.year}/${g.month.toString().padLeft(2, '0')}/${g.day.toString().padLeft(2, '0')}';
-                  }(),
-                  style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 12,
-                    color: isDark ? Colors.grey[400] : Colors.grey[600],
-                  ),
-                ),
+                IconButton(onPressed: _prev, icon: const Icon(Icons.chevron_right)),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                for (final w in weekDays)
+                  Expanded(
+                    child: Center(
+                      child: Text(w,
+                          style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.bold,
+                              color: w == 'ج' ? Colors.redAccent : null)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(8),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                mainAxisSpacing: 4,
+                crossAxisSpacing: 4,
+              ),
+              itemCount: leading + days,
+              itemBuilder: (context, index) {
+                if (index < leading) return const SizedBox.shrink();
+                final day = index - leading + 1;
+                final occasions = OccasionData.forDay(
+                    system: _system, month: _month, day: day);
+                final isHoliday = occasions.any((o) => o.isHoliday);
+                final g = _cellToGregorian(day);
+                final isToday = DateTime.now().year == g.year &&
+                    DateTime.now().month == g.month &&
+                    DateTime.now().day == g.day;
+                final isSelected = _selectedG != null &&
+                    _selectedG!.year == g.year &&
+                    _selectedG!.month == g.month &&
+                    _selectedG!.day == g.day;
+
+                return InkWell(
+                  onTap: () => _onDayTap(day),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? scheme.primary.withValues(alpha: 0.2)
+                          : isToday
+                              ? scheme.secondaryContainer.withValues(alpha: 0.5)
+                              : null,
+                      borderRadius: BorderRadius.circular(10),
+                      border: isToday
+                          ? Border.all(color: scheme.primary, width: 1.5)
+                          : null,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$day',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontWeight: FontWeight.bold,
+                            color: isHoliday ? Colors.redAccent : null,
+                          ),
+                        ),
+                        if (occasions.isNotEmpty)
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(top: 2),
+                            decoration: BoxDecoration(
+                              color: isHoliday ? Colors.redAccent : scheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],
@@ -3142,7 +3465,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 }
 
-// ---------- features/settings/presentation/theme_gallery_screen.dart ----------
 class ThemeGalleryScreen extends StatefulWidget {
   const ThemeGalleryScreen({super.key});
 

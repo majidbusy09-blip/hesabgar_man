@@ -55,11 +55,20 @@ class _CalcButtonState extends State<CalcButton>
 
   void _press() {
     _controller.forward();
+    // همیشه سعی کن بازخورد بدهی
     try {
-      final fb = context.read<FeedbackProvider>();
+      final fb = Provider.of<FeedbackProvider>(context, listen: false);
       fb.playTap(strong: widget.isEqual);
     } catch (_) {
-      HapticFeedback.lightImpact();
+      // اگر Provider نبود، ویبره مستقیم
+      if (widget.isEqual) {
+        HapticFeedback.mediumImpact();
+      } else {
+        HapticFeedback.lightImpact();
+      }
+      try {
+        SystemSound.play(SystemSoundType.click);
+      } catch (_) {}
     }
   }
 

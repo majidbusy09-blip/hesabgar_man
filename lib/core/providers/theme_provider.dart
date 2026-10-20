@@ -6,8 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../storage/local_store.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_theme_presets.dart';
 
@@ -26,6 +26,7 @@ class ThemeProvider extends ChangeNotifier {
   bool _customDark = false;
   String? _imagePath;
   bool _loading = true;
+  String? lastError;
 
   String get presetId => _presetId;
   bool get useCustom => _useCustom;
@@ -48,7 +49,6 @@ class ThemeProvider extends ChangeNotifier {
     return AppTheme.fromPreset(currentPreset);
   }
 
-  /// سازگاری با کد قدیمی (دیگر استفاده نمی‌شود)
   ThemeMode get mode => ThemeMode.light;
 
   String get label {
@@ -61,7 +61,6 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   int _colorToInt(Color c) {
-    // سازگار با Flutter جدید و قدیم
     try {
       // ignore: deprecated_member_use
       return c.value;
@@ -76,20 +75,22 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> _load() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      _presetId = prefs.getString(_keyPreset) ?? 'default';
-      _useCustom = prefs.getBool(_keyUseCustom) ?? false;
-      _customDark = prefs.getBool(_keyCustomDark) ?? false;
-      _imagePath = prefs.getString(_keyImagePath);
+      final store = await LocalStore.instance;
+      _presetId = store.getString(_keyPreset) ?? 'default';
+      _useCustom = store.getBool(_keyUseCustom) ?? false;
+      _customDark = store.getBool(_keyCustomDark) ?? false;
+      _imagePath = store.getString(_keyImagePath);
 
-      final seedVal = prefs.getInt(_keyCustomSeed);
-      final secVal = prefs.getInt(_keyCustomSecondary);
+      final seedVal = store.getInt(_keyCustomSeed);
+      final secVal = store.getInt(_keyCustomSecondary);
       if (seedVal != null) _customSeed = Color(seedVal);
       if (secVal != null) _customSecondary = Color(secVal);
 
       if (_imagePath != null && !File(_imagePath!).existsSync()) {
         _imagePath = null;
-        if (_useCustom) _useCustom = false;
+        if (_useCustom) {
+          // رنگ‌ها را نگه می‌داریم حتی بدون فایل عکس
+        }
       }
     } catch (e) {
       debugPrint('ThemeProvider load error: $e');
@@ -102,24 +103,20 @@ class ThemeProvider extends ChangeNotifier {
     _presetId = id;
     _useCustom = false;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyPreset, id);
-    await prefs.setBool(_keyUseCustom, false);
+    try {
+      final store = await LocalStore.instance;
+      await store.setString(_keyPreset, id);
+      await store.setBool(_keyUseCustom, false);
+    } catch (_) {}
   }
 
-  /// سازگاری با settings_screen قدیمی
   Future<void> setMode(ThemeMode mode) async {
-    // اگر کسی هنوز setMode صدا زد، به preset روشن/تاریک نگاشت می‌کنیم
     if (mode == ThemeMode.dark) {
       await setPreset('night');
-    } else if (mode == ThemeMode.light) {
-      await setPreset('default');
     } else {
       await setPreset('default');
     }
   }
-
-  String? lastError;
 
   Future<bool> pickImageAndGenerateTheme() async {
     lastError = null;
@@ -137,7 +134,6 @@ class ThemeProvider extends ChangeNotifier {
         return false;
       }
 
-      // خواندن بایت — بدون وابستگی به مسیر فایل (مشکل رایج اندروید)
       final bytes = await xfile.readAsBytes();
       if (bytes.isEmpty) {
         lastError = 'فایل خالی است';
@@ -147,7 +143,8 @@ class ThemeProvider extends ChangeNotifier {
       String? destPath;
       try {
         final dir = await getApplicationDocumentsDirectory();
-        final ext = p.extension(xfile.path).isEmpty ? '.jpg' : p.extension(xfile.path);
+        final ext =
+            p.extension(xfile.path).isEmpty ? '.jpg' : p.extension(xfile.path);
         destPath = p.join(dir.path, 'theme_bg$ext');
         await File(destPath).writeAsBytes(bytes, flush: true);
       } catch (e) {
@@ -178,21 +175,26 @@ class ThemeProvider extends ChangeNotifier {
 
       final isDark = dominant.computeLuminance() < 0.35;
 
+      // اول اعمال در حافظه (حتی اگر ذخیره بعداً خطا بدهد)
       _customSeed = dominant;
       _customSecondary = secondary;
       _customDark = isDark;
       _imagePath = destPath;
-      // اگر ذخیره نشد، فقط رنگ‌ها اعمال می‌شوند
       _useCustom = true;
       notifyListeners();
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_keyUseCustom, true);
-      await prefs.setInt(_keyCustomSeed, _colorToInt(_customSeed));
-      await prefs.setInt(_keyCustomSecondary, _colorToInt(_customSecondary));
-      await prefs.setBool(_keyCustomDark, _customDark);
-      if (destPath != null) {
-        await prefs.setString(_keyImagePath, destPath);
+      try {
+        final store = await LocalStore.instance;
+        await store.setBool(_keyUseCustom, true);
+        await store.setInt(_keyCustomSeed, _colorToInt(_customSeed));
+        await store.setInt(_keyCustomSecondary, _colorToInt(_customSecondary));
+        await store.setBool(_keyCustomDark, _customDark);
+        if (destPath != null) {
+          await store.setString(_keyImagePath, destPath);
+        }
+      } catch (e) {
+        debugPrint('theme save prefs: $e');
+        // تم اعمال شده؛ فقط ذخیره ناموفق
       }
 
       return true;
@@ -213,16 +215,20 @@ class ThemeProvider extends ChangeNotifier {
     }
     _imagePath = null;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyUseCustom, false);
-    await prefs.remove(_keyImagePath);
+    try {
+      final store = await LocalStore.instance;
+      await store.setBool(_keyUseCustom, false);
+      await store.remove(_keyImagePath);
+    } catch (_) {}
   }
 
   Future<void> toggleCustomDark(bool value) async {
     if (!_useCustom) return;
     _customDark = value;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyCustomDark, value);
+    try {
+      final store = await LocalStore.instance;
+      await store.setBool(_keyCustomDark, value);
+    } catch (_) {}
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../storage/local_store.dart';
 
 class FeedbackProvider extends ChangeNotifier {
   static const _keyHaptic = 'feedback_haptic';
@@ -20,9 +20,9 @@ class FeedbackProvider extends ChangeNotifier {
 
   Future<void> _load() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      _haptic = prefs.getBool(_keyHaptic) ?? true;
-      _sound = prefs.getBool(_keySound) ?? true;
+      final store = await LocalStore.instance;
+      _haptic = store.getBool(_keyHaptic) ?? true;
+      _sound = store.getBool(_keySound) ?? true;
     } catch (_) {}
     _loaded = true;
     notifyListeners();
@@ -31,15 +31,19 @@ class FeedbackProvider extends ChangeNotifier {
   Future<void> setHaptic(bool v) async {
     _haptic = v;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyHaptic, v);
+    try {
+      final store = await LocalStore.instance;
+      await store.setBool(_keyHaptic, v);
+    } catch (_) {}
   }
 
   Future<void> setSound(bool v) async {
     _sound = v;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keySound, v);
+    try {
+      final store = await LocalStore.instance;
+      await store.setBool(_keySound, v);
+    } catch (_) {}
   }
 
   void playTap({bool strong = false}) {
@@ -51,12 +55,22 @@ class FeedbackProvider extends ChangeNotifier {
       }
     }
     if (_sound) {
-      SystemSound.play(SystemSoundType.click);
+      try {
+        SystemSound.play(SystemSoundType.click);
+      } catch (_) {}
+      // روی اندروید کلیک سیستم اغلب بی‌صداست؛ ویبره کوتاه جایگزین حس صدا
+      if (!_haptic) {
+        HapticFeedback.selectionClick();
+      }
     }
   }
 
   void playSelect() {
     if (_haptic) HapticFeedback.selectionClick();
-    if (_sound) SystemSound.play(SystemSoundType.click);
+    if (_sound) {
+      try {
+        SystemSound.play(SystemSoundType.click);
+      } catch (_) {}
+    }
   }
 }

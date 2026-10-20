@@ -437,33 +437,88 @@ class FeedbackProvider extends ChangeNotifier {
   }
 
   void playTap({bool strong = false}) {
-    if (_haptic) {
-      if (strong) {
-        HapticFeedback.mediumImpact();
-      } else {
-        HapticFeedback.lightImpact();
-      }
+    // ویبره: همیشه سعی می‌کند (حتی اگر تنظیمات هنوز لود نشده)
+    final doHaptic = !_loaded || _haptic;
+    final doSound = !_loaded || _sound;
+    if (doHaptic) {
+      try {
+        if (strong) {
+          HapticFeedback.heavyImpact();
+        } else {
+          HapticFeedback.mediumImpact();
+        }
+      } catch (_) {}
+      try {
+        HapticFeedback.vibrate();
+      } catch (_) {}
     }
-    if (_sound) {
+    if (doSound) {
       try {
         SystemSound.play(SystemSoundType.click);
       } catch (_) {}
-      // روی اندروید کلیک سیستم اغلب بی‌صداست؛ ویبره کوتاه جایگزین حس صدا
-      if (!_haptic) {
-        HapticFeedback.selectionClick();
+      // اگر ویبره خاموش است، یک ضربه خیلی کوتاه برای حس کلیک
+      if (!doHaptic) {
+        try { HapticFeedback.selectionClick(); } catch (_) {}
       }
     }
   }
 
   void playSelect() {
-    if (_haptic) HapticFeedback.selectionClick();
-    if (_sound) {
-      try {
-        SystemSound.play(SystemSoundType.click);
-      } catch (_) {}
-    }
+    playTap(strong: false);
   }
 }
+
+/// جداکننده سه‌رقمی برای ورودی و نمایش اعداد
+class NumFmt {
+  static String format(num value, {int decimals = 0}) {
+    final neg = value < 0;
+    final v = value.abs();
+    String s;
+    if (decimals > 0) {
+      s = v.toStringAsFixed(decimals);
+    } else {
+      s = (v == v.roundToDouble()) ? v.toInt().toString() : v.toString();
+    }
+    final parts = s.split('.');
+    final intPart = parts[0];
+    final buf = StringBuffer();
+    for (var i = 0; i < intPart.length; i++) {
+      if (i > 0 && (intPart.length - i) % 3 == 0) buf.write(',');
+      buf.write(intPart[i]);
+    }
+    var out = buf.toString();
+    if (parts.length > 1) out = '$out.${parts[1]}';
+    return neg ? '-$out' : out;
+  }
+
+  /// متن فیلد را هنگام تایپ سه‌رقمی می‌کند
+  static String groupTyping(String input) {
+    final cleaned = input.replaceAll(',', '').replaceAll('،', '').trim();
+    if (cleaned.isEmpty || cleaned == '-' || cleaned == '.') return input;
+    final neg = cleaned.startsWith('-');
+    var body = neg ? cleaned.substring(1) : cleaned;
+    final parts = body.split('.');
+    final intPart = parts[0].replaceAll(RegExp(r'[^0-9]'), '');
+    if (intPart.isEmpty && parts.length == 1) return neg ? '-' : '';
+    final buf = StringBuffer();
+    for (var i = 0; i < intPart.length; i++) {
+      if (i > 0 && (intPart.length - i) % 3 == 0) buf.write(',');
+      buf.write(intPart[i]);
+    }
+    var out = buf.toString();
+    if (parts.length > 1) {
+      final dec = parts[1].replaceAll(RegExp(r'[^0-9]'), '');
+      out = '$out.$dec';
+    }
+    return neg ? '-$out' : out;
+  }
+
+  static double parse(String input) {
+    final s = input.replaceAll(',', '').replaceAll('،', '').trim();
+    return double.tryParse(s) ?? 0;
+  }
+}
+
 
 // ---------- core/providers/theme_provider.dart ----------
 class ThemeProvider extends ChangeNotifier {

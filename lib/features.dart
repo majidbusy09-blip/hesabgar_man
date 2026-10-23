@@ -1865,80 +1865,97 @@ class _GoldTabState extends State<_GoldTab> {
       _loadingPrice = true;
       _priceMsg = null;
     });
-    try {
-      // چند منبع عمومی برای گرم ۱۸ عیار (تومان)
-      double? price;
-      // 1) tgju-style free endpoint attempts
-      final urls = <String, double Function(dynamic)>{
-        'https://api.navasan.tech/latest/?api_key=free': (j) {
-          // may fail without key
-          return 0;
-        },
-      };
+    double? price;
+    String? source;
 
-      // Try tgju ajax (often works without auth for basic data)
+    Future<double?> tryUrl(String url, double? Function(dynamic json) parse) async {
       try {
         final res = await http
-            .get(Uri.parse('https://call1.tgju.org/ajax.json'))
-            .timeout(const Duration(seconds: 8));
-        if (res.statusCode == 200) {
-          final j = jsonDecode(res.body) as Map<String, dynamic>;
-          // keys vary: geram18, gold_geram18, etc.
-          for (final key in [
-            'geram18',
-            'gold_geram18',
-            'sekee',
-            'price_dollar_rl'
-          ]) {
-            if (j.containsKey(key)) {
-              final item = j[key];
-              if (item is Map && item['p'] != null) {
-                final raw = item['p'].toString().replaceAll(',', '');
-                final v = double.tryParse(raw);
-                if (v != null && v > 1000 && key.contains('geram')) {
-                  price = v;
-                  break;
-                }
-              }
-            }
-          }
-          // scan all for geram18-like
-          if (price == null) {
-            j.forEach((k, v) {
-              if (price != null) return;
-              if (k.toString().contains('geram18') && v is Map) {
-                final raw = v['p']?.toString().replaceAll(',', '') ?? '';
-                final val = double.tryParse(raw);
-                if (val != null && val > 10000) price = val;
-              }
-            });
+            .get(Uri.parse(url), headers: {'Accept': 'application/json', 'User-Agent': 'HesabgarMan/1.0'})
+            .timeout(const Duration(seconds: 10));
+        if (res.statusCode != 200) return null;
+        final body = jsonDecode(res.body);
+        return parse(body);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    // ۱) iran-market رایگان — طلای ۱۸ عیار (تومان)
+    price = await tryUrl(
+      'https://cdn.jsdelivr.net/gh/iran-market/iran-market.github.io@main/data/popular.json',
+      (body) {
+        if (body is! Map) return null;
+        final list = body['data'];
+        if (list is! List) return null;
+        for (final item in list) {
+          if (item is Map && item['symbol'] == 'GOLD_18K_IRR') {
+            final v = item['price'];
+            if (v is num && v > 100000) return v.toDouble();
           }
         }
-      } catch (_) {}
+        return null;
+      },
+    );
+    if (price != null) source = 'iran-market';
 
-      // fallback: metals.live-like USD * approx (last resort)
-      if (price == null) {
-        try {
-          final res = await http
-              .get(Uri.parse(
-                  'https://api.frankfurter.app/latest?from=USD&to=EUR'))
-              .timeout(const Duration(seconds: 5));
-          // just connectivity check - not used for gold
-          if (res.statusCode != 200) {}
-        } catch (_) {}
-      }
+    // ۲) raw github همان منبع
+    if (price == null) {
+      price = await tryUrl(
+        'https://raw.githubusercontent.com/iran-market/iran-market.github.io/main/data/popular.json',
+        (body) {
+          if (body is! Map) return null;
+          final list = body['data'];
+          if (list is! List) return null;
+          for (final item in list) {
+            if (item is Map && item['symbol'] == 'GOLD_18K_IRR') {
+              final v = item['price'];
+              if (v is num && v > 100000) return v.toDouble();
+            }
+          }
+          return null;
+        },
+      );
+      if (price != null) source = 'iran-market';
+    }
 
-      final fetched = price;
-      if (fetched != null && fetched > 0) {
-        _price.text = NumFmt.format(fetched);
-        _priceMsg = 'نرخ از اینترنت به‌روز شد';
-        _recalc();
-      } else {
-        _priceMsg =
-            'دریافت خودکار ممکن نشد؛ قیمت هر گرم را دستی وارد کنید';
-      }
-    } catch (e) {
-      _priceMsg = 'خطا در دریافت نرخ؛ دستی وارد کنید';
+    // ۳) tgju ajax
+    if (price == null) {
+      price = await tryUrl(
+        'https://call1.tgju.org/ajax.json',
+        (body) {
+          if (body is! Map) return null;
+          for (final key in ['geram18', 'gold_geram18']) {
+            final item = body[key];
+            if (item is Map && item['p'] != null) {
+              final raw = item['p'].toString().replaceAll(',', '').replaceAll('٬', '');
+              final v = double.tryParse(raw);
+              if (v != null && v > 100000) return v;
+            }
+          }
+          double? found;
+          body.forEach((k, v) {
+            if (found != null) return;
+            if (k.toString().toLowerCase().contains('geram18') && v is Map) {
+              final raw = v['p']?.toString().replaceAll(',', '').replaceAll('٬', '') ?? '';
+              final val = double.tryParse(raw);
+              if (val != null && val > 100000) found = val;
+            }
+          });
+          return found;
+        },
+      );
+      if (price != null) source = 'tgju';
+    }
+
+    final fetched = price;
+    if (fetched != null && fetched > 0) {
+      _price.text = NumFmt.format(fetched);
+      _priceMsg = 'نرخ طلای ۱۸ عیار به‌روز شد${source != null ? ' ($source)' : ''}';
+      _recalc();
+    } else {
+      _priceMsg =
+          'دریافت خودکار ممکن نشد؛ قیمت هر گرم را دستی وارد کنید';
     }
     if (mounted) {
       setState(() => _loadingPrice = false);
@@ -3064,7 +3081,9 @@ class Jalali {
   }
 
   static Jalali fromDateTime(DateTime dt) {
-    return fromGregorian(dt.year, dt.month, dt.day);
+    // فقط سال/ماه/روز محلی — بدون اثر timezone
+    final local = DateTime(dt.year, dt.month, dt.day);
+    return fromGregorian(local.year, local.month, local.day);
   }
 
   static Jalali fromGregorian(int gy, int gm, int gd) {
@@ -3097,11 +3116,10 @@ class Jalali {
   }
 
   DateTime toDateTime() {
-    final jy = year;
-    final jm = month;
-    final jd = day;
-    final jdn = _jalaliToJdn(jy, jm, jd);
-    return _jdnToGregorian(jdn);
+    final jdn = _jalaliToJdn(year, month, day);
+    final g = _jdnToGregorian(jdn);
+    // ظهر محلی تا مشکل timezone باعث جابه‌جایی روز نشود
+    return DateTime(g.year, g.month, g.day, 12);
   }
 
   static int _jalaliToJdn(int jy, int jm, int jd) {
@@ -3112,7 +3130,7 @@ class Jalali {
         (((epyear * 682) - 110) ~/ 2816) +
         (epyear - 1) * 365 +
         (epbase ~/ 2820) * 1029983 +
-        1948320 - 1;
+        1948320;
   }
 
   static DateTime _jdnToGregorian(int jdn) {

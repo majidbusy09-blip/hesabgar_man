@@ -33,7 +33,7 @@ jobs:
           if [ -f pubspec.lock ]; then cp pubspec.lock /tmp/backup/; fi
 
       - name: Generate Android platform files
-        run: flutter create . --platforms=android --project-name hesabgar_man --org com.example
+        run: flutter create . --platforms=android --project-name hesabgar_man --org ir.hesabgar
 
       - name: Restore source files
         run: |

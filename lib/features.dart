@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:math_expressions/math_expressions.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 
 
 // ---------- features/calculator/logic/calculator_logic.dart ----------
@@ -1596,6 +1597,46 @@ class FinanceLogic {
   }) {
     return value * percent / 100;
   }
+
+  /// سود سپرده ساده (روزانه / ۳۰ روز / ۳۱ روز / سالانه)
+  static Map<String, double> depositSimple({
+    required double principal,
+    required double annualRatePercent,
+  }) {
+    if (principal <= 0 || annualRatePercent < 0) {
+      return {'daily': 0, 'd30': 0, 'd31': 0, 'yearly': 0};
+    }
+    final yearly = principal * annualRatePercent / 100;
+    final daily = yearly / 365;
+    return {
+      'daily': daily,
+      'd30': daily * 30,
+      'd31': daily * 31,
+      'yearly': yearly,
+    };
+  }
+
+  /// محاسبه قیمت طلا (ایران — مالیات فقط روی اجرت و سود)
+  static Map<String, double> goldPrice({
+    required double pricePerGram,
+    required double weightGram,
+    required double wagePercent,
+    required double profitPercent,
+    required double taxPercent,
+  }) {
+    final raw = pricePerGram * weightGram;
+    final wage = raw * wagePercent / 100;
+    final profit = raw * profitPercent / 100;
+    final tax = (wage + profit) * taxPercent / 100;
+    final total = raw + wage + profit + tax;
+    return {
+      'raw': raw,
+      'wage': wage,
+      'profit': profit,
+      'tax': tax,
+      'total': total,
+    };
+  }
 }
 
 // ---------- features/finance/presentation/finance_screen.dart ----------
@@ -1613,6 +1654,7 @@ class GroupedNumberFormatter extends TextInputFormatter {
     );
   }
 }
+
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
@@ -1641,30 +1683,86 @@ class _FinanceScreenState extends State<FinanceScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('محاسبات مالی'),
+        title: const Text('محاسبه سود سپرده، وام، طلا'),
         bottom: TabBar(
           controller: _tab,
-          labelStyle: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+          labelStyle: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
           tabs: const [
-            Tab(text: 'قسط وام'),
             Tab(text: 'سود سپرده'),
-            Tab(text: 'مالیات'),
+            Tab(text: 'سود وام'),
+            Tab(text: 'محاسبه طلا'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tab,
         children: const [
-          _LoanTab(),
           _DepositTab(),
-          _VatTab(),
+          _LoanTab(),
+          _GoldTab(),
         ],
       ),
     );
   }
 }
 
-// ---------- قسط وام ----------
+// ---------- سود سپرده (ساده روزانه) ----------
+class _DepositTab extends StatefulWidget {
+  const _DepositTab();
+
+  @override
+  State<_DepositTab> createState() => _DepositTabState();
+}
+
+class _DepositTabState extends State<_DepositTab> {
+  final _principal = TextEditingController();
+  final _rate = TextEditingController();
+  Map<String, double> _r = const {
+    'daily': 0,
+    'd30': 0,
+    'd31': 0,
+    'yearly': 0,
+  };
+
+  void _recalc() {
+    setState(() {
+      _r = FinanceLogic.depositSimple(
+        principal: NumFmt.parse(_principal.text),
+        annualRatePercent: NumFmt.parse(_rate.text),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _principal.dispose();
+    _rate.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _field(_principal, 'مبلغ سرمایه‌گذاری', Icons.savings_outlined,
+            onChanged: _recalc),
+        const SizedBox(height: 12),
+        _field(_rate, 'نرخ سود (درصد)', Icons.percent, onChanged: _recalc),
+        const SizedBox(height: 16),
+        _readonlyRow('سود سپرده در روز', _r['daily']!),
+        const SizedBox(height: 8),
+        _readonlyRow('سود سپرده در ماه ۳۰ روزه', _r['d30']!),
+        const SizedBox(height: 8),
+        _readonlyRow('سود سپرده در ماه ۳۱ روز', _r['d31']!),
+        const SizedBox(height: 8),
+        _readonlyRow('سود سپرده در سال', _r['yearly']!),
+      ],
+    );
+  }
+}
+
+// ---------- سود وام ----------
 class _LoanTab extends StatefulWidget {
   const _LoanTab();
 
@@ -1679,14 +1777,11 @@ class _LoanTabState extends State<_LoanTab> {
   Map<String, double>? _result;
 
   void _calc() {
-    final p = NumFmt.parse(_principal.text);
-    final r = NumFmt.parse(_rate.text);
-    final m = NumFmt.parse(_months.text).round();
     setState(() {
       _result = FinanceLogic.loanSummary(
-        principal: p,
-        annualRatePercent: r,
-        months: m,
+        principal: NumFmt.parse(_principal.text),
+        annualRatePercent: NumFmt.parse(_rate.text),
+        months: NumFmt.parse(_months.text).round(),
       );
     });
   }
@@ -1715,171 +1810,265 @@ class _LoanTabState extends State<_LoanTab> {
           onPressed: _calc,
           icon: const Icon(Icons.calculate),
           label: const Text('محاسبه', style: TextStyle(fontFamily: 'Vazirmatn')),
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            minimumSize: const Size.fromHeight(48),
-          ),
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
         ),
         if (_result != null) ...[
-          const SizedBox(height: 24),
-          _resultCard('قسط ماهانه', _fmt(_result!['installment']!)),
-          _resultCard('مجموع پرداختی', _fmt(_result!['total']!)),
-          _resultCard('کل سود', _fmt(_result!['interest']!),
-              color: AppColors.secondary),
+          const SizedBox(height: 20),
+          _resultCard('قسط ماهانه', _fmtMoney(_result!['installment']!)),
+          _resultCard('مجموع پرداختی', _fmtMoney(_result!['total']!)),
+          _resultCard('کل سود', _fmtMoney(_result!['interest']!),
+              color: Colors.orange),
         ],
       ],
     );
   }
 }
 
-// ---------- سود سپرده ----------
-class _DepositTab extends StatefulWidget {
-  const _DepositTab();
+// ---------- محاسبه طلا ----------
+class _GoldTab extends StatefulWidget {
+  const _GoldTab();
 
   @override
-  State<_DepositTab> createState() => _DepositTabState();
+  State<_GoldTab> createState() => _GoldTabState();
 }
 
-class _DepositTabState extends State<_DepositTab> {
-  final _principal = TextEditingController();
-  final _rate = TextEditingController(text: '20');
-  final _years = TextEditingController(text: '1');
-  double? _final;
-  double? _profit;
+class _GoldTabState extends State<_GoldTab> {
+  final _price = TextEditingController();
+  final _weight = TextEditingController();
+  final _wage = TextEditingController(text: '10');
+  final _profit = TextEditingController(text: '7');
+  final _tax = TextEditingController(text: '9');
+  Map<String, double> _r = const {
+    'raw': 0,
+    'wage': 0,
+    'profit': 0,
+    'tax': 0,
+    'total': 0,
+  };
+  bool _loadingPrice = false;
+  String? _priceMsg;
 
-  void _calc() {
-    final p = NumFmt.parse(_principal.text);
-    final r = double.tryParse(_rate.text) ?? 0;
-    final y = double.tryParse(_years.text) ?? 0;
-    final f = FinanceLogic.compoundInterest(
-      principal: p,
-      annualRatePercent: r,
-      years: y,
-    );
+  void _recalc() {
     setState(() {
-      _final = f;
-      _profit = f - p;
+      _r = FinanceLogic.goldPrice(
+        pricePerGram: NumFmt.parse(_price.text),
+        weightGram: NumFmt.parse(_weight.text),
+        wagePercent: NumFmt.parse(_wage.text),
+        profitPercent: NumFmt.parse(_profit.text),
+        taxPercent: NumFmt.parse(_tax.text),
+      );
     });
+  }
+
+  Future<void> _fetchGoldPrice() async {
+    setState(() {
+      _loadingPrice = true;
+      _priceMsg = null;
+    });
+    try {
+      // چند منبع عمومی برای گرم ۱۸ عیار (تومان)
+      double? price;
+      // 1) tgju-style free endpoint attempts
+      final urls = <String, double Function(dynamic)>{
+        'https://api.navasan.tech/latest/?api_key=free': (j) {
+          // may fail without key
+          return 0;
+        },
+      };
+
+      // Try tgju ajax (often works without auth for basic data)
+      try {
+        final res = await http
+            .get(Uri.parse('https://call1.tgju.org/ajax.json'))
+            .timeout(const Duration(seconds: 8));
+        if (res.statusCode == 200) {
+          final j = jsonDecode(res.body) as Map<String, dynamic>;
+          // keys vary: geram18, gold_geram18, etc.
+          for (final key in [
+            'geram18',
+            'gold_geram18',
+            'sekee',
+            'price_dollar_rl'
+          ]) {
+            if (j.containsKey(key)) {
+              final item = j[key];
+              if (item is Map && item['p'] != null) {
+                final raw = item['p'].toString().replaceAll(',', '');
+                final v = double.tryParse(raw);
+                if (v != null && v > 1000 && key.contains('geram')) {
+                  price = v;
+                  break;
+                }
+              }
+            }
+          }
+          // scan all for geram18-like
+          if (price == null) {
+            j.forEach((k, v) {
+              if (price != null) return;
+              if (k.toString().contains('geram18') && v is Map) {
+                final raw = v['p']?.toString().replaceAll(',', '') ?? '';
+                final val = double.tryParse(raw);
+                if (val != null && val > 10000) price = val;
+              }
+            });
+          }
+        }
+      } catch (_) {}
+
+      // fallback: metals.live-like USD * approx (last resort)
+      if (price == null) {
+        try {
+          final res = await http
+              .get(Uri.parse(
+                  'https://api.frankfurter.app/latest?from=USD&to=EUR'))
+              .timeout(const Duration(seconds: 5));
+          // just connectivity check - not used for gold
+          if (res.statusCode != 200) {}
+        } catch (_) {}
+      }
+
+      if (price != null && price > 0) {
+        _price.text = NumFmt.format(price);
+        _priceMsg = 'نرخ از اینترنت به‌روز شد';
+        _recalc();
+      } else {
+        _priceMsg =
+            'دریافت خودکار ممکن نشد؛ قیمت هر گرم را دستی وارد کنید';
+      }
+    } catch (e) {
+      _priceMsg = 'خطا در دریافت نرخ؛ دستی وارد کنید';
+    }
+    if (mounted) {
+      setState(() => _loadingPrice = false);
+    }
   }
 
   @override
   void dispose() {
-    _principal.dispose();
-    _rate.dispose();
-    _years.dispose();
+    _price.dispose();
+    _weight.dispose();
+    _wage.dispose();
+    _profit.dispose();
+    _tax.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _field(_principal, 'مبلغ اولیه (تومان)', Icons.savings_outlined),
-        const SizedBox(height: 12),
-        _field(_rate, 'نرخ سود سالانه (%)', Icons.percent),
-        const SizedBox(height: 12),
-        _field(_years, 'مدت (سال)', Icons.timelapse),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: _calc,
-          icon: const Icon(Icons.calculate),
-          label: const Text('محاسبه', style: TextStyle(fontFamily: 'Vazirmatn')),
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            minimumSize: const Size.fromHeight(48),
+        TextField(
+          controller: _price,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+            GroupedNumberFormatter(),
+          ],
+          onChanged: (_) => _recalc(),
+          style: const TextStyle(fontFamily: 'Vazirmatn'),
+          decoration: InputDecoration(
+            labelText: 'قیمت هر گرم طلا (تومان)',
+            labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            prefixIcon: _loadingPrice
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'دریافت نرخ آنلاین',
+                    onPressed: _fetchGoldPrice,
+                  ),
           ),
         ),
-        if (_final != null) ...[
-          const SizedBox(height: 24),
-          _resultCard('مبلغ نهایی', _fmt(_final!)),
-          _resultCard('سود کسب‌شده', _fmt(_profit!),
-              color: AppColors.success),
+        if (_priceMsg != null) ...[
+          const SizedBox(height: 6),
+          Text(_priceMsg!,
+              style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 12,
+                  color: scheme.primary)),
         ],
-      ],
-    );
-  }
-}
-
-// ---------- مالیات ----------
-class _VatTab extends StatefulWidget {
-  const _VatTab();
-
-  @override
-  State<_VatTab> createState() => _VatTabState();
-}
-
-class _VatTabState extends State<_VatTab> {
-  final _amount = TextEditingController();
-  final _rate = TextEditingController(text: '9');
-  bool _reverse = false;
-  Map<String, double>? _result;
-
-  void _calc() {
-    final a = NumFmt.parse(_amount.text);
-    final r = double.tryParse(_rate.text) ?? 9;
-    setState(() {
-      _result = _reverse
-          ? FinanceLogic.reverseVat(totalWithVat: a, vatPercent: r)
-          : FinanceLogic.vat(amount: a, vatPercent: r);
-    });
-  }
-
-  @override
-  void dispose() {
-    _amount.dispose();
-    _rate.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        SwitchListTile(
-          title: const Text('محاسبه معکوس (از مبلغ نهایی)',
-              style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14)),
-          value: _reverse,
-          activeColor: AppColors.primary,
-          onChanged: (v) => setState(() {
-            _reverse = v;
-            _result = null;
-          }),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _field(_weight, 'وزن طلا (گرم)', Icons.scale,
+                  onChanged: _recalc),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _field(_wage, 'اجرت ساخت (٪)', Icons.build_outlined,
+                  onChanged: _recalc),
+            ),
+          ],
         ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _field(_profit, 'درصد سود فروشنده', Icons.trending_up,
+                  onChanged: _recalc),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _field(_tax, 'درصد مالیات', Icons.receipt_long,
+                  onChanged: _recalc),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _readonlyRow('قیمت نهایی', _r['total']!),
         const SizedBox(height: 8),
-        _field(
-          _amount,
-          _reverse ? 'مبلغ نهایی با مالیات' : 'مبلغ قبل از مالیات',
-          Icons.receipt_outlined,
-        ),
+        _resultCard('ارزش طلا', _fmtMoney(_r['raw']!)),
+        _resultCard('اجرت ساخت', _fmtMoney(_r['wage']!)),
+        _resultCard('سود فروشنده', _fmtMoney(_r['profit']!)),
+        _resultCard('مالیات', _fmtMoney(_r['tax']!), color: Colors.orange),
         const SizedBox(height: 12),
-        _field(_rate, 'درصد مالیات', Icons.percent),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: _calc,
-          icon: const Icon(Icons.calculate),
-          label: const Text('محاسبه', style: TextStyle(fontFamily: 'Vazirmatn')),
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            minimumSize: const Size.fromHeight(48),
-          ),
+        Text(
+          'از دی‌ماه ۱۴۰۰ مالیات بر ارزش افزوده طلا تنها روی اجرت ساخت و سود فروشنده لحاظ می‌شود.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontFamily: 'Vazirmatn', fontSize: 12, color: Colors.grey[600]),
         ),
-        if (_result != null) ...[
-          const SizedBox(height: 24),
-          _resultCard('مبلغ خالص', _fmt(_result!['net']!)),
-          _resultCard('مالیات', _fmt(_result!['tax']!),
-              color: AppColors.secondary),
-          _resultCard('مبلغ نهایی', _fmt(_result!['total']!)),
-        ],
       ],
     );
   }
 }
 
-// ---------- ویجت‌های مشترک ----------
+Widget _readonlyRow(String title, double value) {
+  return InputDecorator(
+    decoration: InputDecoration(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(title,
+              style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 14)),
+        ),
+        Text(
+          NumFmt.format(value),
+          style: const TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontSize: 16,
+              fontWeight: FontWeight.bold),
+        ),
+      ],
+    ),
+  );
+}
+
 Widget _field(TextEditingController c, String label, IconData icon,
-    {bool integer = false}) {
+    {bool integer = false, VoidCallback? onChanged}) {
   return TextField(
     controller: c,
     keyboardType: TextInputType.numberWithOptions(decimal: !integer),
@@ -1895,6 +2084,7 @@ Widget _field(TextEditingController c, String label, IconData icon,
           selection: TextSelection.collapsed(offset: g.length),
         );
       }
+      onChanged?.call();
     },
     style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 16),
     decoration: InputDecoration(
@@ -1926,15 +2116,9 @@ Widget _resultCard(String title, String value, {Color? color}) {
   );
 }
 
-String _fmt(double v) {
+String _fmtMoney(double v) {
   if (v.isNaN || v.isInfinite) return '—';
-  final s = v.toStringAsFixed(0);
-  final buf = StringBuffer();
-  for (var i = 0; i < s.length; i++) {
-    if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
-    buf.write(s[i]);
-  }
-  return '${buf.toString()} تومان';
+  return '${NumFmt.format(v)} تومان';
 }
 
 // ---------- features/expenses/logic/expense_model.dart ----------
@@ -3098,6 +3282,7 @@ class OccasionData {
   }
 }
 
+
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
 
@@ -3106,14 +3291,11 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  /// jalali | gregorian | hijri
-  String _system = 'jalali';
-  late int _year;
-  late int _month;
-  DateTime? _selectedG; // روز انتخاب‌شده به میلادی برای تبدیل
+  late Jalali _focused; // ماه نمایش (شمسی)
+  late Jalali _todayJ;
+  DateTime? _selectedG;
 
-  static const _jalaliMonths = Jalali.monthNames;
-  static const _gregorianMonths = [
+  static const _gMonths = [
     'ژانویه', 'فوریه', 'مارس', 'آوریل', 'مه', 'ژوئن',
     'ژوئیه', 'اوت', 'سپتامبر', 'اکتبر', 'نوامبر', 'دسامبر',
   ];
@@ -3121,259 +3303,209 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   void initState() {
     super.initState();
-    final j = Jalali.fromDateTime(DateTime.now());
-    _year = j.year;
-    _month = j.month;
+    _todayJ = Jalali.fromDateTime(DateTime.now());
+    _focused = Jalali(_todayJ.year, _todayJ.month, 1);
     _selectedG = DateTime.now();
   }
 
-  void _setSystem(String s) {
-    final g = _selectedG ?? DateTime.now();
-    setState(() {
-      _system = s;
-      if (s == 'jalali') {
-        final j = Jalali.fromDateTime(g);
-        _year = j.year;
-        _month = j.month;
-      } else if (s == 'gregorian') {
-        _year = g.year;
-        _month = g.month;
-      } else {
-        final h = HijriDate.fromGregorian(g);
-        _year = h.year;
-        _month = h.month;
-      }
-    });
-  }
+  Jalali get _selectedJ =>
+      Jalali.fromDateTime(_selectedG ?? DateTime.now());
 
-  int _daysInMonth() {
-    if (_system == 'jalali') {
-      return Jalali(_year, _month, 1).monthLength;
-    }
-    if (_system == 'gregorian') {
-      return DateTime(_year, _month + 1, 0).day;
-    }
-    // قمری: تقریباً ۲۹ یا ۳۰
-    return 30;
-  }
+  HijriDate get _selectedH =>
+      HijriDate.fromGregorian(_selectedG ?? DateTime.now());
 
-  int _leadingEmpty() {
-    if (_system == 'jalali') {
-      return Jalali(_year, _month, 1).weekdayIndex;
-    }
-    DateTime first;
-    if (_system == 'gregorian') {
-      first = DateTime(_year, _month, 1);
-    } else {
-      first = _hijriToApproxGregorian(_year, _month, 1);
-    }
-    // Sat=0 ... Fri=6
-    return (first.weekday + 1) % 7;
-  }
-
-  DateTime _hijriToApproxGregorian(int hy, int hm, int hd) {
-    // reverse approx via search around estimate
-    final est = DateTime.now();
-    for (var delta = -400; delta < 400; delta++) {
-      final d = est.add(Duration(days: delta));
-      final h = HijriDate.fromGregorian(d);
-      if (h.year == hy && h.month == hm && h.day == hd) return d;
-    }
-    return est;
-  }
-
-  DateTime _cellToGregorian(int day) {
-    if (_system == 'jalali') {
-      return Jalali(_year, _month, day).toDateTime();
-    }
-    if (_system == 'gregorian') {
-      return DateTime(_year, _month, day);
-    }
-    return _hijriToApproxGregorian(_year, _month, day);
-  }
-
-  void _prev() {
-    setState(() {
-      _month--;
-      if (_month < 1) {
-        _month = 12;
-        _year--;
-      }
-    });
-  }
-
-  void _next() {
-    setState(() {
-      _month++;
-      if (_month > 12) {
-        _month = 1;
-        _year++;
-      }
-    });
-  }
-
+  void _prevMonth() => setState(() => _focused = _focused.addMonths(-1));
+  void _nextMonth() => setState(() => _focused = _focused.addMonths(1));
   void _goToday() {
     final now = DateTime.now();
     setState(() {
       _selectedG = now;
-      if (_system == 'jalali') {
-        final j = Jalali.fromDateTime(now);
-        _year = j.year;
-        _month = j.month;
-      } else if (_system == 'gregorian') {
-        _year = now.year;
-        _month = now.month;
-      } else {
-        final h = HijriDate.fromGregorian(now);
-        _year = h.year;
-        _month = h.month;
-      }
+      final j = Jalali.fromDateTime(now);
+      _focused = Jalali(j.year, j.month, 1);
     });
   }
 
-  String get _monthTitle {
-    if (_system == 'jalali') return '${_jalaliMonths[_month - 1]} $_year';
-    if (_system == 'gregorian') return '${_gregorianMonths[_month - 1]} $_year';
-    return '${HijriDate.monthNames[_month - 1]} $_year';
+  void _onDay(int day) {
+    final j = Jalali(_focused.year, _focused.month, day);
+    final g = j.toDateTime();
+    setState(() => _selectedG = g);
   }
 
-  void _onDayTap(int day) {
-    final g = _cellToGregorian(day);
-    setState(() => _selectedG = g);
-    final occasions = OccasionData.forDay(system: _system, month: _month, day: day);
-    // مناسبت‌های سیستم‌های دیگر برای همان روز میلادی
-    final j = Jalali.fromDateTime(g);
-    final h = HijriDate.fromGregorian(g);
+  void _showOccasions() {
+    final j = _selectedJ;
+    final g = _selectedG ?? DateTime.now();
+    final h = _selectedH;
     final all = <String>[
-      ...occasions.map((o) => o.title),
-      ...OccasionData.forDay(system: 'jalali', month: j.month, day: j.day).map((o) => 'شمسی: ${o.title}'),
-      ...OccasionData.forDay(system: 'gregorian', month: g.month, day: g.day).map((o) => 'میلادی: ${o.title}'),
-      ...OccasionData.forDay(system: 'hijri', month: h.month, day: h.day).map((o) => 'قمری: ${o.title}'),
+      ...OccasionData.forDay(system: 'jalali', month: j.month, day: j.day)
+          .map((o) => o.title),
+      ...OccasionData.forDay(system: 'gregorian', month: g.month, day: g.day)
+          .map((o) => o.title),
+      ...OccasionData.forDay(system: 'hijri', month: h.month, day: h.day)
+          .map((o) => o.title),
     ];
-    // unique
-    final seen = <String>{};
-    final uniq = <String>[];
-    for (final x in all) {
-      final key = x.replaceFirst(RegExp(r'^(شمسی|میلادی|قمری): '), '');
-      if (seen.add(key)) uniq.add(x);
-    }
+    final uniq = all.toSet().toList();
 
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '${Jalali.weekDays[j.weekdayIndex]} ${j.day} ${j.monthName} ${j.year}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'قمری: $h\nمیلادی: ${g.day} ${_gMonths[g.month - 1]} ${g.year}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontFamily: 'Vazirmatn', fontSize: 13, height: 1.5),
+            ),
+            const Divider(height: 24),
+            const Text('مناسبت‌ها',
+                style: TextStyle(
+                    fontFamily: 'Vazirmatn', fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (uniq.isEmpty)
+              const Text('مناسبت ثبت‌شده‌ای نیست',
+                  style: TextStyle(fontFamily: 'Vazirmatn', color: Colors.grey))
+            else
+              ...uniq.map((e) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.event, size: 20),
+                    title:
+                        Text(e, style: const TextStyle(fontFamily: 'Vazirmatn')),
+                  )),
+          ],
+        ),
       ),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'روز $day — $_monthTitle',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'شمسی: $j\nمیلادی: ${g.year}/${g.month}/${g.day}\nقمری: $h',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 13, height: 1.6),
-              ),
-              const Divider(height: 24),
-              const Text('مناسبت‌ها',
-                  style: TextStyle(
-                      fontFamily: 'Vazirmatn', fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              if (uniq.isEmpty)
-                const Text('مناسبت ثبت‌شده‌ای برای این روز نیست',
-                    style: TextStyle(fontFamily: 'Vazirmatn', color: Colors.grey))
-              else
-                ...uniq.map((e) => ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.event, size: 20),
-                      title: Text(e, style: const TextStyle(fontFamily: 'Vazirmatn')),
-                    )),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
+    );
+  }
+
+  void _showConverter() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => const _DateConverterSheet(),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final days = _daysInMonth();
-    final leading = _leadingEmpty();
+    final daysInMonth = _focused.monthLength;
+    final leading = Jalali(_focused.year, _focused.month, 1).weekdayIndex;
     final weekDays = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
+    final sel = _selectedJ;
+    final g = _selectedG ?? DateTime.now();
+    final h = _selectedH;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تقویم'),
+        title: Column(
+          children: [
+            const Text('امروز', style: TextStyle(fontSize: 12)),
+            Text(
+              '${Jalali.weekDays[sel.weekdayIndex]} ${sel.day} ${sel.monthName} ${sel.year}',
+              style: const TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        centerTitle: true,
         actions: [
-          TextButton(
+          IconButton(
+            icon: const Icon(Icons.today),
+            tooltip: 'امروز',
             onPressed: _goToday,
-            child: Text('امروز',
-                style: TextStyle(fontFamily: 'Vazirmatn', color: scheme.primary)),
+          ),
+          IconButton(
+            icon: const Icon(Icons.swap_horiz),
+            tooltip: 'تبدیل تاریخ',
+            onPressed: _showConverter,
           ),
         ],
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          // هدر سه‌تقویمی
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            color: scheme.primaryContainer.withValues(alpha: 0.35),
             child: Row(
               children: [
-                for (final e in [
-                  ('jalali', 'شمسی'),
-                  ('gregorian', 'میلادی'),
-                  ('hijri', 'قمری'),
-                ])
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: ChoiceChip(
-                        label: Center(
-                            child: Text(e.$2,
-                                style: TextStyle(
-                                  fontFamily: 'Vazirmatn',
-                                  fontSize: 13,
-                                  color: _system == e.$1 ? scheme.onPrimary : null,
-                                ))),
-                        selected: _system == e.$1,
-                        selectedColor: scheme.primary,
-                        onSelected: (_) => _setSystem(e.$1),
-                      ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${h.day} ${HijriDate.monthNames[h.month - 1]} ${h.year}',
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn', fontSize: 13),
                     ),
-                  ),
+                    Text(
+                      '${g.day} ${_gMonths[g.month - 1]} ${g.year}',
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn', fontSize: 13),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(sel.monthName,
+                        style: const TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
+                    Text('${sel.year}',
+                        style: const TextStyle(
+                            fontFamily: 'Vazirmatn', fontSize: 14)),
+                  ],
+                ),
               ],
             ),
           ),
+
+          // ناوبری ماه شمسی
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             child: Row(
               children: [
-                IconButton(onPressed: _next, icon: const Icon(Icons.chevron_left)),
+                IconButton(
+                    onPressed: _nextMonth,
+                    icon: const Icon(Icons.chevron_left)),
                 Expanded(
                   child: Text(
-                    _monthTitle,
+                    '${_focused.monthName} ${_focused.year}',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                         fontFamily: 'Vazirmatn',
-                        fontSize: 18,
+                        fontSize: 17,
                         fontWeight: FontWeight.bold),
                   ),
                 ),
-                IconButton(onPressed: _prev, icon: const Icon(Icons.chevron_right)),
+                IconButton(
+                    onPressed: _prevMonth,
+                    icon: const Icon(Icons.chevron_right)),
               ],
             ),
           ),
+
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
@@ -3391,7 +3523,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
+
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.all(8),
@@ -3400,37 +3533,47 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 mainAxisSpacing: 4,
                 crossAxisSpacing: 4,
               ),
-              itemCount: leading + days,
+              itemCount: leading + daysInMonth,
               itemBuilder: (context, index) {
                 if (index < leading) return const SizedBox.shrink();
                 final day = index - leading + 1;
-                final occasions = OccasionData.forDay(
-                    system: _system, month: _month, day: day);
+                final jDay = Jalali(_focused.year, _focused.month, day);
+                final gDay = jDay.toDateTime();
+                final hDay = HijriDate.fromGregorian(gDay);
+                final occasions = [
+                  ...OccasionData.forDay(
+                      system: 'jalali', month: jDay.month, day: jDay.day),
+                  ...OccasionData.forDay(
+                      system: 'gregorian', month: gDay.month, day: gDay.day),
+                  ...OccasionData.forDay(
+                      system: 'hijri', month: hDay.month, day: hDay.day),
+                ];
                 final isHoliday = occasions.any((o) => o.isHoliday);
-                final g = _cellToGregorian(day);
-                final isToday = DateTime.now().year == g.year &&
-                    DateTime.now().month == g.month &&
-                    DateTime.now().day == g.day;
+                final isFriday = jDay.weekdayIndex == 6;
+                final isToday = gDay.year == DateTime.now().year &&
+                    gDay.month == DateTime.now().month &&
+                    gDay.day == DateTime.now().day;
                 final isSelected = _selectedG != null &&
-                    _selectedG!.year == g.year &&
-                    _selectedG!.month == g.month &&
-                    _selectedG!.day == g.day;
+                    _selectedG!.year == gDay.year &&
+                    _selectedG!.month == gDay.month &&
+                    _selectedG!.day == gDay.day;
 
                 return InkWell(
-                  onTap: () => _onDayTap(day),
-                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => _onDay(day),
+                  borderRadius: BorderRadius.circular(20),
                   child: Container(
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? scheme.primary.withValues(alpha: 0.2)
+                          ? scheme.primary
                           : isToday
-                              ? scheme.secondaryContainer.withValues(alpha: 0.5)
+                              ? scheme.primary.withValues(alpha: 0.15)
                               : null,
-                      borderRadius: BorderRadius.circular(10),
-                      border: isToday
+                      shape: BoxShape.circle,
+                      border: isToday && !isSelected
                           ? Border.all(color: scheme.primary, width: 1.5)
                           : null,
                     ),
+                    alignment: Alignment.center,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -3439,16 +3582,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           style: TextStyle(
                             fontFamily: 'Vazirmatn',
                             fontWeight: FontWeight.bold,
-                            color: isHoliday ? Colors.redAccent : null,
+                            color: isSelected
+                                ? scheme.onPrimary
+                                : (isHoliday || isFriday)
+                                    ? Colors.redAccent
+                                    : null,
                           ),
                         ),
                         if (occasions.isNotEmpty)
                           Container(
-                            width: 6,
-                            height: 6,
-                            margin: const EdgeInsets.only(top: 2),
+                            width: 5,
+                            height: 5,
                             decoration: BoxDecoration(
-                              color: isHoliday ? Colors.redAccent : scheme.primary,
+                              color: isSelected
+                                  ? scheme.onPrimary
+                                  : (isHoliday
+                                      ? Colors.redAccent
+                                      : scheme.primary),
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -3459,7 +3609,185 @@ class _CalendarScreenState extends State<CalendarScreen> {
               },
             ),
           ),
+
+          // نوار مناسبت‌ها
+          SafeArea(
+            child: ListTile(
+              leading: const Icon(Icons.event_note),
+              title: const Text('مناسبت‌ها',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: _showOccasions,
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// تبدیل تاریخ شمسی ↔ میلادی ↔ قمری
+class _DateConverterSheet extends StatefulWidget {
+  const _DateConverterSheet();
+
+  @override
+  State<_DateConverterSheet> createState() => _DateConverterSheetState();
+}
+
+class _DateConverterSheetState extends State<_DateConverterSheet> {
+  String _from = 'jalali';
+  final _y = TextEditingController();
+  final _m = TextEditingController();
+  final _d = TextEditingController();
+  String _result = '';
+
+  static const _gMonths = [
+    'ژانویه', 'فوریه', 'مارس', 'آوریل', 'مه', 'ژوئن',
+    'ژوئیه', 'اوت', 'سپتامبر', 'اکتبر', 'نوامبر', 'دسامبر',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final j = Jalali.fromDateTime(DateTime.now());
+    _y.text = '${j.year}';
+    _m.text = '${j.month}';
+    _d.text = '${j.day}';
+    _convert();
+  }
+
+  @override
+  void dispose() {
+    _y.dispose();
+    _m.dispose();
+    _d.dispose();
+    super.dispose();
+  }
+
+  void _convert() {
+    final y = int.tryParse(_y.text) ?? 0;
+    final m = int.tryParse(_m.text) ?? 1;
+    final d = int.tryParse(_d.text) ?? 1;
+    try {
+      DateTime g;
+      if (_from == 'jalali') {
+        g = Jalali(y, m.clamp(1, 12), d.clamp(1, 31)).toDateTime();
+      } else if (_from == 'gregorian') {
+        g = DateTime(y, m.clamp(1, 12), d.clamp(1, 31));
+      } else {
+        // تقریبی: جستجوی روز قمری
+        g = DateTime.now();
+        for (var delta = -800; delta < 800; delta++) {
+          final cand = DateTime.now().add(Duration(days: delta));
+          final h = HijriDate.fromGregorian(cand);
+          if (h.year == y && h.month == m && h.day == d) {
+            g = cand;
+            break;
+          }
+        }
+      }
+      final j = Jalali.fromDateTime(g);
+      final h = HijriDate.fromGregorian(g);
+      setState(() {
+        _result =
+            'شمسی: ${j.day} ${j.monthName} ${j.year}\n'
+            'قمری: ${h.day} ${HijriDate.monthNames[h.month - 1]} ${h.year}\n'
+            'میلادی: ${g.day} ${_gMonths[g.month - 1]} ${g.year}';
+      });
+    } catch (_) {
+      setState(() => _result = 'تاریخ نامعتبر');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('تبدیل تاریخ',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(
+                    value: 'jalali',
+                    label: Text('شمسی',
+                        style: TextStyle(fontFamily: 'Vazirmatn'))),
+                ButtonSegment(
+                    value: 'gregorian',
+                    label: Text('میلادی',
+                        style: TextStyle(fontFamily: 'Vazirmatn'))),
+                ButtonSegment(
+                    value: 'hijri',
+                    label: Text('قمری',
+                        style: TextStyle(fontFamily: 'Vazirmatn'))),
+              ],
+              selected: {_from},
+              onSelectionChanged: (s) {
+                setState(() => _from = s.first);
+                _convert();
+              },
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _y,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'سال',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn')),
+                    onChanged: (_) => _convert(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _m,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'ماه',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn')),
+                    onChanged: (_) => _convert(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _d,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'روز',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn')),
+                    onChanged: (_) => _convert(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  _result,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontFamily: 'Vazirmatn', fontSize: 15, height: 1.7),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

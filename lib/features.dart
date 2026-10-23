@@ -1928,8 +1928,9 @@ class _GoldTabState extends State<_GoldTab> {
         } catch (_) {}
       }
 
-      if (price != null && price > 0) {
-        _price.text = NumFmt.format(price);
+      final fetched = price;
+      if (fetched != null && fetched > 0) {
+        _price.text = NumFmt.format(fetched);
         _priceMsg = 'نرخ از اینترنت به‌روز شد';
         _recalc();
       } else {

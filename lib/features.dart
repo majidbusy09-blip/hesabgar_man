@@ -1865,24 +1865,109 @@ class _GoldTabState extends State<_GoldTab> {
       _loadingPrice = true;
       _priceMsg = null;
     });
+
     double? price;
     String? source;
+    final errors = <String>[];
 
-    Future<double?> tryUrl(String url, double? Function(dynamic json) parse) async {
+    double? toToman(double v) {
+      // اگر به ریال باشد (معمولاً > ۵۰ میلیون) تبدیل به تومان
+      if (v >= 50000000) return v / 10;
+      return v;
+    }
+
+    double? parsePriceString(dynamic raw) {
+      if (raw == null) return null;
+      final s = raw
+          .toString()
+          .replaceAll(',', '')
+          .replaceAll('٬', '')
+          .replaceAll(' ', '')
+          .trim();
+      final v = double.tryParse(s);
+      if (v == null || v <= 0) return null;
+      return toToman(v);
+    }
+
+    Future<void> tryFetch(
+      String label,
+      String url,
+      double? Function(dynamic body) parse,
+    ) async {
+      if (price != null) return;
       try {
         final res = await http
-            .get(Uri.parse(url), headers: {'Accept': 'application/json', 'User-Agent': 'HesabgarMan/1.0'})
-            .timeout(const Duration(seconds: 10));
-        if (res.statusCode != 200) return null;
+            .get(
+              Uri.parse(url),
+              headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'User-Agent':
+                    'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36',
+              },
+            )
+            .timeout(const Duration(seconds: 12));
+        if (res.statusCode != 200) {
+          errors.add('$label: HTTP ${res.statusCode}');
+          return;
+        }
         final body = jsonDecode(res.body);
-        return parse(body);
-      } catch (_) {
-        return null;
+        final v = parse(body);
+        if (v != null && v > 100000) {
+          price = v;
+          source = label;
+        } else {
+          errors.add('$label: مقدار نامعتبر');
+        }
+      } catch (e) {
+        errors.add('$label: $e');
       }
     }
 
-    // ۱) iran-market رایگان — طلای ۱۸ عیار (تومان)
-    price = await tryUrl(
+    // ۱) TGJU — ساختار واقعی: current.geram18.p (ریال)
+    await tryFetch(
+      'TGJU',
+      'https://call1.tgju.org/ajax.json',
+      (body) {
+        if (body is! Map) return null;
+        final current = body['current'];
+        if (current is Map) {
+          for (final key in ['geram18', 'tgju_gold_irg18', 'geram18_buy']) {
+            final item = current[key];
+            if (item is Map) {
+              final v = parsePriceString(item['p']);
+              if (v != null) return v;
+            }
+          }
+        }
+        // ریشه مستقیم
+        for (final key in ['geram18', 'gold_geram18']) {
+          final item = body[key];
+          if (item is Map) {
+            final v = parsePriceString(item['p']);
+            if (v != null) return v;
+          }
+        }
+        return null;
+      },
+    );
+
+    // ۲) call2
+    await tryFetch(
+      'TGJU-2',
+      'https://call2.tgju.org/ajax.json',
+      (body) {
+        if (body is! Map) return null;
+        final current = body['current'];
+        if (current is Map && current['geram18'] is Map) {
+          return parsePriceString(current['geram18']['p']);
+        }
+        return null;
+      },
+    );
+
+    // ۳) iran-market (تومان)
+    await tryFetch(
+      'iran-market',
       'https://cdn.jsdelivr.net/gh/iran-market/iran-market.github.io@main/data/popular.json',
       (body) {
         if (body is! Map) return null;
@@ -1897,69 +1982,36 @@ class _GoldTabState extends State<_GoldTab> {
         return null;
       },
     );
-    if (price != null) source = 'iran-market';
 
-    // ۲) raw github همان منبع
-    if (price == null) {
-      price = await tryUrl(
-        'https://raw.githubusercontent.com/iran-market/iran-market.github.io/main/data/popular.json',
-        (body) {
-          if (body is! Map) return null;
-          final list = body['data'];
-          if (list is! List) return null;
-          for (final item in list) {
-            if (item is Map && item['symbol'] == 'GOLD_18K_IRR') {
-              final v = item['price'];
-              if (v is num && v > 100000) return v.toDouble();
-            }
+    // ۴) raw github
+    await tryFetch(
+      'iran-market-raw',
+      'https://raw.githubusercontent.com/iran-market/iran-market.github.io/main/data/popular.json',
+      (body) {
+        if (body is! Map) return null;
+        final list = body['data'];
+        if (list is! List) return null;
+        for (final item in list) {
+          if (item is Map && item['symbol'] == 'GOLD_18K_IRR') {
+            final v = item['price'];
+            if (v is num && v > 100000) return v.toDouble();
           }
-          return null;
-        },
-      );
-      if (price != null) source = 'iran-market';
-    }
-
-    // ۳) tgju ajax
-    if (price == null) {
-      price = await tryUrl(
-        'https://call1.tgju.org/ajax.json',
-        (body) {
-          if (body is! Map) return null;
-          for (final key in ['geram18', 'gold_geram18']) {
-            final item = body[key];
-            if (item is Map && item['p'] != null) {
-              final raw = item['p'].toString().replaceAll(',', '').replaceAll('٬', '');
-              final v = double.tryParse(raw);
-              if (v != null && v > 100000) return v;
-            }
-          }
-          double? found;
-          body.forEach((k, v) {
-            if (found != null) return;
-            if (k.toString().toLowerCase().contains('geram18') && v is Map) {
-              final raw = v['p']?.toString().replaceAll(',', '').replaceAll('٬', '') ?? '';
-              final val = double.tryParse(raw);
-              if (val != null && val > 100000) found = val;
-            }
-          });
-          return found;
-        },
-      );
-      if (price != null) source = 'tgju';
-    }
+        }
+        return null;
+      },
+    );
 
     final fetched = price;
     if (fetched != null && fetched > 0) {
       _price.text = NumFmt.format(fetched);
-      _priceMsg = 'نرخ طلای ۱۸ عیار به‌روز شد${source != null ? ' ($source)' : ''}';
+      _priceMsg =
+          'طلای ۱۸ عیار: ${NumFmt.format(fetched)} تومان${source != null ? ' — $source' : ''}';
       _recalc();
     } else {
       _priceMsg =
-          'دریافت خودکار ممکن نشد؛ قیمت هر گرم را دستی وارد کنید';
+          'دریافت خودکار ممکن نشد. ${errors.isNotEmpty ? errors.first : ''} قیمت را دستی وارد کنید.';
     }
-    if (mounted) {
-      setState(() => _loadingPrice = false);
-    }
+    if (mounted) setState(() => _loadingPrice = false);
   }
 
   @override

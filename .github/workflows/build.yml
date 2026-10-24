@@ -1,9 +1,15 @@
-name: Build APK
+name: Build APK and Publish Release
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -16,7 +22,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -53,26 +59,24 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "NO_RELEASE_KEY=1" >> $GITHUB_ENV
-            echo "No KEYSTORE_BASE64 secret — using default debug signing"
+            echo "NO_RELEASE_KEY=1" >> "$GITHUB_ENV"
+            echo "::warning::KEYSTORE_BASE64 is not configured; APK will use debug signing and is not suitable for store publication."
             exit 0
           fi
-          echo "$KEYSTORE_BASE64" | base64 -d > android/app/hesabgar-release.jks
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/hesabgar-release.jks
           {
             echo "storePassword=$KEYSTORE_PASSWORD"
             echo "keyPassword=$KEY_PASSWORD"
             echo "keyAlias=$KEY_ALIAS"
             echo "storeFile=hesabgar-release.jks"
           } > android/key.properties
-          echo "NO_RELEASE_KEY=0" >> $GITHUB_ENV
-          ls -la android/app/hesabgar-release.jks android/key.properties
+          echo "NO_RELEASE_KEY=0" >> "$GITHUB_ENV"
 
       - name: Configure Gradle signing
         if: env.NO_RELEASE_KEY == '0'
         run: |
           python3 tool/patch_signing.py
-          echo "---- android/app/build.gradle.kts (head) ----"
-          head -80 android/app/build.gradle.kts || head -80 android/app/build.gradle || true
+          echo "Gradle signing configuration updated."
 
       - name: Add Android permissions
         run: |
@@ -82,30 +86,42 @@ jobs:
               sed -i "s|<application|  <uses-permission android:name=\"$PERM\"/>\n    <application|" "$MANIFEST"
             fi
           done
-          if ! grep -q READ_EXTERNAL_STORAGE "$MANIFEST"; then
+          if ! grep -q "android.permission.READ_EXTERNAL_STORAGE" "$MANIFEST"; then
             sed -i 's|<application|  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application|' "$MANIFEST"
           fi
-          echo "Permissions added"
 
       - name: Download Vazirmatn Font
         run: |
           mkdir -p assets/fonts
-          curl -L -o vazir.zip https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip
-          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Regular.ttf" -d assets/fonts/
-          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Medium.ttf" -d assets/fonts/
-          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Bold.ttf" -d assets/fonts/
+          curl --fail --location --retry 3 -o vazir.zip https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip
+          unzip -o -j vazir.zip 'fonts/ttf/Vazirmatn-Regular.ttf' -d assets/fonts/
+          unzip -o -j vazir.zip 'fonts/ttf/Vazirmatn-Medium.ttf' -d assets/fonts/
+          unzip -o -j vazir.zip 'fonts/ttf/Vazirmatn-Bold.ttf' -d assets/fonts/
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Generate launcher icons
-        run: dart run flutter_launcher_icons || true
+        run: dart run flutter_launcher_icons
 
       - name: Build APK
         run: flutter build apk --release
 
-      - name: Upload APK
+      - name: Verify APK
+        run: test -s build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hesabgar-apk
+          name: hesabgar-apk-${{ github.ref_name }}
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true

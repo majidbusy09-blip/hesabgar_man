@@ -69,7 +69,10 @@ jobs:
 
       - name: Configure Gradle signing
         if: env.NO_RELEASE_KEY == '0'
-        run: python3 tool/patch_signing.py
+        run: |
+          python3 tool/patch_signing.py
+          echo "---- android/app/build.gradle.kts (head) ----"
+          head -80 android/app/build.gradle.kts || head -80 android/app/build.gradle || true
 
       - name: Add Android permissions
         run: |

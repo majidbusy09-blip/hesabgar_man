@@ -155,14 +155,31 @@ jobs:
           print(f"Patched {path}")
           PY
 
-      - name: Add gallery permission
+            - name: Add Android permissions
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if ! grep -q "READ_MEDIA_IMAGES" "$MANIFEST"; then
-            sed -i 's|<application|  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>\n  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application|' "$MANIFEST"
-          fi
+          python3 << 'PY2'
+          from pathlib import Path
+          m = Path("android/app/src/main/AndroidManifest.xml")
+          t = m.read_text()
+          for p in [
+              "android.permission.INTERNET",
+              "android.permission.VIBRATE",
+              "android.permission.READ_MEDIA_IMAGES",
+          ]:
+              if p not in t:
+                  t = t.replace("<application", f'  <uses-permission android:name="{p}"/>\n    <application', 1)
+          if "READ_EXTERNAL_STORAGE" not in t:
+              t = t.replace(
+                  "<application",
+                  '  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application',
+                  1,
+              )
+          m.write_text(t)
+          print("permissions ok")
+          PY2
 
-      - name: Download Vazirmatn Font
+- name: Download Vazirmatn Font
         run: |
           mkdir -p assets/fonts
           curl -L -o vazir.zip https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip

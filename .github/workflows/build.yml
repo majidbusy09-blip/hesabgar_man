@@ -30,6 +30,7 @@ jobs:
           cp -r lib /tmp/backup/
           cp pubspec.yaml /tmp/backup/
           if [ -d assets ]; then cp -r assets /tmp/backup/; fi
+          if [ -d tool ]; then cp -r tool /tmp/backup/; fi
           if [ -f pubspec.lock ]; then cp pubspec.lock /tmp/backup/; fi
 
       - name: Generate Android platform files
@@ -41,6 +42,7 @@ jobs:
           cp -r /tmp/backup/lib .
           cp /tmp/backup/pubspec.yaml .
           if [ -d /tmp/backup/assets ]; then rm -rf assets; cp -r /tmp/backup/assets .; fi
+          if [ -d /tmp/backup/tool ]; then rm -rf tool; cp -r /tmp/backup/tool .; fi
           if [ -f /tmp/backup/pubspec.lock ]; then cp /tmp/backup/pubspec.lock .; fi
 
       - name: Setup release keystore
@@ -67,48 +69,7 @@ jobs:
 
       - name: Configure Gradle signing
         if: env.NO_RELEASE_KEY == '0'
-        run: |
-          GRADLE=""
-          if [ -f android/app/build.gradle ]; then GRADLE=android/app/build.gradle; fi
-          if [ -f android/app/build.gradle.kts ]; then GRADLE=android/app/build.gradle.kts; fi
-          if [ -z "$GRADLE" ]; then echo "No gradle file"; exit 1; fi
-          echo "Patching $GRADLE"
-          if echo "$GRADLE" | grep -q '\.kts$'; then
-            if ! grep -q keystoreProperties "$GRADLE"; then
-              printf '%s\n' \
-                'val keystoreProperties = java.util.Properties()' \
-                'val keystorePropertiesFile = rootProject.file("key.properties")' \
-                'if (keystorePropertiesFile.exists()) {' \
-                '    keystoreProperties.load(keystorePropertiesFile.inputStream())' \
-                '}' \
-                '' > /tmp/ks_header.txt
-              cat /tmp/ks_header.txt "$GRADLE" > /tmp/gradle_out && mv /tmp/gradle_out "$GRADLE"
-            fi
-            if ! grep -q 'signingConfigs' "$GRADLE"; then
-              sed -i 's/android {/android {\n    signingConfigs {\n        create("release") {\n            keyAlias = keystoreProperties["keyAlias"] as String?\n            keyPassword = keystoreProperties["keyPassword"] as String?\n            storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }\n            storePassword = keystoreProperties["storePassword"] as String?\n        }\n    }/' "$GRADLE"
-            fi
-            if ! grep -q 'signingConfig = signingConfigs.getByName("release")' "$GRADLE"; then
-              sed -i 's/release {/release {\n            signingConfig = signingConfigs.getByName("release")/' "$GRADLE"
-            fi
-          else
-            if ! grep -q keystoreProperties "$GRADLE"; then
-              printf '%s\n' \
-                'def keystoreProperties = new Properties()' \
-                "def keystorePropertiesFile = rootProject.file('key.properties')" \
-                'if (keystorePropertiesFile.exists()) {' \
-                '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))' \
-                '}' \
-                '' > /tmp/ks_header.txt
-              cat /tmp/ks_header.txt "$GRADLE" > /tmp/gradle_out && mv /tmp/gradle_out "$GRADLE"
-            fi
-            if ! grep -q 'signingConfigs' "$GRADLE"; then
-              sed -i "s/android {/android {\n    signingConfigs {\n        release {\n            keyAlias keystoreProperties['keyAlias']\n            keyPassword keystoreProperties['keyPassword']\n            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null\n            storePassword keystoreProperties['storePassword']\n        }\n    }/" "$GRADLE"
-            fi
-            if ! grep -q 'signingConfig signingConfigs.release' "$GRADLE"; then
-              sed -i 's/release {/release {\n            signingConfig signingConfigs.release/' "$GRADLE"
-            fi
-          fi
-          echo "Gradle signing configured"
+        run: python3 tool/patch_signing.py
 
       - name: Add Android permissions
         run: |
@@ -122,7 +83,6 @@ jobs:
             sed -i 's|<application|  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application|' "$MANIFEST"
           fi
           echo "Permissions added"
-          head -30 "$MANIFEST"
 
       - name: Download Vazirmatn Font
         run: |

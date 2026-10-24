@@ -56,130 +56,75 @@ jobs:
             exit 0
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > android/app/hesabgar-release.jks
-          printf '%s\n' \
-            "storePassword=$KEYSTORE_PASSWORD" \
-            "keyPassword=$KEY_PASSWORD" \
-            "keyAlias=$KEY_ALIAS" \
-            "storeFile=hesabgar-release.jks" \
-            > android/key.properties
+          {
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyPassword=$KEY_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "storeFile=hesabgar-release.jks"
+          } > android/key.properties
           echo "NO_RELEASE_KEY=0" >> $GITHUB_ENV
           ls -la android/app/hesabgar-release.jks android/key.properties
 
       - name: Configure Gradle signing
         if: env.NO_RELEASE_KEY == '0'
         run: |
-          python3 << 'PY'
-          from pathlib import Path
-          import re
+          GRADLE=""
+          if [ -f android/app/build.gradle ]; then GRADLE=android/app/build.gradle; fi
+          if [ -f android/app/build.gradle.kts ]; then GRADLE=android/app/build.gradle.kts; fi
+          if [ -z "$GRADLE" ]; then echo "No gradle file"; exit 1; fi
+          echo "Patching $GRADLE"
+          if echo "$GRADLE" | grep -q '\.kts$'; then
+            if ! grep -q keystoreProperties "$GRADLE"; then
+              printf '%s\n' \
+                'val keystoreProperties = java.util.Properties()' \
+                'val keystorePropertiesFile = rootProject.file("key.properties")' \
+                'if (keystorePropertiesFile.exists()) {' \
+                '    keystoreProperties.load(keystorePropertiesFile.inputStream())' \
+                '}' \
+                '' > /tmp/ks_header.txt
+              cat /tmp/ks_header.txt "$GRADLE" > /tmp/gradle_out && mv /tmp/gradle_out "$GRADLE"
+            fi
+            if ! grep -q 'signingConfigs' "$GRADLE"; then
+              sed -i 's/android {/android {\n    signingConfigs {\n        create("release") {\n            keyAlias = keystoreProperties["keyAlias"] as String?\n            keyPassword = keystoreProperties["keyPassword"] as String?\n            storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }\n            storePassword = keystoreProperties["storePassword"] as String?\n        }\n    }/' "$GRADLE"
+            fi
+            if ! grep -q 'signingConfig = signingConfigs.getByName("release")' "$GRADLE"; then
+              sed -i 's/release {/release {\n            signingConfig = signingConfigs.getByName("release")/' "$GRADLE"
+            fi
+          else
+            if ! grep -q keystoreProperties "$GRADLE"; then
+              printf '%s\n' \
+                'def keystoreProperties = new Properties()' \
+                "def keystorePropertiesFile = rootProject.file('key.properties')" \
+                'if (keystorePropertiesFile.exists()) {' \
+                '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))' \
+                '}' \
+                '' > /tmp/ks_header.txt
+              cat /tmp/ks_header.txt "$GRADLE" > /tmp/gradle_out && mv /tmp/gradle_out "$GRADLE"
+            fi
+            if ! grep -q 'signingConfigs' "$GRADLE"; then
+              sed -i "s/android {/android {\n    signingConfigs {\n        release {\n            keyAlias keystoreProperties['keyAlias']\n            keyPassword keystoreProperties['keyPassword']\n            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null\n            storePassword keystoreProperties['storePassword']\n        }\n    }/" "$GRADLE"
+            fi
+            if ! grep -q 'signingConfig signingConfigs.release' "$GRADLE"; then
+              sed -i 's/release {/release {\n            signingConfig signingConfigs.release/' "$GRADLE"
+            fi
+          fi
+          echo "Gradle signing configured"
 
-          candidates = [
-              Path("android/app/build.gradle"),
-              Path("android/app/build.gradle.kts"),
-          ]
-          path = next((p for p in candidates if p.exists()), None)
-          if path is None:
-              raise SystemExit("No app build.gradle found")
-
-          text = path.read_text()
-          if "signingConfigs" in text and "key.properties" in text:
-              print("Already configured")
-              raise SystemExit(0)
-
-          if path.suffix == ".kts":
-              # Convert approach: prepend groovy is hard; patch kts simply
-              header = '''
-          import java.util.Properties
-          import java.io.FileInputStream
-
-          val keystoreProperties = Properties()
-          val keystorePropertiesFile = rootProject.file("key.properties")
-          if (keystorePropertiesFile.exists()) {
-              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-          }
-
-          '''
-              text = header + text
-              # inject signingConfigs into android { }
-              text = text.replace(
-                  "android {",
-                  '''android {
-              signingConfigs {
-                  create("release") {
-                      keyAlias = keystoreProperties["keyAlias"] as String?
-                      keyPassword = keystoreProperties["keyPassword"] as String?
-                      storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
-                      storePassword = keystoreProperties["storePassword"] as String?
-                  }
-              }
-          ''',
-                  1,
-              )
-              text = re.sub(
-                  r'(release\s*\{)',
-                  r'\1\n            signingConfig = signingConfigs.getByName("release")',
-                  text,
-                  count=1,
-              )
-          else:
-              header = '''
-          def keystoreProperties = new Properties()
-          def keystorePropertiesFile = rootProject.file('key.properties')
-          if (keystorePropertiesFile.exists()) {
-              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-          }
-
-          '''
-              text = header + text
-              text = text.replace(
-                  "android {",
-                  '''android {
-              signingConfigs {
-                  release {
-                      keyAlias keystoreProperties['keyAlias']
-                      keyPassword keystoreProperties['keyPassword']
-                      storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
-                      storePassword keystoreProperties['storePassword']
-                  }
-              }
-          ''',
-                  1,
-              )
-              text = re.sub(
-                  r'(release\s*\{)',
-                  r'\1\n            signingConfig signingConfigs.release',
-                  text,
-                  count=1,
-              )
-
-          path.write_text(text)
-          print(f"Patched {path}")
-          PY
-
-            - name: Add Android permissions
+      - name: Add Android permissions
         run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          python3 << 'PY2'
-          from pathlib import Path
-          m = Path("android/app/src/main/AndroidManifest.xml")
-          t = m.read_text()
-          for p in [
-              "android.permission.INTERNET",
-              "android.permission.VIBRATE",
-              "android.permission.READ_MEDIA_IMAGES",
-          ]:
-              if p not in t:
-                  t = t.replace("<application", f'  <uses-permission android:name="{p}"/>\n    <application', 1)
-          if "READ_EXTERNAL_STORAGE" not in t:
-              t = t.replace(
-                  "<application",
-                  '  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application',
-                  1,
-              )
-          m.write_text(t)
-          print("permissions ok")
-          PY2
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          for PERM in android.permission.INTERNET android.permission.VIBRATE android.permission.READ_MEDIA_IMAGES; do
+            if ! grep -q "$PERM" "$MANIFEST"; then
+              sed -i "s|<application|  <uses-permission android:name=\"$PERM\"/>\n    <application|" "$MANIFEST"
+            fi
+          done
+          if ! grep -q READ_EXTERNAL_STORAGE "$MANIFEST"; then
+            sed -i 's|<application|  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application|' "$MANIFEST"
+          fi
+          echo "Permissions added"
+          head -30 "$MANIFEST"
 
-- name: Download Vazirmatn Font
+      - name: Download Vazirmatn Font
         run: |
           mkdir -p assets/fonts
           curl -L -o vazir.zip https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip

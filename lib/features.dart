@@ -4754,11 +4754,48 @@ class AccountingLogic {
     return double.tryParse(_entry);
   }
 
-  void plus() => _applyOp(1);
+  void plus() => _applyAddSub(1);
 
-  void minus() => _applyOp(-1);
+  void minus() => _applyAddSub(-1);
 
-  void _applyOp(int sign) {
+  void multiply() {
+    final v = _parseEntry();
+    if (v == null) return;
+    _total = _total * v;
+    _tape.insert(0, {
+      'op': '×',
+      'val': CalcNum.format(v),
+      'total': moneyFormat(_total),
+    });
+    if (_tape.length > 100) _tape.removeLast();
+    _entry = '';
+    _entryFresh = true;
+    _showTotal = true;
+  }
+
+  void divide() {
+    final v = _parseEntry();
+    if (v == null) return;
+    if (v == 0) {
+      _entry = '';
+      _entryFresh = true;
+      _showTotal = true;
+      // جمع را خراب نمی‌کنیم؛ فقط ورود باطل
+      return;
+    }
+    _total = _total / v;
+    _tape.insert(0, {
+      'op': '÷',
+      'val': CalcNum.format(v),
+      'total': moneyFormat(_total),
+    });
+    if (_tape.length > 100) _tape.removeLast();
+    _entry = '';
+    _entryFresh = true;
+    _showTotal = true;
+  }
+
+  void _applyAddSub(int sign) {
     final v = _parseEntry();
     if (v != null) {
       final delta = sign * v;
@@ -4879,6 +4916,14 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       case '-':
       case '−':
         _acc.minus();
+        break;
+      case '×':
+      case '*':
+        _acc.multiply();
+        break;
+      case '÷':
+      case '/':
+        _acc.divide();
         break;
       case '%':
         _acc.percent();
@@ -5605,12 +5650,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   static const List<Map<String, dynamic>> _accountingButtons = [
     {'label': 'CE', 'isOp': true},
     {'label': 'C', 'isOp': true},
-    {'label': '⌫', 'isOp': true},
     {'label': '%', 'isSci': true},
+    {'label': '÷', 'isOp': true},
     {'label': '7'},
     {'label': '8'},
     {'label': '9'},
-    {'label': '+', 'isOp': true},
+    {'label': '×', 'isOp': true},
     {'label': '4'},
     {'label': '5'},
     {'label': '6'},
@@ -5618,10 +5663,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '1'},
     {'label': '2'},
     {'label': '3'},
-    {'label': '=', 'isEq': true},
+    {'label': '+', 'isOp': true},
+    {'label': '+/-', 'isOp': true},
     {'label': '0'},
     {'label': '.'},
-    {'label': '+/-', 'isOp': true},
     {'label': '=', 'isEq': true},
   ];
 

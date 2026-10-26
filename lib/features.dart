@@ -322,6 +322,36 @@ class CalculatorLogic {
     _syncDisplay();
   }
 
+
+  /// آخرین عدد یا پرانتز بسته را داخل تابع قرار می‌دهد: 27 + √ → sqrt(27)
+  String? _wrapLastOperand(String funcWithParen) {
+    final func = funcWithParen.endsWith('(')
+        ? funcWithParen.substring(0, funcWithParen.length - 1)
+        : funcWithParen;
+    final s = _expression;
+    if (s.endsWith(')')) {
+      var depth = 0;
+      for (var i = s.length - 1; i >= 0; i--) {
+        if (s[i] == ')') depth++;
+        if (s[i] == '(') {
+          depth--;
+          if (depth == 0) {
+            final inner = s.substring(i);
+            final before = s.substring(0, i);
+            return '$before$func$inner)';
+          }
+        }
+      }
+    }
+    final m = RegExp(r'([0-9]+\.?[0-9]*|π|e)$').firstMatch(s);
+    if (m != null) {
+      final before = s.substring(0, m.start);
+      final token = m.group(1)!;
+      return '$before$func($token)';
+    }
+    return null;
+  }
+
   void _appendToken(String token) {
     _maybeImplicitMul();
     _expression += token;

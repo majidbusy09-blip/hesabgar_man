@@ -4667,37 +4667,57 @@ class AccountingLogic {
     return moneyFormat(_total);
   }
 
+  /// نمایش ورود با جداکننده هزارگان (سه رقم سه رقم)
   String _formatEntry(String e) {
     if (e.isEmpty || e == '-') return e.isEmpty ? '0' : e;
-    final v = double.tryParse(e);
-    if (v == null) return e;
-    // در حسابداری تا ۲ رقم اعشار برای پول رایج است؛ حین تایپ اعشار آزاد
-    if (e.contains('.')) {
-      final parts = e.split('.');
-      final dec = parts.length > 1 ? parts[1] : '';
-      if (dec.length <= 2) return e; // هنوز در حال تایپ
+    final neg = e.startsWith('-');
+    var raw = neg ? e.substring(1) : e;
+    String intPart;
+    String? decPart;
+    if (raw.contains('.')) {
+      final parts = raw.split('.');
+      intPart = parts[0].isEmpty ? '0' : parts[0];
+      decPart = parts.length > 1 ? parts[1] : '';
+    } else {
+      intPart = raw;
     }
-    return e;
+    final grouped = _groupThousands(intPart);
+    final body = decPart != null ? '$grouped.$decPart' : grouped;
+    return neg ? '-$body' : body;
   }
 
-  /// نمایش پول‌گونه برای جمع (۲ رقم وقتی عدد کامل است)
+  static String _groupThousands(String digits) {
+    if (digits.isEmpty) return '0';
+    final buf = StringBuffer();
+    final len = digits.length;
+    for (var i = 0; i < len; i++) {
+      if (i > 0 && (len - i) % 3 == 0) buf.write(',');
+      buf.write(digits[i]);
+    }
+    return buf.toString();
+  }
+
+  /// نمایش جمع — بدون صفرهای اعشاری اجباری، با جداکننده هزارگان
   String moneyFormat(double v) {
     if (v.isNaN || v.isInfinite) return 'خطا';
     final neg = v < 0;
     final abs = v.abs();
-    final s = abs.toStringAsFixed(2);
-    // جداکننده هزارگان
-    final parts = s.split('.');
-    final intPart = parts[0];
-    final buf = StringBuffer();
-    for (var i = 0; i < intPart.length; i++) {
-      final fromEnd = intPart.length - i;
-      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
-      buf.write(intPart[i]);
+    String body;
+    if (abs == abs.roundToDouble() && abs < 1e15) {
+      body = _groupThousands(abs.round().toString());
+    } else {
+      var s = abs.toStringAsFixed(10);
+      s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+      final parts = s.split('.');
+      body = _groupThousands(parts[0]);
+      if (parts.length > 1 && parts[1].isNotEmpty) {
+        body = '$body.${parts[1]}';
+      }
     }
-    final out = '${buf.toString()}.${parts[1]}';
-    return neg ? '($out)' : out;
+    return neg ? '($body)' : body;
   }
+
+  void clearTape() => _tape.clear();
 
   String get statusLabel {
     if (_entry.isNotEmpty && !_entryFresh) return 'ورود';
@@ -4711,12 +4731,19 @@ class AccountingLogic {
       _entryFresh = false;
       _showTotal = false;
     }
+    if (d == '000') {
+      if (_entry.isEmpty || _entry == '0') {
+        _entry = '0';
+      } else if (!_entry.contains('.')) {
+        _entry += '000';
+      }
+      return;
+    }
     if (d == '.' && _entry.contains('.')) return;
     if (d == '.' && _entry.isEmpty) {
       _entry = '0.';
       return;
     }
-    // جلوگیری از صفرهای اضافی اول
     if (d != '.' && _entry == '0') {
       _entry = d;
       return;
@@ -4938,6 +4965,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       case '.':
         _acc.inputDigit('.');
         break;
+      case '000':
+        _acc.inputDigit('000');
+        break;
       default:
         if (RegExp(r'^[0-9]$').hasMatch(value)) {
           _acc.inputDigit(value);
@@ -5011,7 +5041,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
+
   void _showHistory() {
+    final isAcc = _isAccounting;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -5020,6 +5052,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModal) {
+            final empty = isAcc ? _acc.tape.isEmpty : _logic.history.isEmpty;
+            final count = isAcc ? _acc.tape.length : _logic.history.length;
             return DraggableScrollableSheet(
               expand: false,
               initialChildSize: 0.5,
@@ -5032,16 +5066,22 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
                       child: Row(
                         children: [
-                          const Text('تاریخچه',
-                              style: TextStyle(
+                          Text(isAcc ? 'نوار حسابداری' : 'تاریخچه',
+                              style: const TextStyle(
                                   fontFamily: 'Vazirmatn',
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold)),
                           const Spacer(),
-                          if (_logic.history.isNotEmpty)
+                          if (!empty)
                             TextButton.icon(
                               onPressed: () {
-                                setState(() => _logic.clearHistory());
+                                setState(() {
+                                  if (isAcc) {
+                                    _acc.clearTape();
+                                  } else {
+                                    _logic.clearHistory();
+                                  }
+                                });
                                 setModal(() {});
                               },
                               icon: const Icon(Icons.delete_outline, size: 18),
@@ -5053,15 +5093,51 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                     ),
                     const Divider(height: 1),
                     Expanded(
-                      child: _logic.history.isEmpty
-                          ? const Center(
-                              child: Text('تاریخچه خالی است',
-                                  style: TextStyle(fontFamily: 'Vazirmatn')))
+                      child: empty
+                          ? Center(
+                              child: Text(
+                                  isAcc
+                                      ? 'هنوز عملیاتی ثبت نشده'
+                                      : 'تاریخچه خالی است',
+                                  style: const TextStyle(
+                                      fontFamily: 'Vazirmatn')))
                           : ListView.builder(
                               controller: scrollController,
                               padding: const EdgeInsets.all(12),
-                              itemCount: _logic.history.length,
+                              itemCount: count,
                               itemBuilder: (context, index) {
+                                if (isAcc) {
+                                  final item = _acc.tape[index];
+                                  return Card(
+                                    child: ListTile(
+                                      leading: Text(
+                                        item['op'] ?? '',
+                                        style: const TextStyle(
+                                          fontFamily: 'Vazirmatn',
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      title: Text(
+                                        item['val'] ?? '',
+                                        style: const TextStyle(
+                                            fontFamily: 'Vazirmatn',
+                                            fontSize: 16),
+                                        textDirection: TextDirection.ltr,
+                                      ),
+                                      trailing: Text(
+                                        item['total'] ?? '',
+                                        style: const TextStyle(
+                                          fontFamily: 'Vazirmatn',
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.teal,
+                                        ),
+                                        textDirection: TextDirection.ltr,
+                                      ),
+                                    ),
+                                  );
+                                }
                                 final item = _logic.history[index];
                                 return Card(
                                   child: ListTile(
@@ -5664,7 +5740,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '2'},
     {'label': '3'},
     {'label': '+', 'isOp': true},
-    {'label': '+/-', 'isOp': true},
+    {'label': '000', 'isOp': true},
     {'label': '0'},
     {'label': '.'},
     {'label': '=', 'isEq': true},

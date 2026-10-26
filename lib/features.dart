@@ -4638,6 +4638,189 @@ class SettingsScreen extends StatelessWidget {
 }
 
 // ---------- features/calculator/presentation/calculator_screen.dart ----------
+
+// ---------- حالت حسابداری (ماشین جمع‌کننده) ----------
+/// منطق شبیه ماشین‌حساب نواری / حسابداری:
+/// عدد را وارد کن → + یا − بزن → به جمع کل اضافه/کم می‌شود → آماده عدد بعدی.
+/// تمرکز: جمع، تفریق، درصد از جمع.
+class AccountingLogic {
+  double _total = 0;
+  String _entry = '';
+  bool _entryFresh = true; // بعد از عملگر، رقم جدید جایگزین می‌شود
+  bool _showTotal = true;
+  final List<Map<String, String>> _tape = [];
+
+  double get total => _total;
+  String get entry => _entry;
+  List<Map<String, String>> get tape => List.unmodifiable(_tape);
+
+  /// خط کوچک بالا (جمع جاری)
+  String get totalDisplay {
+    return CalcNum.format(_total);
+  }
+
+  /// عدد بزرگ: هنگام تایپ → ورود؛ وگرنه → جمع
+  String get mainDisplay {
+    if (!_entryFresh && _entry.isNotEmpty) {
+      return _formatEntry(_entry);
+    }
+    return moneyFormat(_total);
+  }
+
+  String _formatEntry(String e) {
+    if (e.isEmpty || e == '-') return e.isEmpty ? '0' : e;
+    final v = double.tryParse(e);
+    if (v == null) return e;
+    // در حسابداری تا ۲ رقم اعشار برای پول رایج است؛ حین تایپ اعشار آزاد
+    if (e.contains('.')) {
+      final parts = e.split('.');
+      final dec = parts.length > 1 ? parts[1] : '';
+      if (dec.length <= 2) return e; // هنوز در حال تایپ
+    }
+    return e;
+  }
+
+  /// نمایش پول‌گونه برای جمع (۲ رقم وقتی عدد کامل است)
+  String moneyFormat(double v) {
+    if (v.isNaN || v.isInfinite) return 'خطا';
+    final neg = v < 0;
+    final abs = v.abs();
+    final s = abs.toStringAsFixed(2);
+    // جداکننده هزارگان
+    final parts = s.split('.');
+    final intPart = parts[0];
+    final buf = StringBuffer();
+    for (var i = 0; i < intPart.length; i++) {
+      final fromEnd = intPart.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(intPart[i]);
+    }
+    final out = '${buf.toString()}.${parts[1]}';
+    return neg ? '($out)' : out;
+  }
+
+  String get statusLabel {
+    if (_entry.isNotEmpty && !_entryFresh) return 'ورود';
+    if (_tape.isEmpty) return 'آماده';
+    return 'جمع';
+  }
+
+  void inputDigit(String d) {
+    if (_entryFresh) {
+      _entry = '';
+      _entryFresh = false;
+      _showTotal = false;
+    }
+    if (d == '.' && _entry.contains('.')) return;
+    if (d == '.' && _entry.isEmpty) {
+      _entry = '0.';
+      return;
+    }
+    // جلوگیری از صفرهای اضافی اول
+    if (d != '.' && _entry == '0') {
+      _entry = d;
+      return;
+    }
+    _entry += d;
+  }
+
+  void backspace() {
+    if (_entryFresh || _entry.isEmpty) return;
+    _entry = _entry.substring(0, _entry.length - 1);
+    if (_entry.isEmpty) {
+      _entryFresh = true;
+      _showTotal = true;
+    }
+  }
+
+  void clearEntry() {
+    _entry = '';
+    _entryFresh = true;
+    _showTotal = true;
+  }
+
+  void clearAll() {
+    _total = 0;
+    _entry = '';
+    _entryFresh = true;
+    _showTotal = true;
+    _tape.clear();
+  }
+
+  double? _parseEntry() {
+    if (_entry.isEmpty || _entry == '-' || _entry == '.' || _entry == '-.') {
+      return null;
+    }
+    return double.tryParse(_entry);
+  }
+
+  void plus() => _applyOp(1);
+
+  void minus() => _applyOp(-1);
+
+  void _applyOp(int sign) {
+    final v = _parseEntry();
+    if (v != null) {
+      final delta = sign * v;
+      _total += delta;
+      _tape.insert(0, {
+        'op': sign > 0 ? '+' : '−',
+        'val': CalcNum.format(v),
+        'total': moneyFormat(_total),
+      });
+      if (_tape.length > 100) _tape.removeLast();
+    }
+    _entry = '';
+    _entryFresh = true;
+    _showTotal = true;
+  }
+
+  /// درصد: مقدار ورود = درصد از جمع جاری (اگر جمع≠۰)
+  /// اگر جمع صفر باشد: ورود / ۱۰۰
+  void percent() {
+    final v = _parseEntry();
+    if (v == null) return;
+    double result;
+    if (_total != 0) {
+      result = _total * (v / 100.0);
+    } else {
+      result = v / 100.0;
+    }
+    _entry = CalcNum.format(result);
+    _entryFresh = false;
+    _showTotal = false;
+  }
+
+  /// نمایش نهایی جمع؛ ورود را با + اعمال می‌کند اگر چیزی تایپ شده
+  void totalKey() {
+    final v = _parseEntry();
+    if (v != null) {
+      _total += v;
+      _tape.insert(0, {
+        'op': '+',
+        'val': CalcNum.format(v),
+        'total': moneyFormat(_total),
+      });
+    }
+    _entry = '';
+    _entryFresh = true;
+    _showTotal = true;
+  }
+
+  void toggleSign() {
+    if (_entryFresh) {
+      // تغییر علامت جمع کل
+      _total = -_total;
+      return;
+    }
+    if (_entry.startsWith('-')) {
+      _entry = _entry.substring(1);
+    } else if (_entry.isNotEmpty) {
+      _entry = '-$_entry';
+    }
+  }
+}
+
 class CalculatorScreen extends StatefulWidget {
   const CalculatorScreen({super.key});
 
@@ -4647,12 +4830,20 @@ class CalculatorScreen extends StatefulWidget {
 
 class _CalculatorScreenState extends State<CalculatorScreen> {
   final _logic = CalculatorLogic();
-  bool _isScientific = false;
+  final _acc = AccountingLogic();
+  /// 0=ساده  1=علمی  2=حسابداری
+  int _mode = 0;
+  bool get _isScientific => _mode == 1;
+  bool get _isAccounting => _mode == 2;
   final TextEditingController _textController = TextEditingController();
 
   void _onButton(String value) {
     if (value.isEmpty) return;
     setState(() {
+      if (_isAccounting) {
+        _onAccountingButton(value);
+        return;
+      }
       if (value == '⌫') {
         _logic.backspace();
       } else if (value == 'MC') {
@@ -4669,6 +4860,44 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _logic.input(value);
       }
     });
+  }
+
+  void _onAccountingButton(String value) {
+    switch (value) {
+      case 'C':
+        _acc.clearAll();
+        break;
+      case 'CE':
+        _acc.clearEntry();
+        break;
+      case '⌫':
+        _acc.backspace();
+        break;
+      case '+':
+        _acc.plus();
+        break;
+      case '-':
+      case '−':
+        _acc.minus();
+        break;
+      case '%':
+        _acc.percent();
+        break;
+      case '=':
+      case 'T':
+        _acc.totalKey();
+        break;
+      case '+/-':
+        _acc.toggleSign();
+        break;
+      case '.':
+        _acc.inputDigit('.');
+        break;
+      default:
+        if (RegExp(r'^[0-9]$').hasMatch(value)) {
+          _acc.inputDigit(value);
+        }
+    }
   }
 
   Future<void> _copyResult() async {
@@ -4889,12 +5118,23 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                 ),
                 IconButton(
                   icon: Icon(
-                    _isScientific ? Icons.calculate : Icons.functions,
-                    color: AppColors.primary,
+                    Icons.functions,
+                    color: _mode == 1 ? AppColors.primary : null,
                   ),
-                  onPressed: () =>
-                      setState(() => _isScientific = !_isScientific),
-                  tooltip: _isScientific ? 'ساده' : 'علمی',
+                  onPressed: () => setState(() {
+                    _mode = _mode == 1 ? 0 : 1;
+                  }),
+                  tooltip: _mode == 1 ? 'ساده' : 'علمی',
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.account_balance_wallet_outlined,
+                    color: _mode == 2 ? AppColors.primary : null,
+                  ),
+                  onPressed: () => setState(() {
+                    _mode = _mode == 2 ? 0 : 2;
+                  }),
+                  tooltip: _mode == 2 ? 'ساده' : 'حسابداری',
                 ),
               ],
             ),
@@ -4908,23 +5148,102 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
 
   Widget _buildPortraitLayout(bool isDark) {
-    final displayH = _isScientific ? 108.0 : 140.0;
+    final displayH = _isAccounting ? 150.0 : (_isScientific ? 108.0 : 140.0);
 
     return Column(
       children: [
-        _buildDisplay(isDark, displayH),
+        _isAccounting
+            ? _buildAccountingDisplay(isDark, displayH)
+            : _buildDisplay(isDark, displayH),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
             child: Directionality(
               textDirection: TextDirection.ltr,
-              child: _isScientific
-                  ? _buildScientificPad()
-                  : _buildButtonGrid(_simpleButtons, crossCount: 4),
+              child: _isAccounting
+                  ? _buildButtonGrid(_accountingButtons, crossCount: 4)
+                  : _isScientific
+                      ? _buildScientificPad()
+                      : _buildButtonGrid(_simpleButtons, crossCount: 4),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAccountingDisplay(bool isDark, double height) {
+    return GestureDetector(
+      onLongPress: () async {
+        final text = _acc.moneyFormat(_acc.total);
+        await Clipboard.setData(ClipboardData(text: text));
+        HapticFeedback.mediumImpact();
+      },
+      child: Container(
+        height: height,
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: isDark ? Colors.grey[800]! : Colors.grey[300]!),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'حسابداری',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  _acc.statusLabel,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 12,
+                    color: isDark ? Colors.grey[500] : Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'جمع: ${_acc.moneyFormat(_acc.total)}',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 14,
+                color: isDark ? Colors.grey[400] : Colors.grey[700],
+              ),
+              textDirection: TextDirection.ltr,
+            ),
+            const Spacer(),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                _acc.mainDisplay,
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 36,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+                maxLines: 1,
+                textDirection: TextDirection.ltr,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -5282,6 +5601,29 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       onTap: () => _onButton(label),
     );
   }
+
+  static const List<Map<String, dynamic>> _accountingButtons = [
+    {'label': 'CE', 'isOp': true},
+    {'label': 'C', 'isOp': true},
+    {'label': '⌫', 'isOp': true},
+    {'label': '%', 'isSci': true},
+    {'label': '7'},
+    {'label': '8'},
+    {'label': '9'},
+    {'label': '+', 'isOp': true},
+    {'label': '4'},
+    {'label': '5'},
+    {'label': '6'},
+    {'label': '-', 'isOp': true},
+    {'label': '1'},
+    {'label': '2'},
+    {'label': '3'},
+    {'label': '=', 'isEq': true},
+    {'label': '0'},
+    {'label': '.'},
+    {'label': '+/-', 'isOp': true},
+    {'label': '=', 'isEq': true},
+  ];
 
   static const List<Map<String, dynamic>> _simpleButtons = [
     {'label': 'C', 'isOp': true},

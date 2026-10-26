@@ -12,10 +12,93 @@ import 'package:http/http.dart' as http;
 
 
 // ---------- features/calculator/logic/calculator_logic.dart ----------
+
+
+/// قالب‌بندی و پارس اعداد ماشین‌حساب (جدا از دقت داخلی double)
+///
+/// سیاست نمایش:
+/// 1) NaN / Infinity → «خطا»
+/// 2) عدد صحیح دقیق (در حد epsilon) و |x| < 1e15 → بدون اعشار
+/// 3) |x| >= 1e12 یا 0 < |x| < 1e-6 → نماد علمی خوانا
+/// 4) در غیر این صورت تا ۱۲ رقم اعشار با حذف صفرهای انتهایی
+/// 5) حداکثر حدود ۱۵ رقم معنادار (سقف double)
+class CalcNum {
+  CalcNum._();
+
+  static const double _intEps = 1e-10;
+  static const double _sciHigh = 1e12;
+  static const double _sciLow = 1e-6;
+
+  static String format(double value) {
+    if (value.isNaN || value.isInfinite) return 'خطا';
+
+    // صفر منفی را به صفر معمولی
+    if (value == 0) return '0';
+
+    final abs = value.abs();
+
+    // صحیح؟
+    final nearest = value.roundToDouble();
+    if ((value - nearest).abs() < _intEps && abs < 1e15) {
+      return nearest.toInt().toString();
+    }
+
+    // علمی
+    if (abs >= _sciHigh || abs < _sciLow) {
+      return _scientific(value);
+    }
+
+    // اعشاری ثابت + حذف صفر انتهایی
+    var s = value.toStringAsFixed(12);
+    if (s.contains('.')) {
+      s = s.replaceAll(RegExp(r'0+$'), '');
+      s = s.replaceAll(RegExp(r'\.$'), '');
+    }
+    return s;
+  }
+
+  static String _scientific(double value) {
+    // مثلاً 1.2345678e+10 — بدون صفر اضافی در مانتیسا
+    var s = value.toStringAsExponential(10);
+    // جدا: مانتیسا و نما
+    final parts = s.split('e');
+    if (parts.length != 2) return s;
+    var mant = parts[0];
+    var exp = parts[1]; // شامل + یا -
+    if (mant.contains('.')) {
+      mant = mant.replaceAll(RegExp(r'0+$'), '');
+      mant = mant.replaceAll(RegExp(r'\.$'), '');
+    }
+    // یکسان‌سازی نما: e+05 → e+5
+    final sign = exp.startsWith('-') ? '-' : '+';
+    final expNum = int.tryParse(exp.replaceAll('+', '').replaceAll('-', '')) ?? 0;
+    return '${mant}e$sign$expNum';
+  }
+
+  /// پارس امن متن نمایشی (علمی یا معمولی) به double
+  static double? parse(String text) {
+    final t = text.trim().replaceAll(',', '').replaceAll('٬', '');
+    if (t.isEmpty || t == 'خطا' || t.startsWith('خطا')) return null;
+    return double.tryParse(t);
+  }
+}
+
 class CalculatorLogic {
+  /// موتور محاسبه — مرحله ۲ + ۳ (دقت و نمایش)
+  ///
+  /// قراردادها:
+  /// - توان راست‌پیوند است (مثل کتابخانه): -2^2 → -4 ؛ (-2)^2 → 4
+  /// - درصد: هر `n%` یعنی (n/100)؛ مثلاً 50% → 0.5 و 200×50% → 100
+  /// - DEG: آرگومان sin/cos/tan به رادیان تبدیل می‌شود؛ خروجی asin/acos/atan به درجه
+  /// - دقت داخلی: double (IEEE-754)؛ حدود ۱۵–۱۶ رقم معنادار — ادعای دقت دلخواه نمی‌شود
+  /// - نمایش از دقت داخلی جدا است: گردکردن فقط در لایهٔ نمایش
+
   String _expression = '';
   String _result = '0';
   String _livePreview = '';
+  String? _lastError;
+  /// آخرین مقدار عددی با دقت کامل double (جدا از متن نمایشی)
+  double? _lastValue;
   double _memory = 0;
   bool _isDegree = true;
   int _openParens = 0;
@@ -24,28 +107,45 @@ class CalculatorLogic {
   String get expression => _expression;
   String get result => _result;
   String get livePreview => _livePreview;
+  String? get lastError => _lastError;
   String get memoryDisplay => _memory != 0 ? 'M' : '';
   String get angleMode => _isDegree ? 'DEG' : 'RAD';
   List<Map<String, String>> get history => List.unmodifiable(_history);
 
-  void toggleAngleMode() => _isDegree = !_isDegree;
+  void toggleAngleMode() {
+    _isDegree = !_isDegree;
+    _syncDisplay();
+  }
 
   void memoryClear() => _memory = 0;
 
   void memoryRecall() {
-    if (_memory != 0) _appendToken(_formatNumber(_memory));
+    if (_memory == 0 && _memory != 0.0) return;
+    // حتی اگر حافظه صفر باشد MR معمولاً صفر می‌گذارد — اینجا فقط غیرصفر
+    if (_memory == 0) return;
+    _appendToken(CalcNum.format(_memory));
   }
 
   void memoryAdd() {
-    try {
-      _memory += double.parse(_result);
-    } catch (_) {}
+    final v = _currentNumericResult();
+    if (v != null) _memory += v;
   }
 
   void memorySubtract() {
-    try {
-      _memory -= double.parse(_result);
-    } catch (_) {}
+    final v = _currentNumericResult();
+    if (v != null) _memory -= v;
+  }
+
+  /// مقدار عددی فعلی — اولویت با _lastValue (دقت کامل)، نه متن نمایشی
+  double? _currentNumericResult() {
+    if (_lastValue != null && _lastValue!.isFinite) return _lastValue;
+    if (_result.isNotEmpty &&
+        _result != 'خطا' &&
+        !_result.startsWith('خطا')) {
+      final v = CalcNum.parse(_result);
+      if (v != null && v.isFinite) return v;
+    }
+    return _evaluateRaw(_expression);
   }
 
   void toggleParen() {
@@ -67,6 +167,7 @@ class CalculatorLogic {
   }
 
   void input(String value) {
+    _lastError = null;
     if (value == 'C') {
       clear();
       return;
@@ -132,21 +233,13 @@ class CalculatorLogic {
       return;
     }
     if (value == '1/x') {
-      if (_expression.isEmpty || _result == '0') {
-        _expression = '1/';
-      } else {
-        _expression = '1/($_expression)';
-        _openParens = 0;
-      }
+      _maybeImplicitMul();
+      _expression += '1/(';
+      _openParens++;
       _syncDisplay();
       return;
     }
-    if (value == '%') {
-      _expression += '/100';
-      _syncDisplay();
-      return;
-    }
-    if (value == '!') {
+    if (value == 'n!') {
       _expression += '!';
       _syncDisplay();
       return;
@@ -189,7 +282,15 @@ class CalculatorLogic {
       }
       final last = _expression[_expression.length - 1];
       if (_isOperator(last)) {
-        _expression = _expression.substring(0, _expression.length - 1);
+        // اجازه منفی بعد از عملگر: 2×-3
+        if (value == '-' && last != '-') {
+          _expression += '-';
+          _syncDisplay();
+          return;
+        }
+        _expression = _expression.substring(0, _expression.length - 1) + value;
+        _syncDisplay();
+        return;
       }
       if (last == '(' && value != '-') return;
       _expression += value;
@@ -199,6 +300,11 @@ class CalculatorLogic {
 
     if (value == '.') {
       if (!_canAddDot()) return;
+    }
+
+    // رقم یا سایر کاراکترها
+    if (RegExp(r'^[0-9]$').hasMatch(value)) {
+      _maybeImplicitMulBeforeNumber();
     }
     _expression += value;
     _syncDisplay();
@@ -218,8 +324,17 @@ class CalculatorLogic {
     }
   }
 
+  void _maybeImplicitMulBeforeNumber() {
+    if (_expression.isEmpty) return;
+    final last = _expression[_expression.length - 1];
+    // 2π3 یا π2 یا e2 → ضرب ضمنی
+    if (last == 'π' || last == 'e' || last == ')') {
+      _expression += '×';
+    }
+  }
+
   bool _canAddDot() {
-    final parts = _expression.split(RegExp(r'[+\-×÷*/^()]'));
+    final parts = _expression.split(RegExp(r'[+\-×÷*/^()%]'));
     final last = parts.isEmpty ? '' : parts.last;
     return !last.contains('.');
   }
@@ -236,8 +351,16 @@ class CalculatorLogic {
       final op = match.group(1) ?? '';
       final num = match.group(2)!;
       final start = match.start;
-      if (op == '-') {
-        _expression = '${_expression.substring(0, start)}+$num';
+      if (op == '-' && start > 0) {
+        final before = _expression[start - 1];
+        if (_isOperator(before) || before == '(') {
+          // منفی یک‌طرفه بعد از عملگر → حذف منفی
+          _expression =
+              '${_expression.substring(0, start)}$num';
+        } else {
+          _expression =
+              '${_expression.substring(0, start)}+$num';
+        }
       } else if (op == '+') {
         _expression = '${_expression.substring(0, start)}-$num';
       } else if (op.isEmpty && start == 0) {
@@ -253,172 +376,306 @@ class CalculatorLogic {
     if (_expression.isEmpty) {
       _result = '0';
       _livePreview = '';
+      _lastError = null;
       return;
     }
-    _result = _expression;
-    _livePreview = _tryEvaluatePreview(_expression) ?? '';
+    _tryLiveEval();
   }
 
-  /// نتیجه زنده — بدون ذخیره در تاریخچه
-  String? _tryEvaluatePreview(String formula) {
-    try {
-      var expr = formula;
-      var open = _openParens;
-      while (open > 0) {
-        expr += ')';
-        open--;
-      }
-      // اگر به عملگر ختم شود قابل محاسبه نیست
-      if (expr.isEmpty) return null;
-      final last = expr[expr.length - 1];
-      if (_isOperator(last) || last == '(') return null;
-
-      final value = _evaluateRaw(expr);
-      if (value == null) return null;
-      return _formatNumber(value);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  double? _evaluateRaw(String formula) {
-    try {
-      String expr = formula
-          .replaceAll('×', '*')
-          .replaceAll('÷', '/')
-          .replaceAll('π', '(${math.pi})')
-          .replaceAll('√', 'sqrt')
-          .replaceAll('∛', 'cbrt');
-
-      expr = expr.replaceAllMapped(
-        RegExp(r'(?<![a-zA-Z])e(?![a-zA-Z0-9(])'),
-        (_) => '(${math.e})',
-      );
-
-      // cbrt(x) → (x)^(1/3)
-      expr = expr.replaceAllMapped(
-        RegExp(r'cbrt\(([^()]+)\)'),
-        (m) => '((${m[1]})^(1/3))',
-      );
-
-      // abs
-      expr = expr.replaceAllMapped(
-        RegExp(r'abs\(([^()]+)\)'),
-        (m) => 'abs(${m[1]})',
-      );
-
-      // log10 و ln
-      expr = expr.replaceAllMapped(
-        RegExp(r'log\(([^()]+)\)'),
-        (m) => '(log(${m[1]})/log(10))',
-      );
-      expr = expr.replaceAll('ln(', 'log(');
-
-      // exp
-      expr = expr.replaceAllMapped(
-        RegExp(r'exp\(([^()]+)\)'),
-        (m) => 'e^(${m[1]})',
-      );
-      // بعد از exp ممکن است e دوباره آمده باشد
-      expr = expr.replaceAllMapped(
-        RegExp(r'(?<![a-zA-Z0-9.])e(?=\^)'),
-        (_) => '(${math.e})',
-      );
-
-      expr = _replaceFactorial(expr);
-
-      if (_isDegree) {
-        expr = _convertTrigToDegree(expr);
-      }
-
-      final p = Parser();
-      final exp = p.parse(expr);
-      final cm = ContextModel();
-      final eval = exp.evaluate(EvaluationType.REAL, cm);
-      if (eval is! num || eval.isNaN || eval.isInfinite) return null;
-      return eval.toDouble();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  void calculate() {
-    if (_expression.trim().isEmpty) return;
-    var expr = _expression;
-    while (_openParens > 0) {
-      expr += ')';
-      _openParens--;
-    }
-    final value = _evaluateRaw(expr);
-    if (value == null) {
-      _result = 'خطا';
+  void _tryLiveEval() {
+    if (!_looksComplete(_expression)) {
       _livePreview = '';
       return;
     }
-    final calculatedResult = _formatNumber(value);
-    _history.insert(0, {'exp': expr, 'res': calculatedResult});
-    if (_history.length > 50) _history.removeLast();
-    _result = calculatedResult;
-    _expression = calculatedResult;
-    _livePreview = '';
-    _openParens = 0;
-  }
-
-  void calculateFromKeyboard(String formula) {
-    if (formula.trim().isEmpty) return;
-    _expression = formula;
-    _openParens = 0;
-    // شمارش پرانتز
-    for (final ch in formula.split('')) {
-      if (ch == '(') _openParens++;
-      if (ch == ')' && _openParens > 0) _openParens--;
+    final value = _evaluateRaw(_expression);
+    if (value == null) {
+      _livePreview = '';
+      return;
     }
-    calculate();
+    _livePreview = CalcNum.format(value);
   }
 
-  String _convertTrigToDegree(String expr) {
+  /// آیا عبارت برای ارزیابی زنده به‌اندازه کافی کامل به نظر می‌رسد؟
+  bool _looksComplete(String expr) {
+    if (expr.isEmpty) return false;
+    final t = expr.trim();
+    final last = t[t.length - 1];
+    if (_isOperator(last) || last == '(' || last == '^') return false;
+    // پرانتز باز مانده
+    if (_countOpenParens(t) > 0) return false;
+    return true;
+  }
+
+  int _countOpenParens(String s) {
+    var n = 0;
+    for (final ch in s.split('')) {
+      if (ch == '(') n++;
+      if (ch == ')' && n > 0) n--;
+    }
+    return n;
+  }
+
+  // ─────────── ارزیابی ───────────
+
+  double? _evaluateRaw(String formula) {
+    if (formula.trim().isEmpty) return null;
+    try {
+      var expr = _prepareExpression(formula);
+      if (expr == null) return null;
+
+      final parser = ShuntingYardParser();
+      final exp = parser.parse(expr);
+      final cm = ContextModel();
+      final value = exp.evaluate(EvaluationType.REAL, cm);
+      if (value is! num) return null;
+      final d = value.toDouble();
+      if (d.isNaN || d.isInfinite) return null;
+      return d;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// آماده‌سازی عبارت برای parser — بدون Regex شکننده برای پرانتز تو در تو
+  String? _prepareExpression(String input) {
+    var expr = input.trim();
+    if (expr.isEmpty) return null;
+
+    // یکسان‌سازی عملگرها و ثابت‌ها
+    expr = expr
+        .replaceAll('×', '*')
+        .replaceAll('÷', '/')
+        .replaceAll('π', '(pi)')
+        .replaceAll('٫', '.') // ممیز فارسی
+        .replaceAll('٪', '%');
+
+    // ضرب ضمنی قبل از parse: 2(  )(  )2  2sin  (pi)(  etc.
+    expr = _insertImplicitMultiplication(expr);
+
+    // درصد: 12.5% → (12.5/100)
+    expr = expr.replaceAllMapped(
+      RegExp(r'(\d+\.?\d*)%'),
+      (m) => '(${m[1]}/100)',
+    );
+
+    // نماد رادیکال در ورودی کیبورد
+    expr = expr.replaceAll('√', 'sqrt');
+    expr = expr.replaceAll('∛', 'cbrt');
+
+    // cbrt(x) → (x)^(1/3)  — سازگار با math_expressions
+    expr = _replaceFuncBalanced(expr, 'cbrt', (arg) => '(($arg)^(1/3))');
+
+    // ln(x) → log(x)  |  log(x) → log10(x)
+    // اول ln را عوض کن تا با log قاطی نشود
+    expr = _replaceFuncBalanced(expr, 'ln', (arg) => 'log($arg)');
+    expr = _replaceFuncBalanced(expr, 'log', (arg) => 'log10($arg)');
+
+    // فاکتوریل: عدد یا (...) !
+    expr = _replaceFactorials(expr);
+    if (expr.contains('!')) {
+      // فاکتوریل حل‌نشده → نامعتبر
+      return null;
+    }
+
+    // DEG: تبدیل آرگومان/خروجی مثلثاتی با پرانتز متعادل
+    if (_isDegree) {
+      expr = _applyDegreeMode(expr);
+    }
+
+    // e به‌عنوان ثابت (نه بخشی از exp)
+    expr = expr.replaceAllMapped(
+      RegExp(r'(?<![a-zA-Z])e(?![a-zA-Z(])'),
+      (_) => '(e)',
+    );
+
+    return expr;
+  }
+
+  /// درج × ضمنی در جاهایی که کاربر ننوشته
+  String _insertImplicitMultiplication(String expr) {
+    // رقم یا ) یا pi یا e قبل از ( یا تابع یا ثابت
+    final patterns = <RegExp>[
+      // 2(  یا )(  یا π( بعد از نرمال‌سازی (pi)(
+      RegExp(r'(\d|\))\s*\('),
+      // 2sin 2cos ...
+      RegExp(
+          r'(\d)\s*(sin|cos|tan|asin|acos|atan|ln|log|sqrt|cbrt|abs|exp|nroot)\s*\('),
+      // )sin
+      RegExp(
+          r'\)\s*(sin|cos|tan|asin|acos|atan|ln|log|sqrt|cbrt|abs|exp)\s*\('),
+    ];
+    var out = expr;
+    // 2( → 2*(
+    out = out.replaceAllMapped(RegExp(r'(\d)\s*\('), (m) => '${m[1]}*(');
+    // )( → )*(
+    out = out.replaceAllMapped(RegExp(r'\)\s*\('), (m) => ')*(');
+    // 2sin( → 2*sin(
+    out = out.replaceAllMapped(
+      RegExp(
+          r'(\d)\s*(sin|cos|tan|asin|acos|atan|ln|log|sqrt|cbrt|abs|exp)\s*\('),
+      (m) => '${m[1]}*${m[2]}(',
+    );
+    // )sin( → )*sin(
+    out = out.replaceAllMapped(
+      RegExp(
+          r'\)\s*(sin|cos|tan|asin|acos|atan|ln|log|sqrt|cbrt|abs|exp)\s*\('),
+      (m) => ')*${m[1]}(',
+    );
+    // (pi)( → (pi)*(
+    out = out.replaceAllMapped(RegExp(r'\)\s*\('), (m) => ')*(');
+    return out;
+  }
+
+  /// جایگزینی func(...) با پرانتز متعادل
+  String _replaceFuncBalanced(
+    String expr,
+    String func,
+    String Function(String arg) transform,
+  ) {
+    final name = func;
+    var i = 0;
+    final buf = StringBuffer();
+    while (i < expr.length) {
+      if (i + name.length <= expr.length &&
+          expr.substring(i, i + name.length) == name &&
+          (i + name.length < expr.length && expr[i + name.length] == '(') &&
+          (i == 0 || !RegExp(r'[a-zA-Z]').hasMatch(expr[i - 1]))) {
+        final open = i + name.length; // index of '('
+        final close = _findMatchingParen(expr, open);
+        if (close < 0) {
+          buf.write(expr[i]);
+          i++;
+          continue;
+        }
+        final arg = expr.substring(open + 1, close);
+        // آرگومان تو در تو را هم پردازش کن
+        final inner = _replaceFuncBalanced(arg, func, transform);
+        buf.write(transform(inner));
+        i = close + 1;
+      } else {
+        buf.write(expr[i]);
+        i++;
+      }
+    }
+    return buf.toString();
+  }
+
+  int _findMatchingParen(String s, int openIdx) {
+    var depth = 0;
+    for (var i = openIdx; i < s.length; i++) {
+      if (s[i] == '(') depth++;
+      if (s[i] == ')') {
+        depth--;
+        if (depth == 0) return i;
+      }
+    }
+    return -1;
+  }
+
+  String _applyDegreeMode(String expr) {
+    // sin/cos/tan: arg → arg * pi/180
     for (final f in ['sin', 'cos', 'tan']) {
-      expr = expr.replaceAllMapped(
-        RegExp('$f\\(([^()]+)\\)'),
-        (m) => '$f((${m[1]})*${math.pi}/180)',
+      expr = _replaceFuncBalanced(
+        expr,
+        f,
+        (arg) => '$f(($arg)*${math.pi}/180)',
       );
     }
-    // معکوس‌ها خروجی را از رادیان به درجه
+    // asin/acos/atan: result * 180/pi
     for (final f in ['asin', 'acos', 'atan']) {
-      expr = expr.replaceAllMapped(
-        RegExp('$f\\(([^()]+)\\)'),
-        (m) => '(($f(${m[1]}))*180/${math.pi})',
+      expr = _replaceFuncBalanced(
+        expr,
+        f,
+        (arg) => '(($f($arg))*180/${math.pi})',
       );
     }
     return expr;
   }
 
-  String _replaceFactorial(String expr) {
-    return expr.replaceAllMapped(RegExp(r'(\d+)!'), (m) {
-      final n = int.tryParse(m[1]!) ?? 0;
-      if (n < 0 || n > 20) return m[0]!;
+  String _replaceFactorials(String expr) {
+    // ( … )!
+    var out = expr;
+    final parenFact = RegExp(r'\(([^()]+)\)!');
+    while (parenFact.hasMatch(out)) {
+      out = out.replaceFirstMapped(parenFact, (m) {
+        final inner = m[1]!;
+        final v = _evaluateRaw(inner);
+        if (v == null || v < 0 || v != v.roundToDouble() || v > 170) {
+          return 'NaN';
+        }
+        return _factorial(v.round()).toString();
+      });
+      if (out.contains('NaN')) return out;
+    }
+    // 12!
+    out = out.replaceAllMapped(RegExp(r'(\d+)!'), (m) {
+      final n = int.tryParse(m[1]!) ?? -1;
+      if (n < 0 || n > 170) return 'NaN';
       return _factorial(n).toString();
     });
+    return out;
   }
 
-  int _factorial(int n) {
+  double _factorial(int n) {
     if (n <= 1) return 1;
-    var r = 1;
+    var r = 1.0;
     for (var i = 2; i <= n; i++) {
       r *= i;
     }
     return r;
   }
 
-  String _formatNumber(double value) {
-    if (value.isNaN || value.isInfinite) return 'خطا';
-    if (value == value.roundToDouble() && value.abs() < 1e15) {
-      return value.toInt().toString();
+  void calculate() {
+    _lastError = null;
+    if (_expression.trim().isEmpty) return;
+
+    // بستن پرانتزهای باز برای راحتی کاربر
+    var expr = _expression;
+    final open = _countOpenParens(expr);
+    if (open > 0) {
+      expr = expr + (')' * open);
     }
-    var s = value.toStringAsFixed(10);
-    s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-    return s;
+
+    final value = _evaluateRaw(expr);
+    if (value == null) {
+      _lastError = _diagnoseError(expr);
+      _result = _lastError ?? 'خطا';
+      _livePreview = '';
+      _lastValue = null;
+      // عبارت ورودی حفظ می‌شود
+      return;
+    }
+
+    final calculatedResult = CalcNum.format(value);
+    _history.insert(0, {'exp': _expression, 'res': calculatedResult});
+    if (_history.length > 50) _history.removeLast();
+    _lastValue = value; // دقت کامل برای ادامه محاسبه / حافظه
+    _result = calculatedResult;
+    _expression = calculatedResult;
+    _livePreview = '';
+    _openParens = 0;
   }
+
+  String _diagnoseError(String expr) {
+    if (expr.contains('/0') || RegExp(r'/\s*0+(\.0+)?\b').hasMatch(expr)) {
+      return 'خطا: تقسیم بر صفر';
+    }
+    if (expr.contains('NaN')) return 'خطا: دامنه نامعتبر';
+    if (_countOpenParens(expr) != 0) return 'خطا: پرانتز نامتوازن';
+    if (RegExp(r'log10\s*\(\s*0').hasMatch(expr) ||
+        RegExp(r'log\s*\(\s*0').hasMatch(expr)) {
+      return 'خطا: لگاریتم صفر';
+    }
+    return 'خطا';
+  }
+
+  void calculateFromKeyboard(String formula) {
+    if (formula.trim().isEmpty) return;
+    _expression = formula.trim();
+    _openParens = _countOpenParens(_expression);
+    calculate();
+  }
+
 
   void backspace() {
     if (_expression.isEmpty) return;
@@ -426,6 +683,7 @@ class CalculatorLogic {
     if (last == '(') _openParens = (_openParens - 1).clamp(0, 99);
     if (last == ')') _openParens++;
     _expression = _expression.substring(0, _expression.length - 1);
+    _lastError = null;
     _syncDisplay();
   }
 
@@ -436,6 +694,8 @@ class CalculatorLogic {
     _expression = '';
     _result = '0';
     _livePreview = '';
+    _lastError = null;
+    _lastValue = null;
     _openParens = 0;
   }
 
@@ -4578,32 +4838,40 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   Widget _buildPortraitLayout(bool isDark) {
     final buttons = _isScientific ? _sciButtons : _simpleButtons;
-    const crossCount = 4;
+    // علمی: ۵ ستون تا ردیف‌ها کمتر شوند و پایین قطع نشود
+    final crossCount = _isScientific ? 5 : 4;
+    final displayH = _isScientific ? 112.0 : 140.0;
 
     return Column(
       children: [
-        _buildDisplay(isDark, 150),
+        _buildDisplay(isDark, displayH),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
               final rows = (buttons.length / crossCount).ceil();
-              final h = constraints.maxHeight - 8;
-              final w = constraints.maxWidth - 16;
-              final btnH = (h - (rows - 1) * 5) / rows;
-              final btnW = (w - (crossCount - 1) * 5) / crossCount;
-              final aspect = btnW / btnH;
+              final spacing = _isScientific ? 4.0 : 6.0;
+              final h = constraints.maxHeight - 6;
+              final w = constraints.maxWidth - 12;
+              final btnH = (h - (rows - 1) * spacing) / rows;
+              final btnW = (w - (crossCount - 1) * spacing) / crossCount;
+              // مهم: aspect را محدود به بالا نکن — همان باعث قطع شدن ردیف پایین بود
+              var aspect = btnW / btnH;
+              if (!aspect.isFinite || aspect <= 0) aspect = 1.2;
+              // فقط کف خیلی کوچک را محدود کن تا دکمه تخت نشود
+              aspect = aspect.clamp(0.48, 3.5);
 
               return Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
                 child: Directionality(
                   textDirection: TextDirection.ltr,
                   child: GridView.builder(
-                    physics: const NeverScrollableScrollPhysics(),
+                    // اگر هنوز جا نبود، اسکرول نرم برای دیدن پایین
+                    physics: const BouncingScrollPhysics(),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: crossCount,
-                      childAspectRatio: aspect.clamp(0.85, 1.7),
-                      crossAxisSpacing: 5,
-                      mainAxisSpacing: 5,
+                      childAspectRatio: aspect,
+                      crossAxisSpacing: spacing,
+                      mainAxisSpacing: spacing,
                     ),
                     itemCount: buttons.length,
                     itemBuilder: (context, index) {
@@ -4779,8 +5047,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       child: Container(
         height: height == double.infinity ? null : height,
         width: double.infinity,
-        margin: const EdgeInsets.all(10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        margin: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -4807,14 +5075,31 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                     Icon(Icons.copy,
                         size: 14,
                         color: isDark ? Colors.grey[600] : Colors.grey[400]),
-                    const SizedBox(width: 6),
-                    Text(
-                      _logic.angleMode,
-                      style: TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          fontSize: 13,
-                          color:
-                              isDark ? Colors.grey[500] : Colors.grey[600]),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() => _logic.toggleAngleMode());
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _logic.angleMode,
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -4919,6 +5204,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': 'MR', 'isMemory': true},
     {'label': 'M+', 'isMemory': true},
     {'label': 'M-', 'isMemory': true},
+    {'label': 'DEG', 'isSci': true},
     {'label': 'sin', 'isSci': true},
     {'label': 'cos', 'isSci': true},
     {'label': 'tan', 'isSci': true},

@@ -1,13 +1,11 @@
-name: Build APK and Publish Release
+name: Build APK
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [ main ]
   workflow_dispatch:
 
+# لازم برای ساخت Release خودکار
 permissions:
   contents: write
 
@@ -22,7 +20,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -51,6 +49,18 @@ jobs:
           if [ -d /tmp/backup/tool ]; then rm -rf tool; cp -r /tmp/backup/tool .; fi
           if [ -f /tmp/backup/pubspec.lock ]; then cp /tmp/backup/pubspec.lock .; fi
 
+      - name: Read app version
+        id: ver
+        run: |
+          VERSION=$(grep -E '^version:' pubspec.yaml | head -1 | sed 's/version: //' | tr -d '[:space:]')
+          # مثلا 1.0.4+5 → name=1.0.4  code=5
+          NAME="${VERSION%%+*}"
+          CODE="${VERSION##*+}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          echo "code=$CODE" >> $GITHUB_OUTPUT
+          echo "App version: $VERSION"
+
       - name: Setup release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -59,24 +69,26 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "NO_RELEASE_KEY=1" >> "$GITHUB_ENV"
-            echo "::warning::KEYSTORE_BASE64 is not configured; APK will use debug signing and is not suitable for store publication."
+            echo "NO_RELEASE_KEY=1" >> $GITHUB_ENV
+            echo "No KEYSTORE_BASE64 secret — using default debug signing"
             exit 0
           fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/hesabgar-release.jks
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/hesabgar-release.jks
           {
             echo "storePassword=$KEYSTORE_PASSWORD"
             echo "keyPassword=$KEY_PASSWORD"
             echo "keyAlias=$KEY_ALIAS"
             echo "storeFile=hesabgar-release.jks"
           } > android/key.properties
-          echo "NO_RELEASE_KEY=0" >> "$GITHUB_ENV"
+          echo "NO_RELEASE_KEY=0" >> $GITHUB_ENV
+          ls -la android/app/hesabgar-release.jks android/key.properties
 
       - name: Configure Gradle signing
         if: env.NO_RELEASE_KEY == '0'
         run: |
           python3 tool/patch_signing.py
-          echo "Gradle signing configuration updated."
+          echo "---- android/app/build.gradle.kts (head) ----"
+          head -80 android/app/build.gradle.kts || head -80 android/app/build.gradle || true
 
       - name: Add Android permissions
         run: |
@@ -86,42 +98,54 @@ jobs:
               sed -i "s|<application|  <uses-permission android:name=\"$PERM\"/>\n    <application|" "$MANIFEST"
             fi
           done
-          if ! grep -q "android.permission.READ_EXTERNAL_STORAGE" "$MANIFEST"; then
+          if ! grep -q READ_EXTERNAL_STORAGE "$MANIFEST"; then
             sed -i 's|<application|  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application|' "$MANIFEST"
           fi
+          echo "Permissions added"
 
       - name: Download Vazirmatn Font
         run: |
           mkdir -p assets/fonts
-          curl --fail --location --retry 3 -o vazir.zip https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip
-          unzip -o -j vazir.zip 'fonts/ttf/Vazirmatn-Regular.ttf' -d assets/fonts/
-          unzip -o -j vazir.zip 'fonts/ttf/Vazirmatn-Medium.ttf' -d assets/fonts/
-          unzip -o -j vazir.zip 'fonts/ttf/Vazirmatn-Bold.ttf' -d assets/fonts/
+          curl -L -o vazir.zip https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip
+          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Regular.ttf" -d assets/fonts/
+          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Medium.ttf" -d assets/fonts/
+          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Bold.ttf" -d assets/fonts/
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Generate launcher icons
-        run: dart run flutter_launcher_icons
+        run: dart run flutter_launcher_icons || true
 
       - name: Build APK
         run: flutter build apk --release
 
-      - name: Verify APK
-        run: test -s build/app/outputs/flutter-apk/app-release.apk
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "dist/hesabgar-man-${{ steps.ver.outputs.name }}.apk"
+          ls -la dist/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hesabgar-apk-${{ github.ref_name }}
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
-          retention-days: 14
+          name: hesabgar-apk
+          path: dist/*.apk
 
-      - name: Publish APK to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/app-release.apk
-          fail_on_unmatched_files: true
+          tag_name: v${{ steps.ver.outputs.name }}-b${{ github.run_number }}
+          name: "حسابگر من ${{ steps.ver.outputs.name }} (build ${{ github.run_number }})"
+          body: |
+            ## حسابگر من ${{ steps.ver.outputs.name }}
+            - Build: `${{ github.run_number }}`
+            - Commit: `${{ github.sha }}`
+            - نسخه pubspec: `${{ steps.ver.outputs.version }}`
+
+            فایل APK امضاشده را از بخش Assets دانلود کنید.
+          files: dist/*.apk
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

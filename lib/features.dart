@@ -516,6 +516,11 @@ class CalculatorLogic {
     );
     // ln را دست نمی‌زنیم
 
+    // math_expressions از arcsin/arccos/arctan استفاده می‌کند نه asin/acos/atan
+    expr = _replaceFuncBalanced(expr, 'asin', (arg) => 'arcsin($arg)');
+    expr = _replaceFuncBalanced(expr, 'acos', (arg) => 'arccos($arg)');
+    expr = _replaceFuncBalanced(expr, 'atan', (arg) => 'arctan($arg)');
+
     expr = _replaceFactorials(expr);
     if (expr.contains('!')) return null;
 
@@ -637,20 +642,21 @@ class CalculatorLogic {
   }
 
   String _applyDegreeMode(String expr) {
-    // sin/cos/tan: arg → arg * pi/180
+    // اول معکوس‌ها (خروجی رادیان → درجه) — نام‌ها بعد از rename: arcsin/...
+    for (final f in ['arcsin', 'arccos', 'arctan']) {
+      expr = _replaceFuncBalanced(
+        expr,
+        f,
+        (arg) => '(($f($arg))*180/${math.pi})',
+      );
+    }
+    // بعد sin/cos/tan (آرگومان درجه → رادیان)
+    // _replaceFuncBalanced با چک حرف قبلی، arcsin را با sin اشتباه نمی‌گیرد
     for (final f in ['sin', 'cos', 'tan']) {
       expr = _replaceFuncBalanced(
         expr,
         f,
         (arg) => '$f(($arg)*${math.pi}/180)',
-      );
-    }
-    // asin/acos/atan: result * 180/pi
-    for (final f in ['asin', 'acos', 'atan']) {
-      expr = _replaceFuncBalanced(
-        expr,
-        f,
-        (arg) => '(($f($arg))*180/${math.pi})',
       );
     }
     return expr;

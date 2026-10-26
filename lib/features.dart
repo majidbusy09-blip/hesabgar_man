@@ -468,9 +468,6 @@ class CalculatorLogic {
       final parser = ShuntingYardParser();
       final exp = parser.parse(expr);
       final cm = ContextModel();
-      // ثابت‌های π و e باید صریحاً bind شوند
-      cm.bindVariable(Variable('pi'), Number(math.pi));
-      cm.bindVariable(Variable('e'), Number(math.e));
       final value = exp.evaluate(EvaluationType.REAL, cm);
       if (value is! num) return null;
       final d = value.toDouble();
@@ -481,69 +478,73 @@ class CalculatorLogic {
     }
   }
 
-  /// آماده‌سازی عبارت برای parser — بدون Regex شکننده برای پرانتز تو در تو
+  /// آماده‌سازی عبارت برای parser
+  /// π و e به عدد واقعی تبدیل می‌شوند تا به bind کتابخانه وابسته نباشیم.
   String? _prepareExpression(String input) {
     var expr = input.trim();
     if (expr.isEmpty) return null;
 
-    // یکسان‌سازی عملگرها و ثابت‌ها
     expr = expr
         .replaceAll('×', '*')
         .replaceAll('÷', '/')
-        .replaceAll('π', '(pi)')
-        .replaceAll('٫', '.') // ممیز فارسی
+        .replaceAll('٫', '.')
         .replaceAll('٪', '%');
 
-    // ضرب ضمنی قبل از parse: 2(  )(  )2  2sin  (pi)(  etc.
+    // π → عدد (قبل از هر پردازش دیگر)
+    expr = expr.replaceAll('π', '(${math.pi})');
+
+    // e تنها → عدد (نه exp و نه 1e-5)
+    expr = _replaceStandaloneE(expr);
+
     expr = _insertImplicitMultiplication(expr);
 
-    // درصد: 12.5% → (12.5/100)
     expr = expr.replaceAllMapped(
       RegExp(r'(\d+\.?\d*)%'),
       (m) => '(${m[1]}/100)',
     );
 
-    // نماد رادیکال در ورودی کیبورد
     expr = expr.replaceAll('√', 'sqrt');
     expr = expr.replaceAll('∛', 'cbrt');
 
-    // cbrt(x) → (x)^(1/3)  — سازگار با math_expressions
     expr = _replaceFuncBalanced(expr, 'cbrt', (arg) => '(($arg)^(1/3))');
 
-    // math_expressions: ln = لگاریتم طبیعی، log = پایه ۱۰ — تبدیل نکن
+    // log پایه ۱۰ — در بعضی نسخه‌ها فقط ln هست
+    expr = _replaceFuncBalanced(
+      expr,
+      'log',
+      (arg) => '(ln($arg)/ln(10))',
+    );
+    // ln را دست نمی‌زنیم
 
-    // فاکتوریل: عدد یا (...) !
     expr = _replaceFactorials(expr);
-    if (expr.contains('!')) {
-      return null;
-    }
+    if (expr.contains('!')) return null;
 
-    // DEG: تبدیل آرگومان/خروجی مثلثاتی با پرانتز متعادل
     if (_isDegree) {
       expr = _applyDegreeMode(expr);
     }
 
-    // ثابت e را به متغیر bind‌شده تبدیل کن (نه داخل نام تابع exp)
-    expr = _replaceStandaloneE(expr);
-
     return expr;
   }
 
-  /// جایگزینی e تنها (نه exp، نه بخشی از کلمه)
+  /// جایگزینی e تنها با مقدار عددی e
   String _replaceStandaloneE(String expr) {
     final buf = StringBuffer();
+    final eVal = '(${math.e})';
     for (var i = 0; i < expr.length; i++) {
       final ch = expr[i];
       if (ch == 'e' || ch == 'E') {
         final prev = i > 0 ? expr[i - 1] : '';
         final next = i + 1 < expr.length ? expr[i + 1] : '';
-        final prevOk = prev.isEmpty || !RegExp(r'[a-zA-Z0-9_]').hasMatch(prev);
-        final nextOk = next.isEmpty || !RegExp(r'[a-zA-Z0-9_(]').hasMatch(next);
-        // نماد علمی مثل 1e-5 را دست نزن
+        final prevOk =
+            prev.isEmpty || !RegExp(r'[a-zA-Z0-9_]').hasMatch(prev);
+        final nextOk =
+            next.isEmpty || !RegExp(r'[a-zA-Z0-9_(]').hasMatch(next);
         final sci = RegExp(r'[0-9.]').hasMatch(prev) &&
-            (next == '+' || next == '-' || RegExp(r'[0-9]').hasMatch(next));
+            (next == '+' ||
+                next == '-' ||
+                RegExp(r'[0-9]').hasMatch(next));
         if (prevOk && nextOk && !sci) {
-          buf.write('(e)');
+          buf.write(eVal);
         } else {
           buf.write(ch);
         }

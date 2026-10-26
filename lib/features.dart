@@ -201,6 +201,18 @@ class CalculatorLogic {
     };
 
     if (functions.containsKey(value)) {
+      // اگر عبارت با عدد یا ) تمام شده، تابع را روی همان مقدار اعمال کن
+      // مثال: 27 سپس ∛ → cbrt(27)  نه  27×cbrt(
+      if (_expression.isNotEmpty &&
+          RegExp(r'[0-9)πe]$').hasMatch(_expression)) {
+        final wrapped = _wrapLastOperand(functions[value]!);
+        if (wrapped != null) {
+          _expression = wrapped;
+          _openParens = _countOpenParens(_expression);
+          _syncDisplay();
+          return;
+        }
+      }
       _maybeImplicitMul();
       _expression += functions[value]!;
       _openParens++;
@@ -426,6 +438,9 @@ class CalculatorLogic {
       final parser = ShuntingYardParser();
       final exp = parser.parse(expr);
       final cm = ContextModel();
+      // ثابت‌های π و e باید صریحاً bind شوند
+      cm.bindVariable(Variable('pi'), Number(math.pi));
+      cm.bindVariable(Variable('e'), Number(math.e));
       final value = exp.evaluate(EvaluationType.REAL, cm);
       if (value is! num) return null;
       final d = value.toDouble();
@@ -465,15 +480,11 @@ class CalculatorLogic {
     // cbrt(x) → (x)^(1/3)  — سازگار با math_expressions
     expr = _replaceFuncBalanced(expr, 'cbrt', (arg) => '(($arg)^(1/3))');
 
-    // ln(x) → log(x)  |  log(x) → log10(x)
-    // اول ln را عوض کن تا با log قاطی نشود
-    expr = _replaceFuncBalanced(expr, 'ln', (arg) => 'log($arg)');
-    expr = _replaceFuncBalanced(expr, 'log', (arg) => 'log10($arg)');
+    // math_expressions: ln = لگاریتم طبیعی، log = پایه ۱۰ — تبدیل نکن
 
     // فاکتوریل: عدد یا (...) !
     expr = _replaceFactorials(expr);
     if (expr.contains('!')) {
-      // فاکتوریل حل‌نشده → نامعتبر
       return null;
     }
 
@@ -482,13 +493,35 @@ class CalculatorLogic {
       expr = _applyDegreeMode(expr);
     }
 
-    // e به‌عنوان ثابت (نه بخشی از exp)
-    expr = expr.replaceAllMapped(
-      RegExp(r'(?<![a-zA-Z])e(?![a-zA-Z(])'),
-      (_) => '(e)',
-    );
+    // ثابت e را به متغیر bind‌شده تبدیل کن (نه داخل نام تابع exp)
+    expr = _replaceStandaloneE(expr);
 
     return expr;
+  }
+
+  /// جایگزینی e تنها (نه exp، نه بخشی از کلمه)
+  String _replaceStandaloneE(String expr) {
+    final buf = StringBuffer();
+    for (var i = 0; i < expr.length; i++) {
+      final ch = expr[i];
+      if (ch == 'e' || ch == 'E') {
+        final prev = i > 0 ? expr[i - 1] : '';
+        final next = i + 1 < expr.length ? expr[i + 1] : '';
+        final prevOk = prev.isEmpty || !RegExp(r'[a-zA-Z0-9_]').hasMatch(prev);
+        final nextOk = next.isEmpty || !RegExp(r'[a-zA-Z0-9_(]').hasMatch(next);
+        // نماد علمی مثل 1e-5 را دست نزن
+        final sci = RegExp(r'[0-9.]').hasMatch(prev) &&
+            (next == '+' || next == '-' || RegExp(r'[0-9]').hasMatch(next));
+        if (prevOk && nextOk && !sci) {
+          buf.write('(e)');
+        } else {
+          buf.write(ch);
+        }
+      } else {
+        buf.write(ch);
+      }
+    }
+    return buf.toString();
   }
 
   /// درج × ضمنی در جاهایی که کاربر ننوشته

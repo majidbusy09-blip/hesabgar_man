@@ -4836,61 +4836,98 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
+
   Widget _buildPortraitLayout(bool isDark) {
-    final buttons = _isScientific ? _sciButtons : _simpleButtons;
-    // علمی: ۵ ستون تا ردیف‌ها کمتر شوند و پایین قطع نشود
-    final crossCount = _isScientific ? 5 : 4;
-    final displayH = _isScientific ? 112.0 : 140.0;
+    final displayH = _isScientific ? 108.0 : 140.0;
 
     return Column(
       children: [
         _buildDisplay(isDark, displayH),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final rows = (buttons.length / crossCount).ceil();
-              final spacing = _isScientific ? 4.0 : 6.0;
-              final h = constraints.maxHeight - 6;
-              final w = constraints.maxWidth - 12;
-              final btnH = (h - (rows - 1) * spacing) / rows;
-              final btnW = (w - (crossCount - 1) * spacing) / crossCount;
-              // مهم: aspect را محدود به بالا نکن — همان باعث قطع شدن ردیف پایین بود
-              var aspect = btnW / btnH;
-              if (!aspect.isFinite || aspect <= 0) aspect = 1.2;
-              // فقط کف خیلی کوچک را محدود کن تا دکمه تخت نشود
-              aspect = aspect.clamp(0.48, 3.5);
-
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
-                child: Directionality(
-                  textDirection: TextDirection.ltr,
-                  child: GridView.builder(
-                    // اگر هنوز جا نبود، اسکرول نرم برای دیدن پایین
-                    physics: const BouncingScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossCount,
-                      childAspectRatio: aspect,
-                      crossAxisSpacing: spacing,
-                      mainAxisSpacing: spacing,
-                    ),
-                    itemCount: buttons.length,
-                    itemBuilder: (context, index) {
-                      final btn = buttons[index];
-                      return _buildBtn(
-                        btn['label'] as String,
-                        isOp: btn['isOp'] == true,
-                        isEq: btn['isEq'] == true,
-                        isSci: btn['isSci'] == true,
-                        isMemory: btn['isMemory'] == true,
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: _isScientific
+                  ? _buildScientificPad()
+                  : _buildButtonGrid(_simpleButtons, crossCount: 4),
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  /// علمی: توابع بالا + صفحه اعداد استاندارد (۷۸۹ / ۴۵۶ / ۱۲۳ / ۰.=)
+  Widget _buildScientificPad() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final sciH = constraints.maxHeight * 0.40;
+        return Column(
+          children: [
+            SizedBox(
+              height: sciH,
+              child: _buildButtonGrid(
+                _sciFuncButtons,
+                crossCount: 4,
+                scrollable: true,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              child: _buildButtonGrid(
+                _numPadButtons,
+                crossCount: 4,
+                scrollable: false,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildButtonGrid(
+    List<Map<String, dynamic>> buttons, {
+    required int crossCount,
+    bool scrollable = false,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final rows = (buttons.length / crossCount).ceil().clamp(1, 20);
+        const spacing = 5.0;
+        final h = constraints.maxHeight;
+        final w = constraints.maxWidth;
+        var btnH = (h - (rows - 1) * spacing) / rows;
+        if (btnH < 30) btnH = 30;
+        final btnW = (w - (crossCount - 1) * spacing) / crossCount;
+        var aspect = btnW / btnH;
+        if (!aspect.isFinite || aspect <= 0) aspect = 1.2;
+        aspect = aspect.clamp(0.5, 3.5);
+
+        return GridView.builder(
+          physics: scrollable
+              ? const BouncingScrollPhysics()
+              : const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossCount,
+            childAspectRatio: aspect,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: spacing,
+          ),
+          itemCount: buttons.length,
+          itemBuilder: (context, index) {
+            final btn = buttons[index];
+            return _buildBtn(
+              btn['label'] as String,
+              isOp: btn['isOp'] == true,
+              isEq: btn['isEq'] == true,
+              isSci: btn['isSci'] == true,
+              isMemory: btn['isMemory'] == true,
+            );
+          },
+        );
+      },
     );
   }
 
@@ -5199,20 +5236,20 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '=', 'isEq': true},
   ];
 
-  static const List<Map<String, dynamic>> _sciButtons = [
+  /// فقط توابع علمی / حافظه (بالای صفحه)
+  static const List<Map<String, dynamic>> _sciFuncButtons = [
     {'label': 'MC', 'isMemory': true},
     {'label': 'MR', 'isMemory': true},
     {'label': 'M+', 'isMemory': true},
     {'label': 'M-', 'isMemory': true},
-    {'label': 'DEG', 'isSci': true},
     {'label': 'sin', 'isSci': true},
     {'label': 'cos', 'isSci': true},
     {'label': 'tan', 'isSci': true},
-    {'label': 'C', 'isOp': true},
+    {'label': 'DEG', 'isSci': true},
     {'label': 'asin', 'isSci': true},
     {'label': 'acos', 'isSci': true},
     {'label': 'atan', 'isSci': true},
-    {'label': '⌫', 'isOp': true},
+    {'label': 'C', 'isOp': true},
     {'label': 'ln', 'isSci': true},
     {'label': 'log', 'isSci': true},
     {'label': '√', 'isSci': true},
@@ -5225,6 +5262,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': 'e', 'isSci': true},
     {'label': '10ˣ', 'isSci': true},
     {'label': 'eˣ', 'isSci': true},
+  ];
+
+  /// صفحه اعداد استاندارد ۴ستونه
+  static const List<Map<String, dynamic>> _numPadButtons = [
     {'label': '7'},
     {'label': '8'},
     {'label': '9'},
@@ -5239,7 +5280,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '-', 'isOp': true},
     {'label': '0'},
     {'label': '.'},
+    {'label': '⌫', 'isOp': true},
     {'label': '+', 'isOp': true},
+    {'label': '%', 'isSci': true},
+    {'label': '()', 'isOp': true},
+    {'label': 'n!', 'isSci': true},
     {'label': '=', 'isEq': true},
   ];
 }

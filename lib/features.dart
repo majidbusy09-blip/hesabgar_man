@@ -4796,15 +4796,27 @@ class AccountingLogic {
   void minus() => _applyAddSub(-1);
 
   void multiply() {
-    final v = _parseEntry();
-    if (v == null) return;
-    _total = _total * v;
-    _lastOperand = v;
-    _hasLastOperand = true;
-    _lastSign = 0;
+    final typed = _parseEntry();
+    final double operand;
+    if (typed != null) {
+      operand = typed;
+      _lastOperand = operand;
+      _hasLastOperand = true;
+    } else if (_hasLastOperand) {
+      operand = _lastOperand;
+    } else {
+      return;
+    }
+    // اگر جمع صفر است و عدد تازه وارد شده، همان را پایه قرار بده
+    if (_total == 0 && typed != null) {
+      _total = operand;
+    } else {
+      _total = _total * operand;
+    }
+    _lastSign = 0; // ثابت +/− را قطع می‌کند
     _tape.insert(0, {
       'op': '×',
-      'val': moneyFormat(v),
+      'val': moneyFormat(operand),
       'total': moneyFormat(_total),
     });
     if (_tape.length > 100) _tape.removeLast();
@@ -4814,21 +4826,32 @@ class AccountingLogic {
   }
 
   void divide() {
-    final v = _parseEntry();
-    if (v == null) return;
-    if (v == 0) {
+    final typed = _parseEntry();
+    final double operand;
+    if (typed != null) {
+      operand = typed;
+      _lastOperand = operand;
+      _hasLastOperand = true;
+    } else if (_hasLastOperand) {
+      operand = _lastOperand;
+    } else {
+      return;
+    }
+    if (operand == 0) {
       _entry = '';
       _entryFresh = true;
       _showTotal = true;
       return;
     }
-    _total = _total / v;
-    _lastOperand = v;
-    _hasLastOperand = true;
+    if (_total == 0 && typed != null) {
+      _total = operand;
+    } else {
+      _total = _total / operand;
+    }
     _lastSign = 0;
     _tape.insert(0, {
       'op': '÷',
-      'val': moneyFormat(v),
+      'val': moneyFormat(operand),
       'total': moneyFormat(_total),
     });
     if (_tape.length > 100) _tape.removeLast();
@@ -4964,54 +4987,64 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   void _onAccountingButton(String value) {
-    switch (value) {
-      case 'C':
-        _acc.clearAll();
-        break;
-      case 'CE':
-        _acc.clearEntry();
-        break;
-      case '⌫':
-        _acc.backspace();
-        break;
-      case '+':
-      case '+=':
-        _acc.plus();
-        break;
-      case '-':
-      case '−':
-      case '−=':
-      case '-=':
-        _acc.minus();
-        break;
-      case '×':
-      case '*':
-        _acc.multiply();
-        break;
-      case '÷':
-      case '/':
-        _acc.divide();
-        break;
-      case '%':
-        _acc.percent();
-        break;
-      case '=':
-      case 'T':
-        _acc.totalKey();
-        break;
-      case '+/-':
-        _acc.toggleSign();
-        break;
-      case '.':
-        _acc.inputDigit('.');
-        break;
-      case '000':
-        _acc.inputDigit('000');
-        break;
-      default:
-        if (RegExp(r'^[0-9]$').hasMatch(value)) {
-          _acc.inputDigit(value);
-        }
+    // تطبیق امن کاراکترها (بعضی فونت‌ها ×÷ مشابه رندر می‌کنند)
+    if (value == 'C') {
+      _acc.clearAll();
+      return;
+    }
+    if (value == 'CE') {
+      _acc.clearEntry();
+      return;
+    }
+    if (value == '⌫') {
+      _acc.backspace();
+      return;
+    }
+    if (value == '+' || value == '+=') {
+      _acc.plus();
+      return;
+    }
+    if (value == '-' || value == '−' || value == '−=' || value == '-=') {
+      _acc.minus();
+      return;
+    }
+    // ضرب: چند شکل رایج علامت
+    if (value == '×' ||
+        value == '*' ||
+        value == 'x' ||
+        value == 'X' ||
+        value == '✕' ||
+        value == '✖') {
+      _acc.multiply();
+      return;
+    }
+    // تقسیم
+    if (value == '÷' || value == '/' || value == '⁄') {
+      _acc.divide();
+      return;
+    }
+    if (value == '%') {
+      _acc.percent();
+      return;
+    }
+    if (value == '=' || value == 'T') {
+      _acc.totalKey();
+      return;
+    }
+    if (value == '+/-') {
+      _acc.toggleSign();
+      return;
+    }
+    if (value == '.') {
+      _acc.inputDigit('.');
+      return;
+    }
+    if (value == '000') {
+      _acc.inputDigit('000');
+      return;
+    }
+    if (RegExp(r'^[0-9]$').hasMatch(value)) {
+      _acc.inputDigit(value);
     }
   }
 

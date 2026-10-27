@@ -4655,6 +4655,8 @@ class AccountingLogic {
   int _lastSign = 0;
   /// عملیات ضرب/تقسیم در انتظار عدد دوم: '×' یا '÷' یا null
   String? _pendingMulDiv;
+  /// اگر true باشد، ورود به‌صورت درصد تفسیر می‌شود (÷۱۰۰ هنگام اعمال)
+  bool _percentFlag = false;
   final List<Map<String, String>> _tape = [];
 
   double get total => _total;
@@ -4708,12 +4710,13 @@ class AccountingLogic {
   String moneyFormat(double v) {
     if (v.isNaN || v.isInfinite) return 'خطا';
     final neg = v < 0;
-    final abs = v.abs();
+    // حذف نویز ممیز شناور
+    final abs = (v.abs() * 1e10).roundToDouble() / 1e10;
     String body;
-    if (abs == abs.roundToDouble() && abs < 1e15) {
+    if ((abs - abs.roundToDouble()).abs() < 1e-9 && abs < 1e15) {
       body = _groupThousands(abs.round().toString());
     } else {
-      var s = abs.toStringAsFixed(10);
+      var s = abs.toStringAsFixed(6);
       s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
       final parts = s.split('.');
       body = _groupThousands(parts[0]);
@@ -4727,8 +4730,11 @@ class AccountingLogic {
   void clearTape() => _tape.clear();
 
   String get statusLabel {
+    if (_pendingMulDiv == '×' && _percentFlag) return '× %';
+    if (_pendingMulDiv == '÷' && _percentFlag) return '÷ %';
     if (_pendingMulDiv == '×') return '× …';
     if (_pendingMulDiv == '÷') return '÷ …';
+    if (_percentFlag) return '%';
     if (_entry.isNotEmpty && !_entryFresh) return 'ورود';
     if (_hasLastOperand && _lastSign > 0) return 'ثابت +';
     if (_hasLastOperand && _lastSign < 0) return 'ثابت −';
@@ -4741,6 +4747,7 @@ class AccountingLogic {
       _entry = '';
       _entryFresh = false;
       _showTotal = false;
+      _percentFlag = false;
     }
     if (d == '000') {
       if (_entry.isEmpty || _entry == '0') {
@@ -4786,6 +4793,7 @@ class AccountingLogic {
     _hasLastOperand = false;
     _lastSign = 0;
     _pendingMulDiv = null;
+    _percentFlag = false;
     _tape.clear();
   }
 
@@ -4815,15 +4823,27 @@ class AccountingLogic {
     final typed = _parseEntry();
     if (typed != null) {
       if (_pendingMulDiv != null) {
-        // زنجیره: pending قبلی را با این عدد تمام کن
         _applyMulDiv(typed);
       } else {
-        // عدد تایپ‌شده پایهٔ چپ می‌شود (هنوز ضرب/تقسیم نشده)
         _total = typed;
+        // ثبت مبلغ پایه در نوار
+        _tape.insert(0, {
+          'op': '→',
+          'val': moneyFormat(typed),
+          'total': moneyFormat(_total),
+        });
+        if (_tape.length > 100) _tape.removeLast();
       }
+    } else if (_tape.isEmpty && _total != 0) {
+      // پایه از جمع قبلی، یک‌بار در نوار بیاید
+      _tape.insert(0, {
+        'op': '→',
+        'val': moneyFormat(_total),
+        'total': moneyFormat(_total),
+      });
     }
-    // اگر ورود خالی است (مثلاً بعد از =)، همان جمع فعلی پایه می‌ماند
     _pendingMulDiv = op;
+    _percentFlag = false;
     _lastSign = 0;
     _entry = '';
     _entryFresh = true;
@@ -4833,6 +4853,13 @@ class AccountingLogic {
   void _applyMulDiv(double operand) {
     final op = _pendingMulDiv;
     if (op == null) return;
+    final wasPercent = _percentFlag;
+    final displayOp = wasPercent ? '$op%' : op;
+    final rawOperand = operand;
+    if (wasPercent) {
+      operand = operand / 100.0;
+      _percentFlag = false;
+    }
     if (op == '×') {
       _total = _total * operand;
     } else if (op == '÷') {
@@ -4846,13 +4873,13 @@ class AccountingLogic {
       _total = _total / operand;
     }
     _tape.insert(0, {
-      'op': op,
-      'val': moneyFormat(operand),
+      'op': displayOp,
+      'val': moneyFormat(rawOperand),
       'total': moneyFormat(_total),
     });
     if (_tape.length > 100) _tape.removeLast();
     _pendingMulDiv = null;
-    _lastOperand = operand;
+    _lastOperand = rawOperand;
     _hasLastOperand = true;
     _lastSign = 0;
     _entry = '';
@@ -4906,19 +4933,30 @@ class AccountingLogic {
     _showTotal = true;
   }
 
-  /// درصد: مقدار ورود = درصد از جمع جاری (اگر جمع≠۰)
+  /// درصد:
+  /// - بعد از × یا ÷: عدد ورود به‌عنوان درصد علامت می‌خورد؛ با = اعمال می‌شود
+  ///   مثال: ۱۰۰ × ۲۵ ٪ =  →  ۲۵
+  /// - بدون عملگر: ورود = درصد از جمع (برای += بعدی)
   void percent() {
     final v = _parseEntry();
     if (v == null) return;
-    double result;
-    if (_total != 0) {
-      result = _total * (v / 100.0);
-    } else {
-      result = v / 100.0;
+    if (_pendingMulDiv != null) {
+      // فقط پرچم درصد؛ نمایش همان عدد می‌ماند
+      _percentFlag = true;
+      _entryFresh = false;
+      _showTotal = false;
+      return;
     }
-    _entry = CalcNum.format(result);
+    // بدون ×÷: مقدار ریالیِ درصد از جمع
+    if (_total != 0) {
+      final result = _total * (v / 100.0);
+      _entry = CalcNum.format(result);
+    } else {
+      _entry = CalcNum.format(v / 100.0);
+    }
     _entryFresh = false;
     _showTotal = false;
+    _percentFlag = false;
   }
 
   /// = : اگر × یا ÷ در انتظار است → با عدد واردشده محاسبه کن

@@ -4653,6 +4653,8 @@ class AccountingLogic {
   bool _hasLastOperand = false;
   /// آخرین عمل: 1=جمع  -1=تفریق  0=ندارد
   int _lastSign = 0;
+  /// عملیات ضرب/تقسیم در انتظار عدد دوم: '×' یا '÷' یا null
+  String? _pendingMulDiv;
   final List<Map<String, String>> _tape = [];
 
   double get total => _total;
@@ -4725,6 +4727,8 @@ class AccountingLogic {
   void clearTape() => _tape.clear();
 
   String get statusLabel {
+    if (_pendingMulDiv == '×') return '× …';
+    if (_pendingMulDiv == '÷') return '÷ …';
     if (_entry.isNotEmpty && !_entryFresh) return 'ورود';
     if (_hasLastOperand && _lastSign > 0) return 'ثابت +';
     if (_hasLastOperand && _lastSign < 0) return 'ثابت −';
@@ -4781,6 +4785,7 @@ class AccountingLogic {
     _lastOperand = 0;
     _hasLastOperand = false;
     _lastSign = 0;
+    _pendingMulDiv = null;
     _tape.clear();
   }
 
@@ -4795,77 +4800,82 @@ class AccountingLogic {
 
   void minus() => _applyAddSub(-1);
 
+  /// ضرب: فوری اجرا نمی‌شود — صبر برای عدد بعدی و =
+  /// الگو: [جمع/عدد] × [عدد] =
   void multiply() {
+    _armMulDiv('×');
+  }
+
+  /// تقسیم: مثل ضرب، منتظر عدد دوم و =
+  void divide() {
+    _armMulDiv('÷');
+  }
+
+  void _armMulDiv(String op) {
     final typed = _parseEntry();
-    final double operand;
     if (typed != null) {
-      operand = typed;
-      _lastOperand = operand;
-      _hasLastOperand = true;
-    } else if (_hasLastOperand) {
-      operand = _lastOperand;
-    } else {
-      return;
+      if (_pendingMulDiv != null) {
+        // زنجیره: pending قبلی را با این عدد تمام کن
+        _applyMulDiv(typed);
+      } else {
+        // عدد تایپ‌شده پایهٔ چپ می‌شود (هنوز ضرب/تقسیم نشده)
+        _total = typed;
+      }
     }
-    // اگر جمع صفر است و عدد تازه وارد شده، همان را پایه قرار بده
-    if (_total == 0 && typed != null) {
-      _total = operand;
-    } else {
-      _total = _total * operand;
-    }
-    _lastSign = 0; // ثابت +/− را قطع می‌کند
-    _tape.insert(0, {
-      'op': '×',
-      'val': moneyFormat(operand),
-      'total': moneyFormat(_total),
-    });
-    if (_tape.length > 100) _tape.removeLast();
+    // اگر ورود خالی است (مثلاً بعد از =)، همان جمع فعلی پایه می‌ماند
+    _pendingMulDiv = op;
+    _lastSign = 0;
     _entry = '';
     _entryFresh = true;
     _showTotal = true;
   }
 
-  void divide() {
-    final typed = _parseEntry();
-    final double operand;
-    if (typed != null) {
-      operand = typed;
-      _lastOperand = operand;
-      _hasLastOperand = true;
-    } else if (_hasLastOperand) {
-      operand = _lastOperand;
-    } else {
-      return;
+  void _applyMulDiv(double operand) {
+    final op = _pendingMulDiv;
+    if (op == null) return;
+    if (op == '×') {
+      _total = _total * operand;
+    } else if (op == '÷') {
+      if (operand == 0) {
+        _pendingMulDiv = null;
+        _entry = '';
+        _entryFresh = true;
+        _showTotal = true;
+        return;
+      }
+      _total = _total / operand;
     }
-    if (operand == 0) {
+    _tape.insert(0, {
+      'op': op,
+      'val': moneyFormat(operand),
+      'total': moneyFormat(_total),
+    });
+    if (_tape.length > 100) _tape.removeLast();
+    _pendingMulDiv = null;
+    _lastOperand = operand;
+    _hasLastOperand = true;
+    _lastSign = 0;
+    _entry = '';
+    _entryFresh = true;
+    _showTotal = true;
+  }
+
+  /// رفتار ماشین حساب اداری برای + و − (اعمال فوری + تکرار ثابت)
+  void _applyAddSub(int sign) {
+    final typed = _parseEntry();
+    if (_pendingMulDiv != null) {
+      if (typed != null) {
+        _applyMulDiv(typed);
+      } else {
+        _pendingMulDiv = null;
+      }
+      // بعد از بستن ×÷ با +/− دیگر همان لحظه جمع تکراری نکن
       _entry = '';
       _entryFresh = true;
       _showTotal = true;
       return;
     }
-    if (_total == 0 && typed != null) {
-      _total = operand;
-    } else {
-      _total = _total / operand;
-    }
-    _lastSign = 0;
-    _tape.insert(0, {
-      'op': '÷',
-      'val': moneyFormat(operand),
-      'total': moneyFormat(_total),
-    });
-    if (_tape.length > 100) _tape.removeLast();
-    _entry = '';
-    _entryFresh = true;
-    _showTotal = true;
-  }
 
-  /// رفتار ماشین حساب اداری (Sharp / Casio desktop):
-  /// - عدد + ورود → به جمع اضافه؛ همان عدد به‌عنوان ثابت ذخیره می‌شود
-  /// - دوباره + بدون ورود جدید → همان عدد دوباره اضافه می‌شود (۵ + + + → ۱۵)
-  /// - تفریق مشابه با −
-  void _applyAddSub(int sign) {
-    final typed = _parseEntry();
     double operand;
     if (typed != null) {
       operand = typed;
@@ -4873,14 +4883,11 @@ class AccountingLogic {
       _hasLastOperand = true;
       _lastSign = sign;
     } else if (_hasLastOperand && _lastSign == sign) {
-      // تکرار همان عمل با همان عملوند
       operand = _lastOperand;
-    } else if (_hasLastOperand && typed == null) {
-      // تعویض عمل روی همان ثابت (مثلاً بعد از +ها حالا −)
+    } else if (_hasLastOperand) {
       operand = _lastOperand;
       _lastSign = sign;
     } else {
-      // چیزی برای اعمال نیست
       _entry = '';
       _entryFresh = true;
       _showTotal = true;
@@ -4900,7 +4907,6 @@ class AccountingLogic {
   }
 
   /// درصد: مقدار ورود = درصد از جمع جاری (اگر جمع≠۰)
-  /// اگر جمع صفر باشد: ورود / ۱۰۰
   void percent() {
     final v = _parseEntry();
     if (v == null) return;
@@ -4915,16 +4921,33 @@ class AccountingLogic {
     _showTotal = false;
   }
 
-  /// نمایش نهایی جمع؛ ورود را با + اعمال می‌کند اگر چیزی تایپ شده
+  /// = : اگر × یا ÷ در انتظار است → با عدد واردشده محاسبه کن
+  /// وگرنه مثل جمع‌کننده، ورود را با + به جمع اضافه کن
   void totalKey() {
     final v = _parseEntry();
+    if (_pendingMulDiv != null) {
+      if (v != null) {
+        _applyMulDiv(v);
+      } else {
+        // بدون عدد جدید چیزی روی خودش اعمال نکن
+        _pendingMulDiv = null;
+        _entry = '';
+        _entryFresh = true;
+        _showTotal = true;
+      }
+      return;
+    }
     if (v != null) {
       _total += v;
+      _lastOperand = v;
+      _hasLastOperand = true;
+      _lastSign = 1;
       _tape.insert(0, {
         'op': '+',
         'val': moneyFormat(v),
         'total': moneyFormat(_total),
       });
+      if (_tape.length > 100) _tape.removeLast();
     }
     _entry = '';
     _entryFresh = true;

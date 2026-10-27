@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK and AAB
 
 on:
   push:
@@ -53,7 +53,6 @@ jobs:
         id: ver
         run: |
           VERSION=$(grep -E '^version:' pubspec.yaml | head -1 | sed 's/version: //' | tr -d '[:space:]')
-          # مثلا 1.0.4+5 → name=1.0.4  code=5
           NAME="${VERSION%%+*}"
           CODE="${VERSION##*+}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -120,11 +119,16 @@ jobs:
       - name: Build APK
         run: flutter build apk --release
 
-      - name: Rename APK
+      - name: Build App Bundle (AAB)
+        run: flutter build appbundle --release
+
+      - name: Collect release files
         run: |
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk \
             "dist/hesabgar-man-${{ steps.ver.outputs.name }}.apk"
+          cp build/app/outputs/bundle/release/app-release.aab \
+            "dist/hesabgar-man-${{ steps.ver.outputs.name }}.aab"
           ls -la dist/
 
       - name: Upload APK artifact
@@ -132,6 +136,12 @@ jobs:
         with:
           name: hesabgar-apk
           path: dist/*.apk
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hesabgar-aab
+          path: dist/*.aab
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -144,8 +154,12 @@ jobs:
             - Commit: `${{ github.sha }}`
             - نسخه pubspec: `${{ steps.ver.outputs.version }}`
 
-            فایل APK امضاشده را از بخش Assets دانلود کنید.
-          files: dist/*.apk
+            ### فایل‌ها
+            - **APK** — نصب مستقیم روی گوشی / بازار / مایکت
+            - **AAB** — انتشار در Google Play
+          files: |
+            dist/*.apk
+            dist/*.aab
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

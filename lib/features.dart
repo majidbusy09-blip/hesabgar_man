@@ -4804,7 +4804,7 @@ class AccountingLogic {
     _lastSign = 0;
     _tape.insert(0, {
       'op': '×',
-      'val': CalcNum.format(v),
+      'val': moneyFormat(v),
       'total': moneyFormat(_total),
     });
     if (_tape.length > 100) _tape.removeLast();
@@ -4828,7 +4828,7 @@ class AccountingLogic {
     _lastSign = 0;
     _tape.insert(0, {
       'op': '÷',
-      'val': CalcNum.format(v),
+      'val': moneyFormat(v),
       'total': moneyFormat(_total),
     });
     if (_tape.length > 100) _tape.removeLast();
@@ -4867,7 +4867,7 @@ class AccountingLogic {
     _total += sign * operand;
     _tape.insert(0, {
       'op': sign > 0 ? '+' : '−',
-      'val': CalcNum.format(operand),
+      'val': moneyFormat(operand),
       'total': moneyFormat(_total),
     });
     if (_tape.length > 100) _tape.removeLast();
@@ -4899,7 +4899,7 @@ class AccountingLogic {
       _total += v;
       _tape.insert(0, {
         'op': '+',
-        'val': CalcNum.format(v),
+        'val': moneyFormat(v),
         'total': moneyFormat(_total),
       });
     }
@@ -5149,31 +5149,46 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                                 if (isAcc) {
                                   final item = _acc.tape[index];
                                   return Card(
-                                    child: ListTile(
-                                      leading: Text(
-                                        item['op'] ?? '',
-                                        style: const TextStyle(
-                                          fontFamily: 'Vazirmatn',
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      title: Text(
-                                        item['val'] ?? '',
-                                        style: const TextStyle(
-                                            fontFamily: 'Vazirmatn',
-                                            fontSize: 16),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 12),
+                                      child: Directionality(
                                         textDirection: TextDirection.ltr,
-                                      ),
-                                      trailing: Text(
-                                        item['total'] ?? '',
-                                        style: const TextStyle(
-                                          fontFamily: 'Vazirmatn',
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.teal,
+                                        child: Row(
+                                          children: [
+                                            SizedBox(
+                                              width: 36,
+                                              child: Text(
+                                                item['op'] ?? '',
+                                                style: const TextStyle(
+                                                  fontFamily: 'Vazirmatn',
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Text(
+                                                item['val'] ?? '',
+                                                style: const TextStyle(
+                                                  fontFamily: 'Vazirmatn',
+                                                  fontSize: 15,
+                                                ),
+                                                textAlign: TextAlign.left,
+                                              ),
+                                            ),
+                                            Text(
+                                              item['total'] ?? '',
+                                              style: const TextStyle(
+                                                fontFamily: 'Vazirmatn',
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.teal,
+                                              ),
+                                              textAlign: TextAlign.right,
+                                            ),
+                                          ],
                                         ),
-                                        textDirection: TextDirection.ltr,
                                       ),
                                     ),
                                   );

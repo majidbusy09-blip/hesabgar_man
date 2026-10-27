@@ -5764,7 +5764,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   static const List<Map<String, dynamic>> _accountingButtons = [
-    {'label': 'CE', 'isOp': true},
+    {'label': '⌫', 'isOp': true},
     {'label': 'C', 'isOp': true},
     {'label': '%', 'isSci': true},
     {'label': '÷', 'isOp': true},

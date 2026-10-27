@@ -29,55 +29,88 @@ class CalcNum {
   static const double _sciHigh = 1e12;
   static const double _sciLow = 1e-6;
 
+  /// جداکننده هزارگان (استاندارد نمایش اعداد در ایران)
+  static String groupDigits(String raw) {
+    if (raw.isEmpty) return raw;
+    final neg = raw.startsWith('-');
+    var body = neg ? raw.substring(1) : raw;
+    // علمی را دست نزن
+    if (body.contains('e') || body.contains('E')) return raw;
+    String intPart;
+    String? dec;
+    if (body.contains('.')) {
+      final p = body.split('.');
+      intPart = p[0];
+      dec = p.length > 1 ? p[1] : '';
+    } else {
+      intPart = body;
+    }
+    intPart = intPart.replaceAll(RegExp(r'[^0-9]'), '');
+    if (intPart.isEmpty) intPart = '0';
+    final buf = StringBuffer();
+    for (var i = 0; i < intPart.length; i++) {
+      if (i > 0 && (intPart.length - i) % 3 == 0) buf.write(',');
+      buf.write(intPart[i]);
+    }
+    var out = buf.toString();
+    if (dec != null) out = '$out.$dec';
+    return neg ? '-$out' : out;
+  }
+
+  /// گروه‌بندی اعداد داخل یک عبارت برای نمایش (۱۰۰۰۰۰۰×۲ → ۱,۰۰۰,۰۰۰×۲)
+  static String formatExpression(String expr) {
+    if (expr.isEmpty) return expr;
+    return expr.replaceAllMapped(RegExp(r'\d+\.?\d*'), (m) {
+      return groupDigits(m[0]!);
+    });
+  }
+
   static String format(double value) {
     if (value.isNaN || value.isInfinite) return 'خطا';
 
-    // صفر منفی را به صفر معمولی
     if (value == 0) return '0';
 
     final abs = value.abs();
 
-    // صحیح؟
     final nearest = value.roundToDouble();
     if ((value - nearest).abs() < _intEps && abs < 1e15) {
-      return nearest.toInt().toString();
+      return groupDigits(nearest.toInt().toString());
     }
 
-    // علمی
     if (abs >= _sciHigh || abs < _sciLow) {
       return _scientific(value);
     }
 
-    // اعشاری ثابت + حذف صفر انتهایی
     var s = value.toStringAsFixed(12);
     if (s.contains('.')) {
       s = s.replaceAll(RegExp(r'0+$'), '');
       s = s.replaceAll(RegExp(r'\.$'), '');
     }
-    return s;
+    return groupDigits(s);
   }
 
   static String _scientific(double value) {
-    // مثلاً 1.2345678e+10 — بدون صفر اضافی در مانتیسا
     var s = value.toStringAsExponential(10);
-    // جدا: مانتیسا و نما
     final parts = s.split('e');
     if (parts.length != 2) return s;
     var mant = parts[0];
-    var exp = parts[1]; // شامل + یا -
+    var exp = parts[1];
     if (mant.contains('.')) {
       mant = mant.replaceAll(RegExp(r'0+$'), '');
       mant = mant.replaceAll(RegExp(r'\.$'), '');
     }
-    // یکسان‌سازی نما: e+05 → e+5
     final sign = exp.startsWith('-') ? '-' : '+';
     final expNum = int.tryParse(exp.replaceAll('+', '').replaceAll('-', '')) ?? 0;
     return '${mant}e$sign$expNum';
   }
 
-  /// پارس امن متن نمایشی (علمی یا معمولی) به double
+  /// پارس امن متن نمایشی (با یا بدون ویرگول) به double
   static double? parse(String text) {
-    final t = text.trim().replaceAll(',', '').replaceAll('٬', '');
+    final t = text
+        .trim()
+        .replaceAll(',', '')
+        .replaceAll('٬', '')
+        .replaceAll('،', '');
     if (t.isEmpty || t == 'خطا' || t.startsWith('خطا')) return null;
     return double.tryParse(t);
   }
@@ -103,8 +136,11 @@ class CalculatorLogic {
   bool _isDegree = true;
   int _openParens = 0;
   final List<Map<String, String>> _history = [];
+  static const _historyKey = 'calc_history_v1';
 
   String get expression => _expression;
+  /// عبارت با جداکننده هزارگان برای UI
+  String get expressionDisplay => CalcNum.formatExpression(_expression);
   String get result => _result;
   String get livePreview => _livePreview;
   String? get lastError => _lastError;
@@ -717,8 +753,9 @@ class CalculatorLogic {
     }
 
     final calculatedResult = CalcNum.format(value);
-    _history.insert(0, {'exp': _expression, 'res': calculatedResult});
-    if (_history.length > 50) _history.removeLast();
+    _history.insert(0, {'exp': CalcNum.formatExpression(_expression), 'res': calculatedResult});
+    if (_history.length > 100) _history.removeLast();
+    _persistHistory();
     _lastValue = value; // دقت کامل برای ادامه محاسبه / حافظه
     _result = calculatedResult;
     _expression = calculatedResult;
@@ -769,7 +806,33 @@ class CalculatorLogic {
     _openParens = 0;
   }
 
-  void clearHistory() => _history.clear();
+  void clearHistory() {
+    _history.clear();
+    _persistHistory();
+  }
+
+  Future<void> loadHistory() async {
+    try {
+      final store = await LocalStore.instance;
+      final raw = store.getString(_historyKey);
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw);
+      if (list is! List) return;
+      _history
+        ..clear()
+        ..addAll(list.whereType<Map>().map((e) => {
+              'exp': '${e['exp'] ?? ''}',
+              'res': '${e['res'] ?? ''}',
+            }));
+    } catch (_) {}
+  }
+
+  Future<void> _persistHistory() async {
+    try {
+      final store = await LocalStore.instance;
+      await store.setString(_historyKey, jsonEncode(_history));
+    } catch (_) {}
+  }
 }
 
 // ---------- features/calculator/presentation/widgets/calc_button.dart ----------
@@ -4658,6 +4721,7 @@ class AccountingLogic {
   /// اگر true باشد، ورود به‌صورت درصد تفسیر می‌شود (÷۱۰۰ هنگام اعمال)
   bool _percentFlag = false;
   final List<Map<String, String>> _tape = [];
+  static const _tapeKey = 'acc_tape_v1';
 
   double get total => _total;
   String get entry => _entry;
@@ -4727,7 +4791,40 @@ class AccountingLogic {
     return neg ? '($body)' : body;
   }
 
-  void clearTape() => _tape.clear();
+  void clearTape() {
+    _tape.clear();
+    _persistTape();
+  }
+
+  Future<void> loadTape() async {
+    try {
+      final store = await LocalStore.instance;
+      final raw = store.getString(_tapeKey);
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw);
+      if (list is! List) return;
+      _tape
+        ..clear()
+        ..addAll(list.whereType<Map>().map((e) => {
+              'op': '${e['op'] ?? ''}',
+              'val': '${e['val'] ?? ''}',
+              'total': '${e['total'] ?? ''}',
+            }));
+    } catch (_) {}
+  }
+
+  Future<void> _persistTape() async {
+    try {
+      final store = await LocalStore.instance;
+      await store.setString(_tapeKey, jsonEncode(_tape));
+    } catch (_) {}
+  }
+
+  void _pushTape(String op, String val, String total) {
+    _tape.insert(0, {'op': op, 'val': val, 'total': total});
+    if (_tape.length > 100) _tape.removeLast();
+    _persistTape();
+  }
 
   String get statusLabel {
     if (_pendingMulDiv == '×' && _percentFlag) return '× %';
@@ -4795,6 +4892,7 @@ class AccountingLogic {
     _pendingMulDiv = null;
     _percentFlag = false;
     _tape.clear();
+    _persistTape();
   }
 
   double? _parseEntry() {
@@ -4827,20 +4925,11 @@ class AccountingLogic {
       } else {
         _total = typed;
         // ثبت مبلغ پایه در نوار
-        _tape.insert(0, {
-          'op': '→',
-          'val': moneyFormat(typed),
-          'total': moneyFormat(_total),
-        });
-        if (_tape.length > 100) _tape.removeLast();
+        _pushTape('→', moneyFormat(typed), moneyFormat(_total),);
       }
     } else if (_tape.isEmpty && _total != 0) {
       // پایه از جمع قبلی، یک‌بار در نوار بیاید
-      _tape.insert(0, {
-        'op': '→',
-        'val': moneyFormat(_total),
-        'total': moneyFormat(_total),
-      });
+      _pushTape('→', moneyFormat(_total), moneyFormat(_total));
     }
     _pendingMulDiv = op;
     _percentFlag = false;
@@ -4872,12 +4961,7 @@ class AccountingLogic {
       }
       _total = _total / operand;
     }
-    _tape.insert(0, {
-      'op': displayOp,
-      'val': moneyFormat(rawOperand),
-      'total': moneyFormat(_total),
-    });
-    if (_tape.length > 100) _tape.removeLast();
+    _pushTape(displayOp, moneyFormat(rawOperand), moneyFormat(_total),);
     _pendingMulDiv = null;
     _lastOperand = rawOperand;
     _hasLastOperand = true;
@@ -4922,12 +5006,7 @@ class AccountingLogic {
     }
 
     _total += sign * operand;
-    _tape.insert(0, {
-      'op': sign > 0 ? '+' : '−',
-      'val': moneyFormat(operand),
-      'total': moneyFormat(_total),
-    });
-    if (_tape.length > 100) _tape.removeLast();
+    _pushTape(sign > 0 ? '+' : '−', moneyFormat(operand), moneyFormat(_total),);
     _entry = '';
     _entryFresh = true;
     _showTotal = true;
@@ -4980,12 +5059,7 @@ class AccountingLogic {
       _lastOperand = v;
       _hasLastOperand = true;
       _lastSign = 1;
-      _tape.insert(0, {
-        'op': '+',
-        'val': moneyFormat(v),
-        'total': moneyFormat(_total),
-      });
-      if (_tape.length > 100) _tape.removeLast();
+      _pushTape('+', moneyFormat(v), moneyFormat(_total),);
     }
     _entry = '';
     _entryFresh = true;
@@ -5021,6 +5095,17 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   bool get _isScientific => _mode == 1;
   bool get _isAccounting => _mode == 2;
   final TextEditingController _textController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPersistedHistory();
+  }
+
+  Future<void> _loadPersistedHistory() async {
+    await Future.wait([_logic.loadHistory(), _acc.loadTape()]);
+    if (mounted) setState(() {});
+  }
 
   void _onButton(String value) {
     if (value.isEmpty) return;
@@ -5289,18 +5374,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                                 }
                                 final item = _logic.history[index];
                                 return Card(
-                                  child: ListTile(
-                                    title: Text(item['exp']!,
-                                        style: const TextStyle(
-                                            fontFamily: 'Vazirmatn',
-                                            fontSize: 15),
-                                        textDirection: TextDirection.ltr),
-                                    trailing: Text('= ${item['res']}',
-                                        style: const TextStyle(
-                                            fontFamily: 'Vazirmatn',
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.teal)),
+                                  child: InkWell(
                                     onTap: () {
                                       setState(() {
                                         _logic.clear();
@@ -5313,6 +5387,38 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                                           ClipboardData(text: item['res']!));
                                       HapticFeedback.lightImpact();
                                     },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 12),
+                                      child: Directionality(
+                                        textDirection: TextDirection.ltr,
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                item['exp'] ?? '',
+                                                style: const TextStyle(
+                                                  fontFamily: 'Vazirmatn',
+                                                  fontSize: 15,
+                                                ),
+                                                textAlign: TextAlign.left,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              item['res'] ?? '',
+                                              style: const TextStyle(
+                                                fontFamily: 'Vazirmatn',
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.teal,
+                                              ),
+                                              textAlign: TextAlign.right,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 );
                               },
@@ -5736,7 +5842,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   Widget _buildDisplay(bool isDark, double height) {
     final preview = _logic.livePreview;
-    final showPreview = preview.isNotEmpty && preview != _logic.expression;
+    final showPreview = preview.isNotEmpty && preview != _logic.expressionDisplay;
 
     return GestureDetector(
       onLongPress: _copyResult,
@@ -5803,7 +5909,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             ),
             const Spacer(),
             Text(
-              _logic.expression.isEmpty ? '' : _logic.expression,
+              _logic.expression.isEmpty ? '' : _logic.expressionDisplay,
               style: TextStyle(
                   fontFamily: 'Vazirmatn',
                   fontSize: 16,
@@ -6044,7 +6150,7 @@ class _QuickCalcSheetState extends State<_QuickCalcSheet> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  _logic.expression.isEmpty ? ' ' : _logic.expression,
+                  _logic.expression.isEmpty ? ' ' : _logic.expressionDisplay,
                   style: TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 14,

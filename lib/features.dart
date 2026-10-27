@@ -4648,6 +4648,11 @@ class AccountingLogic {
   String _entry = '';
   bool _entryFresh = true; // بعد از عملگر، رقم جدید جایگزین می‌شود
   bool _showTotal = true;
+  /// آخرین عملوند برای تکرار +/− (رفتار ماشین حساب اداری Sharp/Casio)
+  double _lastOperand = 0;
+  bool _hasLastOperand = false;
+  /// آخرین عمل: 1=جمع  -1=تفریق  0=ندارد
+  int _lastSign = 0;
   final List<Map<String, String>> _tape = [];
 
   double get total => _total;
@@ -4721,6 +4726,8 @@ class AccountingLogic {
 
   String get statusLabel {
     if (_entry.isNotEmpty && !_entryFresh) return 'ورود';
+    if (_hasLastOperand && _lastSign > 0) return 'ثابت +';
+    if (_hasLastOperand && _lastSign < 0) return 'ثابت −';
     if (_tape.isEmpty) return 'آماده';
     return 'جمع';
   }
@@ -4771,6 +4778,9 @@ class AccountingLogic {
     _entry = '';
     _entryFresh = true;
     _showTotal = true;
+    _lastOperand = 0;
+    _hasLastOperand = false;
+    _lastSign = 0;
     _tape.clear();
   }
 
@@ -4789,6 +4799,9 @@ class AccountingLogic {
     final v = _parseEntry();
     if (v == null) return;
     _total = _total * v;
+    _lastOperand = v;
+    _hasLastOperand = true;
+    _lastSign = 0;
     _tape.insert(0, {
       'op': '×',
       'val': CalcNum.format(v),
@@ -4807,10 +4820,12 @@ class AccountingLogic {
       _entry = '';
       _entryFresh = true;
       _showTotal = true;
-      // جمع را خراب نمی‌کنیم؛ فقط ورود باطل
       return;
     }
     _total = _total / v;
+    _lastOperand = v;
+    _hasLastOperand = true;
+    _lastSign = 0;
     _tape.insert(0, {
       'op': '÷',
       'val': CalcNum.format(v),
@@ -4822,18 +4837,40 @@ class AccountingLogic {
     _showTotal = true;
   }
 
+  /// رفتار ماشین حساب اداری (Sharp / Casio desktop):
+  /// - عدد + ورود → به جمع اضافه؛ همان عدد به‌عنوان ثابت ذخیره می‌شود
+  /// - دوباره + بدون ورود جدید → همان عدد دوباره اضافه می‌شود (۵ + + + → ۱۵)
+  /// - تفریق مشابه با −
   void _applyAddSub(int sign) {
-    final v = _parseEntry();
-    if (v != null) {
-      final delta = sign * v;
-      _total += delta;
-      _tape.insert(0, {
-        'op': sign > 0 ? '+' : '−',
-        'val': CalcNum.format(v),
-        'total': moneyFormat(_total),
-      });
-      if (_tape.length > 100) _tape.removeLast();
+    final typed = _parseEntry();
+    double operand;
+    if (typed != null) {
+      operand = typed;
+      _lastOperand = operand;
+      _hasLastOperand = true;
+      _lastSign = sign;
+    } else if (_hasLastOperand && _lastSign == sign) {
+      // تکرار همان عمل با همان عملوند
+      operand = _lastOperand;
+    } else if (_hasLastOperand && typed == null) {
+      // تعویض عمل روی همان ثابت (مثلاً بعد از +ها حالا −)
+      operand = _lastOperand;
+      _lastSign = sign;
+    } else {
+      // چیزی برای اعمال نیست
+      _entry = '';
+      _entryFresh = true;
+      _showTotal = true;
+      return;
     }
+
+    _total += sign * operand;
+    _tape.insert(0, {
+      'op': sign > 0 ? '+' : '−',
+      'val': CalcNum.format(operand),
+      'total': moneyFormat(_total),
+    });
+    if (_tape.length > 100) _tape.removeLast();
     _entry = '';
     _entryFresh = true;
     _showTotal = true;
@@ -4938,10 +4975,13 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _acc.backspace();
         break;
       case '+':
+      case '+=':
         _acc.plus();
         break;
       case '-':
       case '−':
+      case '−=':
+      case '-=':
         _acc.minus();
         break;
       case '×':
@@ -5735,11 +5775,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '4'},
     {'label': '5'},
     {'label': '6'},
-    {'label': '-', 'isOp': true},
+    {'label': '−=', 'isOp': true},
     {'label': '1'},
     {'label': '2'},
     {'label': '3'},
-    {'label': '+', 'isOp': true},
+    {'label': '+=', 'isOp': true},
     {'label': '000', 'isOp': true},
     {'label': '0'},
     {'label': '.'},

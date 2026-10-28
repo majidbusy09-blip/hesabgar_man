@@ -2189,28 +2189,112 @@ class _LoanTabState extends State<_LoanTab> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         _field(_principal, 'مبلغ وام (تومان)', Icons.payments_outlined),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         _field(_rate, 'نرخ سود سالانه (%)', Icons.percent),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         _field(_months, 'تعداد اقساط (ماه)', Icons.calendar_today_outlined,
             integer: true),
         const SizedBox(height: 20),
         FilledButton.icon(
           onPressed: _calc,
-          icon: const Icon(Icons.calculate),
+          icon: const Icon(Icons.calculate_outlined),
           label: const Text('محاسبه', style: TextStyle(fontFamily: 'Vazirmatn')),
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(50),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
         ),
         if (_result != null) ...[
-          const SizedBox(height: 20),
-          _resultCard('قسط ماهانه', _fmtMoney(_result!['installment']!)),
-          _resultCard('مجموع پرداختی', _fmtMoney(_result!['total']!)),
-          _resultCard('کل سود', _fmtMoney(_result!['interest']!),
-              color: Colors.orange),
+          const SizedBox(height: 22),
+          // قسط ماهانه — نتیجه اصلی
+          Card(
+            elevation: 1,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: scheme.primary.withValues(alpha: 0.22),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              child: Column(
+                children: [
+                  Text(
+                    'قسط ماهانه',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 13,
+                      color: scheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _fmtMoney(_result!['installment']!),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.primary,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // مجموع پرداختی — فرعی
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              title: const Text(
+                'مجموع پرداختی',
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+              ),
+              trailing: Text(
+                _fmtMoney(_result!['total']!),
+                style: const TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // کل سود — فرعی با تأکید ملایم
+          Card(
+            margin: EdgeInsets.zero,
+            color: scheme.secondaryContainer.withValues(alpha: 0.35),
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              title: const Text(
+                'کل سود وام',
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+              ),
+              trailing: Text(
+                _fmtMoney(_result!['interest']!),
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+          ),
         ],
       ],
     );
@@ -4555,6 +4639,81 @@ class _ThemeGalleryScreenState extends State<ThemeGalleryScreen> {
 }
 
 // ---------- features/settings/presentation/settings_screen.dart ----------
+
+// ---------- راهنمای داخل اپ (با هر قابلیت جدید این متن را به‌روز کن) ----------
+class AppGuide {
+  static const String title = 'راهنمای حسابگر من';
+  static const String versionLabel = '۱.۰.۷';
+
+  /// متن راهنما — خلاصه و قابل‌فهم برای همه
+  static const String body = 'حسابگر من سه ماشین‌حساب و چند ابزار روزمره را یک‌جا جمع کرده است.\n\n■ ماشین‌حساب\n• ساده: جمع، تفریق، ضرب، تقسیم و درصد\n• علمی: سینوس، لگاریتم، ریشه، توان و حافظه — با دکمه توابع در بالای صفحه\n• حسابداری: مثل ماشین‌حساب اداری\n  – عدد بزنید، بعد += یا −=\n  – برای تکرار همان عدد، دوباره همان دکمه را بزنید\n  – ضرب و تقسیم: اول عمل، بعد عدد دوم، بعد =\n  – مثال درصد: ۱۰۰ × ۲۵ ٪ = می‌شود ۲۵\n\nآیکون ساعت بالای صفحه، تاریخچه را نشان می‌دهد و تا وقتی خودتان پاک نکنید می‌ماند.\n\n■ مالی و هزینه\n• هزینه‌ها: ثبت خرج با تاریخ شمسی\n• مالی: سود سپرده، وام و قیمت طلا (با به‌روزرسانی آنلاین)\n• مبدل: تبدیل واحدها\n\n■ تقویم\nشمسی، میلادی و قمری در یک صفحه؛ با لمس هر روز مناسبت همان روز را ببینید.\n\n■ تنظیمات و ظاهر\nاز تنظیمات تم، صدا و ویبره را عوض کنید. می‌توانید از یک عکس، تم اختصاصی بسازید.\n\nنکته: اعداد به‌صورت سه‌رقم‌سه‌رقم نمایش داده می‌شوند تا خواندن راحت‌تر باشد.';
+}
+
+class GuideScreen extends StatelessWidget {
+  const GuideScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text(AppGuide.title)),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        children: [
+          Card(
+            color: scheme.primaryContainer.withValues(alpha: 0.35),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(Icons.menu_book_rounded, color: scheme.primary, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'آشنایی سریع با امکانات اپ',
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+              child: SelectableText(
+                AppGuide.body,
+                style: const TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 14.5,
+                  height: 1.75,
+                ),
+                textAlign: TextAlign.justify,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'نسخه ${AppGuide.versionLabel}',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontSize: 12,
+              color: scheme.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -4672,11 +4831,28 @@ class SettingsScreen extends StatelessWidget {
 
           Card(
             child: ListTile(
+              leading: Icon(Icons.menu_book_outlined, color: scheme.primary),
+              title: const Text('راهنمای استفاده',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+              subtitle: const Text('طرز کار و امکانات اپ',
+                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const GuideScreen()),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Card(
+            child: ListTile(
               leading: Icon(Icons.info_outline, color: scheme.primary),
               title: const Text('درباره اپ',
                   style: TextStyle(fontFamily: 'Vazirmatn')),
-              subtitle: const Text('نسخه ۱.۰.۰',
-                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+              subtitle: Text('نسخه ${AppGuide.versionLabel}',
+                  style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
               trailing: const Icon(Icons.chevron_left),
               onTap: () {
                 showDialog(

@@ -2135,21 +2135,124 @@ class _DepositTabState extends State<_DepositTab> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         _field(_principal, 'مبلغ سرمایه‌گذاری', Icons.savings_outlined,
             onChanged: _recalc),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         _field(_rate, 'نرخ سود (درصد)', Icons.percent, onChanged: _recalc),
+        const SizedBox(height: 20),
+        // نتیجه اصلی — سود سالانه
+        Card(
+          elevation: 1,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: scheme.primary.withValues(alpha: 0.22),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+            child: Column(
+              children: [
+                Text(
+                  'سود سالانه',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 13,
+                    color: scheme.onSurface.withValues(alpha: 0.65),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _fmtMoney(_r['yearly']!),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.primary,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
         const SizedBox(height: 16),
-        _readonlyRow('سود سپرده در روز', _r['daily']!),
+        Text(
+          'جزئیات سود',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
         const SizedBox(height: 8),
-        _readonlyRow('سود سپرده در ماه ۳۰ روزه', _r['d30']!),
-        const SizedBox(height: 8),
-        _readonlyRow('سود سپرده در ماه ۳۱ روز', _r['d31']!),
-        const SizedBox(height: 8),
-        _readonlyRow('سود سپرده در سال', _r['yearly']!),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Column(
+            children: [
+              ListTile(
+                dense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                title: const Text(
+                  'سود روزانه',
+                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                ),
+                trailing: Text(
+                  _fmtMoney(_r['daily']!),
+                  style: const TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                dense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                title: const Text(
+                  'سود ماه ۳۰ روزه',
+                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                ),
+                trailing: Text(
+                  _fmtMoney(_r['d30']!),
+                  style: const TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                dense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                title: const Text(
+                  'سود ماه ۳۱ روزه',
+                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                ),
+                trailing: Text(
+                  _fmtMoney(_r['d31']!),
+                  style: const TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

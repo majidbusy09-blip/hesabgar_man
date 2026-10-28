@@ -2168,7 +2168,7 @@ class _DepositTabState extends State<_DepositTab> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _fmtMoney(_r['yearly']!),
+                  _fmtDepositMoney(_r['yearly']!),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
@@ -2206,7 +2206,7 @@ class _DepositTabState extends State<_DepositTab> {
                   style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                 ),
                 trailing: Text(
-                  _fmtMoney(_r['daily']!),
+                  _fmtDepositMoney(_r['daily']!),
                   style: const TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: 15,
@@ -2224,7 +2224,7 @@ class _DepositTabState extends State<_DepositTab> {
                   style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                 ),
                 trailing: Text(
-                  _fmtMoney(_r['d30']!),
+                  _fmtDepositMoney(_r['d30']!),
                   style: const TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: 15,
@@ -2242,7 +2242,7 @@ class _DepositTabState extends State<_DepositTab> {
                   style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                 ),
                 trailing: Text(
-                  _fmtMoney(_r['d31']!),
+                  _fmtDepositMoney(_r['d31']!),
                   style: const TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: 15,
@@ -2777,6 +2777,13 @@ Widget _resultCard(String title, String value, {Color? color}) {
 String _fmtMoney(double v) {
   if (v.isNaN || v.isInfinite) return '—';
   return '${NumFmt.format(v)} تومان';
+}
+
+/// نمایش پولی نتایج سپرده: فقط برای UI؛ مقدار محاسبه را تغییر نمی‌دهد.
+/// به نزدیک‌ترین تومان گرد می‌شود + جداکننده سه‌رقمی.
+String _fmtDepositMoney(double v) {
+  if (v.isNaN || v.isInfinite) return '—';
+  return '${NumFmt.format(v.round())} تومان';
 }
 
 // ---------- features/expenses/logic/expense_model.dart ----------

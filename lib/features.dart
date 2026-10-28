@@ -2615,9 +2615,28 @@ class _GoldTabState extends State<_GoldTab> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final hasResult =
+        NumFmt.parse(_price.text) > 0 && NumFmt.parse(_weight.text) > 0;
+
+    Widget sectionTitle(String text) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+      );
+    }
+
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
+        sectionTitle('نرخ روز طلا'),
         TextField(
           controller: _price,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -2626,18 +2645,21 @@ class _GoldTabState extends State<_GoldTab> {
             GroupedNumberFormatter(),
           ],
           onChanged: (_) => _recalc(),
-          style: const TextStyle(fontFamily: 'Vazirmatn'),
+          style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 16),
           decoration: InputDecoration(
             labelText: 'قیمت هر گرم طلا (تومان)',
             labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            border:
+                OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            filled: true,
             prefixIcon: _loadingPrice
                 ? const Padding(
                     padding: EdgeInsets.all(12),
                     child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   )
                 : IconButton(
                     icon: const Icon(Icons.refresh),
@@ -2648,53 +2670,166 @@ class _GoldTabState extends State<_GoldTab> {
         ),
         if (_priceMsg != null) ...[
           const SizedBox(height: 6),
-          Text(_priceMsg!,
-              style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 12,
-                  color: scheme.primary)),
+          Text(
+            _priceMsg!,
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontSize: 12,
+              color: scheme.primary,
+            ),
+          ),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 18),
+        sectionTitle('وزن'),
+        _field(_weight, 'وزن طلا (گرم)', Icons.scale, onChanged: _recalc),
+        const SizedBox(height: 18),
+        sectionTitle('اجرت، سود و مالیات'),
         Row(
           children: [
-            Expanded(
-              child: _field(_weight, 'وزن طلا (گرم)', Icons.scale,
-                  onChanged: _recalc),
-            ),
-            const SizedBox(width: 8),
             Expanded(
               child: _field(_wage, 'اجرت ساخت (٪)', Icons.build_outlined,
                   onChanged: _recalc),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _field(_profit, 'درصد سود فروشنده', Icons.trending_up,
-                  onChanged: _recalc),
-            ),
             const SizedBox(width: 8),
             Expanded(
-              child: _field(_tax, 'درصد مالیات', Icons.receipt_long,
+              child: _field(_profit, 'سود فروشنده (٪)', Icons.trending_up,
                   onChanged: _recalc),
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        _readonlyRow('قیمت نهایی', _r['total']!),
-        const SizedBox(height: 8),
-        _resultCard('ارزش طلا', _fmtMoney(_r['raw']!)),
-        _resultCard('اجرت ساخت', _fmtMoney(_r['wage']!)),
-        _resultCard('سود فروشنده', _fmtMoney(_r['profit']!)),
-        _resultCard('مالیات', _fmtMoney(_r['tax']!), color: Colors.orange),
         const SizedBox(height: 12),
+        _field(_tax, 'مالیات (٪)', Icons.receipt_long, onChanged: _recalc),
+        if (hasResult) ...[
+          const SizedBox(height: 22),
+          Card(
+            elevation: 1,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: scheme.primary.withValues(alpha: 0.22),
+              ),
+            ),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              child: Column(
+                children: [
+                  Text(
+                    'قیمت نهایی',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 13,
+                      color: scheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _fmtDepositMoney(_r['total']!),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.primary,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          sectionTitle('جزئیات قیمت'),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'ارزش طلای خام',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    _fmtDepositMoney(_r['raw']!),
+                    style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'اجرت ساخت',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    _fmtDepositMoney(_r['wage']!),
+                    style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'سود فروشنده',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    _fmtDepositMoney(_r['profit']!),
+                    style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'مالیات',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    _fmtDepositMoney(_r['tax']!),
+                    style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
         Text(
           'از دی‌ماه ۱۴۰۰ مالیات بر ارزش افزوده طلا تنها روی اجرت ساخت و سود فروشنده لحاظ می‌شود.',
           textAlign: TextAlign.center,
           style: TextStyle(
-              fontFamily: 'Vazirmatn', fontSize: 12, color: Colors.grey[600]),
+            fontFamily: 'Vazirmatn',
+            fontSize: 11,
+            height: 1.5,
+            color: Colors.grey[600],
+          ),
         ),
       ],
     );

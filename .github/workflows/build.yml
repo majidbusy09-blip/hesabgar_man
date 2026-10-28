@@ -89,6 +89,17 @@ jobs:
           echo "---- android/app/build.gradle.kts (head) ----"
           head -80 android/app/build.gradle.kts || head -80 android/app/build.gradle || true
 
+      - name: Set Persian app name
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          # نام نمایشی زیر آیکون
+          sed -i 's/android:label="[^"]*"/android:label="حسابگر من"/' "$MANIFEST"
+          # اگر label نبود داخل application اضافه کن
+          if ! grep -q 'android:label=' "$MANIFEST"; then
+            sed -i 's/<application/<application android:label="حسابگر من"/' "$MANIFEST"
+          fi
+          grep -o 'android:label="[^"]*"' "$MANIFEST" || true
+
       - name: Add Android permissions
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml

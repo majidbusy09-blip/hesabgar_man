@@ -2293,14 +2293,34 @@ class _LoanTabState extends State<_LoanTab> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final hasResult = _result != null &&
+        NumFmt.parse(_principal.text) > 0 &&
+        NumFmt.parse(_months.text) > 0;
+
+    Widget sectionTitle(String text) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
+        sectionTitle('اطلاعات وام'),
         _field(_principal, 'مبلغ وام (تومان)', Icons.payments_outlined),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         _field(_rate, 'نرخ سود سالانه (%)', Icons.percent),
-        const SizedBox(height: 14),
-        _field(_months, 'تعداد اقساط (ماه)', Icons.calendar_today_outlined,
+        const SizedBox(height: 12),
+        _field(_months, 'مدت بازپرداخت (ماه)', Icons.calendar_today_outlined,
             integer: true),
         const SizedBox(height: 20),
         FilledButton.icon(
@@ -2314,9 +2334,8 @@ class _LoanTabState extends State<_LoanTab> {
             ),
           ),
         ),
-        if (_result != null) ...[
+        if (hasResult) ...[
           const SizedBox(height: 22),
-          // قسط ماهانه — نتیجه اصلی
           Card(
             elevation: 1,
             margin: EdgeInsets.zero,
@@ -2327,7 +2346,8 @@ class _LoanTabState extends State<_LoanTab> {
               ),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
               child: Column(
                 children: [
                   Text(
@@ -2340,7 +2360,7 @@ class _LoanTabState extends State<_LoanTab> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _fmtMoney(_result!['installment']!),
+                    _fmtDepositMoney(_result!['installment']!),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
@@ -2354,48 +2374,48 @@ class _LoanTabState extends State<_LoanTab> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          // مجموع پرداختی — فرعی
+          const SizedBox(height: 16),
+          sectionTitle('جزئیات وام'),
           Card(
             margin: EdgeInsets.zero,
-            child: ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              title: const Text(
-                'مجموع پرداختی',
-                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
-              ),
-              trailing: Text(
-                _fmtMoney(_result!['total']!),
-                style: const TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+            child: Column(
+              children: [
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'مجموع بازپرداخت',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    _fmtDepositMoney(_result!['total']!),
+                    style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          // کل سود — فرعی با تأکید ملایم
-          Card(
-            margin: EdgeInsets.zero,
-            color: scheme.secondaryContainer.withValues(alpha: 0.35),
-            child: ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              title: const Text(
-                'کل سود وام',
-                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
-              ),
-              trailing: Text(
-                _fmtMoney(_result!['interest']!),
-                style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSecondaryContainer,
+                const Divider(height: 1),
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'مجموع سود وام',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    _fmtDepositMoney(_result!['interest']!),
+                    style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ],

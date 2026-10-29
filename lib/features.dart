@@ -3046,6 +3046,7 @@ class _GoldTabState extends State<_GoldTab> {
             GroupedNumberFormatter(),
           ],
           onChanged: (_) => _recalc(),
+          textAlign: TextAlign.center,
           style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 16),
           decoration: InputDecoration(
             labelText: 'قیمت هر گرم طلا (تومان)',
@@ -3280,6 +3281,7 @@ Widget _field(TextEditingController c, String label, IconData icon,
       }
       onChanged?.call();
     },
+    textAlign: TextAlign.center,
     style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 16),
     decoration: InputDecoration(
       labelText: label,

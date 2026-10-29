@@ -2080,8 +2080,15 @@ class GroupedNumberFormatter extends TextInputFormatter {
 }
 
 
-class FinanceScreen extends StatelessWidget {
+class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
+
+  @override
+  State<FinanceScreen> createState() => _FinanceScreenState();
+}
+
+class _FinanceScreenState extends State<FinanceScreen> {
+  bool _moreOpen = false;
 
   void _openTool(BuildContext context, String title, Widget body) {
     Navigator.of(context).push(
@@ -2094,56 +2101,201 @@ class FinanceScreen extends StatelessWidget {
     );
   }
 
+  void _soon(BuildContext context, String name) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$name به‌زودی در مراحل بعد اضافه می‌شود',
+          style: const TextStyle(fontFamily: 'Vazirmatn'),
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, String text) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10, top: 4),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: scheme.onSurface.withValues(alpha: 0.85),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final bg = scheme.surfaceContainerLowest;
+
     return Scaffold(
+      backgroundColor: bg,
       appBar: AppBar(
-        title: const Text('مالی'),
+        title: const Text('ابزارهای مالی'),
+        centerTitle: true,
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
           Text(
-            'ابزارهای اصلی',
+            'محاسبات مالی، ساده و سریع',
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'Vazirmatn',
               fontSize: 13,
-              fontWeight: FontWeight.w600,
               color: scheme.onSurface.withValues(alpha: 0.55),
             ),
           ),
-          const SizedBox(height: 12),
-          _FinanceHubCard(
-            icon: Icons.savings_outlined,
-            title: 'سود سپرده',
-            subtitle: 'محاسبه سود روزانه، ماهانه و سالانه سپرده',
-            onTap: () => _openTool(
-              context,
-              'سود سپرده',
-              const _DepositTab(),
-            ),
+          const SizedBox(height: 18),
+          _sectionTitle(context, 'ابزارهای اصلی'),
+          Row(
+            children: [
+              Expanded(
+                child: _FinanceMainTile(
+                  icon: Icons.account_balance_outlined,
+                  title: 'سود سپرده',
+                  onTap: () => _openTool(
+                    context,
+                    'سود سپرده',
+                    const _DepositTab(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _FinanceMainTile(
+                  icon: Icons.handshake_outlined,
+                  title: 'سود وام',
+                  onTap: () => _openTool(
+                    context,
+                    'سود وام',
+                    const _LoanTab(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _FinanceMainTile(
+                  icon: Icons.monetization_on_outlined,
+                  title: 'محاسبه طلا',
+                  onTap: () => _openTool(
+                    context,
+                    'محاسبه طلا',
+                    const _GoldTab(),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _FinanceHubCard(
-            icon: Icons.payments_outlined,
-            title: 'سود وام',
-            subtitle: 'محاسبه قسط ماهانه، مجموع بازپرداخت و سود وام',
-            onTap: () => _openTool(
-              context,
-              'سود وام',
-              const _LoanTab(),
-            ),
+          const SizedBox(height: 22),
+          _sectionTitle(context, 'محاسبات سریع'),
+          _FinanceListGroup(
+            children: [
+              _FinanceListRow(
+                icon: Icons.percent,
+                title: 'تخفیف و درصد',
+                subtitle: 'محاسبه مبلغ و درصد تخفیف',
+                enabled: false,
+                onTap: () => _soon(context, 'تخفیف و درصد'),
+              ),
+              _FinanceListRow(
+                icon: Icons.show_chart,
+                title: 'سود و زیان فروش',
+                subtitle: 'محاسبه سود معامله و حاشیه سود',
+                enabled: false,
+                onTap: () => _soon(context, 'سود و زیان فروش'),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _FinanceHubCard(
-            icon: Icons.diamond_outlined,
-            title: 'محاسبه طلا',
-            subtitle: 'قیمت نهایی طلا با اجرت، سود فروشنده و مالیات',
-            onTap: () => _openTool(
-              context,
-              'محاسبه طلا',
-              const _GoldTab(),
+          const SizedBox(height: 22),
+          _sectionTitle(context, 'ابزارهای کمکی'),
+          _FinanceListGroup(
+            children: [
+              _FinanceListRow(
+                icon: Icons.translate,
+                title: 'تبدیل عدد به حروف',
+                subtitle: 'تبدیل مبلغ عددی به نوشتار فارسی',
+                enabled: false,
+                onTap: () => _soon(context, 'تبدیل عدد به حروف'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Material(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => setState(() => _moreOpen = !_moreOpen),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.tune,
+                            size: 22,
+                            color: scheme.onSurface.withValues(alpha: 0.55)),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'گزینه‌های بیشتر',
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          _moreOpen
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          color: scheme.onSurface.withValues(alpha: 0.45),
+                        ),
+                      ],
+                    ),
+                    if (!_moreOpen) ...[
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          'ابزارها و تنظیمات پیشرفته در بخش جمع‌شونده',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 12,
+                            color: scheme.onSurface.withValues(alpha: 0.45),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (_moreOpen) ...[
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          'فعلاً ابزار اضافه‌ای اینجا نیست. پس از تأیید مراحل بعد، موارد کم‌کاربرد در این بخش قرار می‌گیرند.',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 12.5,
+                            height: 1.5,
+                            color: scheme.onSurface.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -2152,77 +2304,53 @@ class FinanceScreen extends StatelessWidget {
   }
 }
 
-class _FinanceHubCard extends StatelessWidget {
-  const _FinanceHubCard({
+/// کارت مربعی ابزار اصلی (ردیف سه‌تایی)
+class _FinanceMainTile extends StatelessWidget {
+  const _FinanceMainTile({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
+    return Material(
+      color: scheme.surface,
       elevation: 0,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: scheme.outlineVariant.withValues(alpha: 0.55),
-        ),
-      ),
+      borderRadius: BorderRadius.circular(16),
+      shadowColor: Colors.black12,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          child: Row(
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.35),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
+              Icon(icon, size: 28, color: const Color(0xFFB08D57)),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  height: 1.25,
                 ),
-                child: Icon(icon, color: scheme.primary, size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontSize: 12.5,
-                        height: 1.4,
-                        color: scheme.onSurface.withValues(alpha: 0.62),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_left,
-                color: scheme.onSurface.withValues(alpha: 0.35),
               ),
             ],
           ),
@@ -2232,6 +2360,105 @@ class _FinanceHubCard extends StatelessWidget {
   }
 }
 
+class _FinanceListGroup extends StatelessWidget {
+  const _FinanceListGroup({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0)
+              Divider(
+                height: 1,
+                indent: 16,
+                endIndent: 16,
+                color: scheme.outlineVariant.withValues(alpha: 0.4),
+              ),
+            children[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FinanceListRow extends StatelessWidget {
+  const _FinanceListRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final muted = scheme.onSurface.withValues(alpha: enabled ? 0.9 : 0.55);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(
+              Icons.chevron_left,
+              color: scheme.onSurface.withValues(alpha: 0.3),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: muted,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    enabled ? subtitle : '$subtitle — به‌زودی',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 11.5,
+                      color: scheme.onSurface.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(icon, color: scheme.primary.withValues(alpha: 0.85), size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------- سود سپرده (ساده روزانه) ----------
 // ---------- سود سپرده (ساده روزانه) ----------
 class _DepositTab extends StatefulWidget {
   const _DepositTab();

@@ -106,7 +106,7 @@ class CalcNum {
 
   /// پارس امن متن نمایشی (با یا بدون ویرگول) به double
   static double? parse(String text) {
-    final t = text
+    final t = NumFmt.toLatinDigits(text)
         .trim()
         .replaceAll(',', '')
         .replaceAll('٬', '')
@@ -517,7 +517,7 @@ class CalculatorLogic {
   /// آماده‌سازی عبارت برای parser
   /// π و e به عدد واقعی تبدیل می‌شوند تا به bind کتابخانه وابسته نباشیم.
   String? _prepareExpression(String input) {
-    var expr = input.trim();
+    var expr = NumFmt.toLatinDigits(input).trim();
     if (expr.isEmpty) return null;
 
     expr = expr
@@ -777,8 +777,10 @@ class CalculatorLogic {
   }
 
   void calculateFromKeyboard(String formula) {
-    if (formula.trim().isEmpty) return;
-    _expression = formula.trim();
+    // ارقام فارسی/عربی → لاتین قبل از محاسبه
+    final normalized = NumFmt.toLatinDigits(formula).trim();
+    if (normalized.isEmpty) return;
+    _expression = normalized;
     _openParens = _countOpenParens(_expression);
     calculate();
   }
@@ -2771,7 +2773,7 @@ class _GoldTabState extends State<_GoldTab> {
           controller: _price,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+            FilteringTextInputFormatter.allow(RegExp(r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
             GroupedNumberFormatter(),
           ],
           onChanged: (_) => _recalc(),
@@ -2996,7 +2998,7 @@ Widget _field(TextEditingController c, String label, IconData icon,
     controller: c,
     keyboardType: TextInputType.numberWithOptions(decimal: !integer),
     inputFormatters: [
-      FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+      FilteringTextInputFormatter.allow(RegExp(r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
       GroupedNumberFormatter(),
     ],
     onChanged: (_) {
@@ -3872,7 +3874,7 @@ class _AddSheetState extends State<_AddSheet> {
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+                FilteringTextInputFormatter.allow(RegExp(r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
                 GroupedNumberFormatter(),
               ],
               onChanged: (v) {

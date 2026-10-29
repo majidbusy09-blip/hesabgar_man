@@ -2384,6 +2384,12 @@ class _LoanTabState extends State<_LoanTab> {
     });
   }
 
+  /// با تغییر هر ورودی، نتیجهٔ قبلی دیگر معتبر نیست تا دوباره محاسبه شود.
+  void _invalidateResult() {
+    if (_result == null) return;
+    setState(() => _result = null);
+  }
+
   @override
   void dispose() {
     _principal.dispose();
@@ -2418,12 +2424,14 @@ class _LoanTabState extends State<_LoanTab> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         sectionTitle('اطلاعات وام'),
-        _field(_principal, 'مبلغ وام (تومان)', Icons.payments_outlined),
+        _field(_principal, 'مبلغ وام (تومان)', Icons.payments_outlined,
+            onChanged: _invalidateResult),
         const SizedBox(height: 12),
-        _field(_rate, 'نرخ سود سالانه (%)', Icons.percent),
+        _field(_rate, 'نرخ سود سالانه (%)', Icons.percent,
+            onChanged: _invalidateResult),
         const SizedBox(height: 12),
         _field(_months, 'مدت بازپرداخت (ماه)', Icons.calendar_today_outlined,
-            integer: true),
+            integer: true, onChanged: _invalidateResult),
         const SizedBox(height: 20),
         FilledButton.icon(
           onPressed: _calc,

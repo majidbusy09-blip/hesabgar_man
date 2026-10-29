@@ -2019,6 +2019,24 @@ class FinanceLogic {
     return ((to - from) / from) * 100;
   }
 
+  /// سود و زیان فروش (مبنای درصد: قیمت خرید)
+  static Map<String, double> profitLoss({
+    required double buy,
+    required double sell,
+  }) {
+    final amount = sell - buy;
+    double pct = 0;
+    if (buy != 0) {
+      pct = (amount / buy) * 100;
+    }
+    return {
+      'amount': amount,
+      'percent': pct,
+      'buy': buy,
+      'sell': sell,
+    };
+  }
+
   /// تخفیف و درصد از مبلغ
   /// [price] مبلغ پایه، [percent] درصد
   static Map<String, double> discount({
@@ -2102,6 +2120,127 @@ class GroupedNumberFormatter extends TextInputFormatter {
   }
 }
 
+
+/// تبدیل عدد به حروف فارسی (صحیح و اعشار محدود)
+class PersianWords {
+  PersianWords._();
+
+  static const _ones = [
+    'صفر',
+    'یک',
+    'دو',
+    'سه',
+    'چهار',
+    'پنج',
+    'شش',
+    'هفت',
+    'هشت',
+    'نه',
+  ];
+  static const _teens = [
+    'ده',
+    'یازده',
+    'دوازده',
+    'سیزده',
+    'چهارده',
+    'پانزده',
+    'شانزده',
+    'هفده',
+    'هجده',
+    'نوزده',
+  ];
+  static const _tens = [
+    '',
+    '',
+    'بیست',
+    'سی',
+    'چهل',
+    'پنجاه',
+    'شصت',
+    'هفتاد',
+    'هشتاد',
+    'نود',
+  ];
+  static const _hundreds = [
+    '',
+    'یکصد',
+    'دویست',
+    'سیصد',
+    'چهارصد',
+    'پانصد',
+    'ششصد',
+    'هفتصد',
+    'هشتصد',
+    'نهصد',
+  ];
+  static const _scales = ['', 'هزار', 'میلیون', 'میلیارد', 'تریلیون'];
+
+  static String _underThousand(int n) {
+    if (n <= 0) return '';
+    if (n < 10) return _ones[n];
+    if (n < 20) return _teens[n - 10];
+    if (n < 100) {
+      final t = n ~/ 10;
+      final o = n % 10;
+      if (o == 0) return _tens[t];
+      return '${_tens[t]} و ${_ones[o]}';
+    }
+    final h = n ~/ 100;
+    final rest = n % 100;
+    if (rest == 0) return _hundreds[h];
+    return '${_hundreds[h]} و ${_underThousand(rest)}';
+  }
+
+  static String _integer(int n) {
+    if (n == 0) return _ones[0];
+    if (n < 0) return 'منفی ${_integer(-n)}';
+    final parts = <String>[];
+    var scale = 0;
+    var x = n;
+    while (x > 0 && scale < _scales.length) {
+      final chunk = x % 1000;
+      if (chunk != 0) {
+        final words = _underThousand(chunk);
+        final scaleName = _scales[scale];
+        parts.add(scaleName.isEmpty ? words : '$words $scaleName');
+      }
+      x ~/= 1000;
+      scale++;
+    }
+    return parts.reversed.join(' و ');
+  }
+
+  /// تبدیل رشته ورودی (با ارقام فارسی/عربی) به حروف.
+  /// اعشار: بخش صحیح + «ممیز» + خواندن ارقام اعشار.
+  /// [asToman] در صورت true، «تومان» به انتها اضافه می‌شود (فقط برای عدد صحیح یا با اعشار).
+  static String convert(String raw, {bool asToman = false}) {
+    final latin = NumFmt.toLatinDigits(raw).trim();
+    if (latin.isEmpty) return '';
+    var s = latin.replaceAll(',', '').replaceAll('،', '').replaceAll('٬', '');
+    if (s == '-' || s == '.' || s == '-.') return '';
+    final neg = s.startsWith('-');
+    if (neg) s = s.substring(1);
+    if (!RegExp(r'^\d+(\.\d+)?$').hasMatch(s)) {
+      return 'ورودی نامعتبر';
+    }
+    final parts = s.split('.');
+    final intPart = int.tryParse(parts[0]) ?? 0;
+    var out = _integer(intPart);
+    if (parts.length > 1 && parts[1].isNotEmpty) {
+      final decDigits = parts[1].replaceAll(RegExp(r'0+$'), '');
+      if (decDigits.isNotEmpty) {
+        final decWords = decDigits.split('').map((d) {
+          final i = int.tryParse(d) ?? 0;
+          return _ones[i];
+        }).join(' و ');
+        out = '$out ممیز $decWords';
+      }
+    }
+    if (neg) out = 'منفی $out';
+    if (asToman) out = '$out تومان';
+    return out;
+  }
+}
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
@@ -2237,8 +2376,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 icon: Icons.show_chart,
                 title: 'سود و زیان فروش',
                 subtitle: 'محاسبه سود معامله و حاشیه سود',
-                enabled: false,
-                onTap: () => _soon(context, 'سود و زیان فروش'),
+                enabled: true,
+                onTap: () => _openTool(
+                  context,
+                  'سود و زیان فروش',
+                  const _ProfitLossTab(),
+                ),
               ),
             ],
           ),
@@ -2250,8 +2393,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 icon: Icons.translate,
                 title: 'تبدیل عدد به حروف',
                 subtitle: 'تبدیل مبلغ عددی به نوشتار فارسی',
-                enabled: false,
-                onTap: () => _soon(context, 'تبدیل عدد به حروف'),
+                enabled: true,
+                onTap: () => _openTool(
+                  context,
+                  'تبدیل عدد به حروف',
+                  const _NumberWordsTab(),
+                ),
               ),
             ],
           ),
@@ -2880,6 +3027,370 @@ class _LoanTabState extends State<_LoanTab> {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+// ---------- سود و زیان فروش ----------
+class _ProfitLossTab extends StatefulWidget {
+  const _ProfitLossTab();
+
+  @override
+  State<_ProfitLossTab> createState() => _ProfitLossTabState();
+}
+
+class _ProfitLossTabState extends State<_ProfitLossTab> {
+  final _buy = TextEditingController();
+  final _sell = TextEditingController();
+  Map<String, double>? _r;
+  String? _message;
+
+  void _recalc() {
+    if (!mounted) return;
+    final buy = NumFmt.parse(_buy.text);
+    final sell = NumFmt.parse(_sell.text);
+    final hasInput = _buy.text.trim().isNotEmpty || _sell.text.trim().isNotEmpty;
+    if (!hasInput) {
+      setState(() {
+        _r = null;
+        _message = null;
+      });
+      return;
+    }
+    if (buy == 0 && _buy.text.trim().isNotEmpty) {
+      // قیمت خرید صفر: درصد تعریف‌نشده
+      setState(() {
+        _r = {
+          'amount': sell - buy,
+          'percent': 0,
+          'buy': buy,
+          'sell': sell,
+        };
+        _message = 'با قیمت خرید صفر، درصد سود/زیان قابل تعریف نیست؛ فقط اختلاف مبلغ نشان داده می‌شود.';
+      });
+      return;
+    }
+    setState(() {
+      _message = null;
+      _r = FinanceLogic.profitLoss(buy: buy, sell: sell);
+    });
+  }
+
+  @override
+  void dispose() {
+    _buy.dispose();
+    _sell.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final amount = _r?['amount'];
+    final pct = _r?['percent'];
+
+    Color amountColor = scheme.onSurface;
+    String status = '';
+    if (amount != null) {
+      if (amount > 0) {
+        amountColor = Colors.green.shade700;
+        status = 'سود';
+      } else if (amount < 0) {
+        amountColor = scheme.error;
+        status = 'زیان';
+      } else {
+        status = 'سربه‌سر';
+      }
+    }
+
+    Widget sectionTitle(String text) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        Text(
+          'سود یا زیان معامله را از روی قیمت خرید و فروش حساب می‌کند. درصد نسبت به قیمت خرید است.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 16),
+        sectionTitle('قیمت‌ها'),
+        _field(_buy, 'قیمت خرید (تومان)', Icons.shopping_cart_outlined,
+            onChanged: _recalc),
+        const SizedBox(height: 12),
+        _field(_sell, 'قیمت فروش (تومان)', Icons.point_of_sale_outlined,
+            onChanged: _recalc),
+        if (_message != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            _message!,
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontSize: 12.5,
+              height: 1.4,
+              color: scheme.error,
+            ),
+          ),
+        ],
+        if (_r != null && amount != null) ...[
+          const SizedBox(height: 20),
+          Card(
+            elevation: 1,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: amountColor.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              child: Column(
+                children: [
+                  Text(
+                    status,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 13,
+                      color: amountColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _fmtDepositMoney(amount.abs()),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: amountColor,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          sectionTitle('جزئیات'),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'اختلاف مبلغ',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    '${amount >= 0 ? '+' : '−'}${_fmtDepositMoney(amount.abs())}',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: amountColor,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'درصد نسبت به خرید',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    buyZeroLabel(pct, _r!['buy']!),
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: amountColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String buyZeroLabel(double? pct, double buy) {
+    if (buy == 0) return '—';
+    if (pct == null) return '—';
+    final sign = pct > 0 ? '+' : '';
+    return '$sign${pct.toStringAsFixed(2)}٪';
+  }
+}
+
+// ---------- تبدیل عدد به حروف ----------
+class _NumberWordsTab extends StatefulWidget {
+  const _NumberWordsTab();
+
+  @override
+  State<_NumberWordsTab> createState() => _NumberWordsTabState();
+}
+
+class _NumberWordsTabState extends State<_NumberWordsTab> {
+  final _input = TextEditingController();
+  bool _asToman = false;
+  String _words = '';
+
+  void _recalc() {
+    setState(() {
+      _words = PersianWords.convert(_input.text, asToman: _asToman);
+    });
+  }
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  Future<void> _copy() async {
+    if (_words.isEmpty || _words == 'ورودی نامعتبر') return;
+    // Clipboard via services
+    // ignore: prefer_const_constructors - dynamic import already in material
+    await Clipboard.setData(ClipboardData(text: _words));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('کپی شد', style: TextStyle(fontFamily: 'Vazirmatn')),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 1),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        Text(
+          'عدد را وارد کنید تا به حروف فارسی تبدیل شود. ارقام فارسی، عربی و انگلیسی پشتیبانی می‌شوند.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _input,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(
+              RegExp(r'[\d.,\-۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]'),
+            ),
+            GroupedNumberFormatter(),
+          ],
+          textAlign: TextAlign.center,
+          onChanged: (_) => _recalc(),
+          style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 22, fontWeight: FontWeight.w700),
+          decoration: InputDecoration(
+            labelText: 'عدد',
+            labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            filled: true,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'افزودن واحد تومان',
+            style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+          ),
+          value: _asToman,
+          onChanged: (v) {
+            setState(() => _asToman = v);
+            _recalc();
+          },
+        ),
+        const SizedBox(height: 12),
+        Card(
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: scheme.primary.withValues(alpha: 0.22),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'به حروف',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 13,
+                    color: scheme.onSurface.withValues(alpha: 0.65),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  _words.isEmpty ? '—' : _words,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    height: 1.5,
+                    color: _words == 'ورودی نامعتبر'
+                        ? scheme.error
+                        : scheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: _words.isEmpty || _words == 'ورودی نامعتبر' ? null : _copy,
+          icon: const Icon(Icons.copy),
+          label: const Text('کپی متن', style: TextStyle(fontFamily: 'Vazirmatn')),
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
       ],
     );
   }

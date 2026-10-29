@@ -1893,6 +1893,13 @@ class _CompoundScreenState extends State<CompoundScreen> {
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩]')),
                       ],
                       textAlign: TextAlign.center,
+                      // صفر پیش‌فرض با اولین لمس پاک می‌شود تا تایپ راحت باشد
+                      onTap: () {
+                        final c = ctrls[i];
+                        if (c.text == '0' || c.text == '۰' || c.text == '٠') {
+                          c.clear();
+                        }
+                      },
                       style: const TextStyle(
                           fontFamily: 'Vazirmatn',
                           fontSize: 20,
@@ -2010,6 +2017,24 @@ class FinanceLogic {
   }) {
     if (from == 0) return 0;
     return ((to - from) / from) * 100;
+  }
+
+  /// تخفیف و درصد از مبلغ
+  /// [price] مبلغ پایه، [percent] درصد
+  static Map<String, double> discount({
+    required double price,
+    required double percent,
+  }) {
+    if (price < 0) {
+      return {'portion': 0, 'discount': 0, 'finalPrice': 0};
+    }
+    final portion = price * percent / 100;
+    final finalPrice = price - portion;
+    return {
+      'portion': portion,
+      'discount': portion,
+      'finalPrice': finalPrice,
+    };
   }
 
   /// چند درصد از عدد
@@ -2201,8 +2226,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 icon: Icons.percent,
                 title: 'تخفیف و درصد',
                 subtitle: 'محاسبه مبلغ و درصد تخفیف',
-                enabled: false,
-                onTap: () => _soon(context, 'تخفیف و درصد'),
+                enabled: true,
+                onTap: () => _openTool(
+                  context,
+                  'تخفیف و درصد',
+                  const _DiscountTab(),
+                ),
               ),
               _FinanceListRow(
                 icon: Icons.show_chart,
@@ -2848,6 +2877,213 @@ class _LoanTabState extends State<_LoanTab> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ---------- تخفیف و درصد ----------
+class _DiscountTab extends StatefulWidget {
+  const _DiscountTab();
+
+  @override
+  State<_DiscountTab> createState() => _DiscountTabState();
+}
+
+class _DiscountTabState extends State<_DiscountTab> {
+  final _price = TextEditingController();
+  final _percent = TextEditingController();
+  final _from = TextEditingController();
+  final _to = TextEditingController();
+  Map<String, double> _r = const {
+    'portion': 0,
+    'discount': 0,
+    'finalPrice': 0,
+  };
+  double? _changePct;
+
+  void _recalc() {
+    if (!mounted) return;
+    setState(() {
+      _r = FinanceLogic.discount(
+        price: NumFmt.parse(_price.text),
+        percent: NumFmt.parse(_percent.text),
+      );
+      final a = NumFmt.parse(_from.text);
+      final b = NumFmt.parse(_to.text);
+      if (a == 0 && _from.text.trim().isEmpty) {
+        _changePct = null;
+      } else {
+        _changePct = FinanceLogic.percentChange(from: a, to: b);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _price.dispose();
+    _percent.dispose();
+    _from.dispose();
+    _to.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasPrice = NumFmt.parse(_price.text) > 0;
+
+    Widget sectionTitle(String text) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        Text(
+          'مبلغ تخفیف، قیمت نهایی پس از تخفیف و درصد تغییر بین دو مقدار را محاسبه می‌کند.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 16),
+        sectionTitle('تخفیف'),
+        _field(_price, 'مبلغ / قیمت (تومان)', Icons.sell_outlined,
+            onChanged: _recalc),
+        const SizedBox(height: 12),
+        _field(_percent, 'درصد تخفیف', Icons.percent, onChanged: _recalc),
+        if (hasPrice) ...[
+          const SizedBox(height: 20),
+          Card(
+            elevation: 1,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: scheme.primary.withValues(alpha: 0.22),
+              ),
+            ),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              child: Column(
+                children: [
+                  Text(
+                    'قیمت پس از تخفیف',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 13,
+                      color: scheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _fmtDepositMoney(_r['finalPrice']!),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.primary,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          sectionTitle('جزئیات'),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'مبلغ تخفیف',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    _fmtDepositMoney(_r['discount']!),
+                    style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: const Text(
+                    'مقدار درصد از مبلغ',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  trailing: Text(
+                    _fmtDepositMoney(_r['portion']!),
+                    style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 22),
+        sectionTitle('درصد تغییر (اختیاری)'),
+        _field(_from, 'مقدار اولیه', Icons.looks_one_outlined,
+            onChanged: _recalc),
+        const SizedBox(height: 12),
+        _field(_to, 'مقدار جدید', Icons.looks_two_outlined,
+            onChanged: _recalc),
+        if (_changePct != null &&
+            (_from.text.trim().isNotEmpty || _to.text.trim().isNotEmpty)) ...[
+          const SizedBox(height: 12),
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              title: const Text(
+                'درصد تغییر',
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+              ),
+              trailing: Text(
+                '${_changePct! >= 0 ? '+' : ''}${_changePct!.toStringAsFixed(2)}٪',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: _changePct! > 0
+                      ? Colors.green.shade700
+                      : (_changePct! < 0
+                          ? scheme.error
+                          : scheme.onSurface),
+                ),
+              ),
             ),
           ),
         ],

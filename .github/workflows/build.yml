@@ -124,6 +124,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Run unit tests
+        run: flutter test
+
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons || true
 

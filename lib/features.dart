@@ -2454,17 +2454,31 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     ],
                     if (_moreOpen) ...[
                       const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          'فعلاً ابزار اضافه‌ای اینجا نیست. پس از تأیید مراحل بعد، موارد کم‌کاربرد در این بخش قرار می‌گیرند.',
-                          style: TextStyle(
-                            fontFamily: 'Vazirmatn',
-                            fontSize: 12.5,
-                            height: 1.5,
-                            color: scheme.onSurface.withValues(alpha: 0.55),
+                      _FinanceListGroup(
+                        children: [
+                          _FinanceListRow(
+                            icon: Icons.receipt_long_outlined,
+                            title: 'مالیات بر ارزش افزوده',
+                            subtitle: 'محاسبه مالیات و مبلغ نهایی از روی مبلغ خالص',
+                            enabled: true,
+                            onTap: () => _openTool(
+                              context,
+                              'مالیات بر ارزش افزوده',
+                              const _VatTab(),
+                            ),
                           ),
-                        ),
+                          _FinanceListRow(
+                            icon: Icons.swap_horiz,
+                            title: 'برداشتن مالیات از مبلغ',
+                            subtitle: 'استخراج مبلغ خالص از قیمت نهایی با مالیات',
+                            enabled: true,
+                            onTap: () => _openTool(
+                              context,
+                              'برداشتن مالیات از مبلغ',
+                              const _ReverseVatTab(),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -2688,6 +2702,7 @@ class _DepositTabState extends State<_DepositTab> {
             onChanged: _recalc),
         const SizedBox(height: 14),
         _field(_rate, 'نرخ سود (درصد)', Icons.percent, onChanged: _recalc),
+        if (NumFmt.parse(_principal.text) > 0) ...[
         const SizedBox(height: 20),
         // نتیجه اصلی — سود سالانه
         Card(
@@ -2712,8 +2727,9 @@ class _DepositTabState extends State<_DepositTab> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  _fmtDepositMoney(_r['yearly']!),
+                _copyableMoney(
+                  context,
+                  _r['yearly']!,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
@@ -2750,8 +2766,9 @@ class _DepositTabState extends State<_DepositTab> {
                   'سود روزانه',
                   style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                 ),
-                trailing: Text(
-                  _fmtDepositMoney(_r['daily']!),
+                trailing: _copyableMoney(
+                  context,
+                  _r['daily']!,
                   style: const TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: 15,
@@ -2768,8 +2785,9 @@ class _DepositTabState extends State<_DepositTab> {
                   'سود ماه ۳۰ روزه',
                   style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                 ),
-                trailing: Text(
-                  _fmtDepositMoney(_r['d30']!),
+                trailing: _copyableMoney(
+                  context,
+                  _r['d30']!,
                   style: const TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: 15,
@@ -2786,8 +2804,9 @@ class _DepositTabState extends State<_DepositTab> {
                   'سود ماه ۳۱ روزه',
                   style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                 ),
-                trailing: Text(
-                  _fmtDepositMoney(_r['d31']!),
+                trailing: _copyableMoney(
+                  context,
+                  _r['d31']!,
                   style: const TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: 15,
@@ -2798,6 +2817,7 @@ class _DepositTabState extends State<_DepositTab> {
             ],
           ),
         ),
+        ],
       ],
     );
   }
@@ -2967,8 +2987,9 @@ class _LoanTabState extends State<_LoanTab> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    _fmtDepositMoney(_result!['installment']!),
+                  _copyableMoney(
+                    context,
+                    _result!['installment']!,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
@@ -2996,8 +3017,9 @@ class _LoanTabState extends State<_LoanTab> {
                     'مجموع بازپرداخت',
                     style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                   ),
-                  trailing: Text(
-                    _fmtDepositMoney(_result!['total']!),
+                  trailing: _copyableMoney(
+                    context,
+                    _result!['total']!,
                     style: const TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 15,
@@ -3014,8 +3036,9 @@ class _LoanTabState extends State<_LoanTab> {
                     'مجموع سود وام',
                     style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                   ),
-                  trailing: Text(
-                    _fmtDepositMoney(_result!['interest']!),
+                  trailing: _copyableMoney(
+                    context,
+                    _result!['interest']!,
                     style: const TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 15,
@@ -3176,8 +3199,9 @@ class _ProfitLossTabState extends State<_ProfitLossTab> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    _fmtDepositMoney(amount.abs()),
+                  _copyableMoney(
+                    context,
+                    amount.abs(),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
@@ -3205,7 +3229,8 @@ class _ProfitLossTabState extends State<_ProfitLossTab> {
                     'اختلاف مبلغ',
                     style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                   ),
-                  trailing: Text(
+                  trailing: _copyableText(
+                    context,
                     '${amount >= 0 ? '+' : '−'}${_fmtDepositMoney(amount.abs())}',
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
@@ -3396,6 +3421,238 @@ class _NumberWordsTabState extends State<_NumberWordsTab> {
   }
 }
 
+// ---------- مالیات ارزش افزوده ----------
+class _VatTab extends StatefulWidget {
+  const _VatTab();
+
+  @override
+  State<_VatTab> createState() => _VatTabState();
+}
+
+class _VatTabState extends State<_VatTab> {
+  final _amount = TextEditingController();
+  final _rate = TextEditingController(text: '9');
+  Map<String, double> _r = const {'tax': 0, 'total': 0, 'net': 0};
+
+  void _recalc() {
+    if (!mounted) return;
+    setState(() {
+      _r = FinanceLogic.vat(
+        amount: NumFmt.parse(_amount.text),
+        vatPercent: NumFmt.parse(_rate.text),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _rate.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final has = NumFmt.parse(_amount.text) > 0;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        Text(
+          'از روی مبلغ خالص (بدون مالیات)، مبلغ مالیات و مبلغ نهایی را حساب می‌کند. نرخ پیش‌فرض ۹٪ است.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _field(_amount, 'مبلغ خالص (تومان)', Icons.payments_outlined,
+            onChanged: _recalc),
+        const SizedBox(height: 12),
+        _field(_rate, 'نرخ مالیات (٪)', Icons.percent, onChanged: _recalc),
+        if (has) ...[
+          const SizedBox(height: 20),
+          Card(
+            elevation: 1,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: scheme.primary.withValues(alpha: 0.22)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              child: Column(
+                children: [
+                  Text(
+                    'مبلغ نهایی با مالیات',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 13,
+                      color: scheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _copyableMoney(
+                    context,
+                    _r['total']!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.primary,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  dense: true,
+                  title: const Text('مالیات',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14)),
+                  trailing: _copyableMoney(context, _r['tax']!,
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600)),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  dense: true,
+                  title: const Text('مبلغ خالص',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14)),
+                  trailing: _copyableMoney(context, _r['net']!,
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ReverseVatTab extends StatefulWidget {
+  const _ReverseVatTab();
+
+  @override
+  State<_ReverseVatTab> createState() => _ReverseVatTabState();
+}
+
+class _ReverseVatTabState extends State<_ReverseVatTab> {
+  final _total = TextEditingController();
+  final _rate = TextEditingController(text: '9');
+  Map<String, double> _r = const {'tax': 0, 'total': 0, 'net': 0};
+
+  void _recalc() {
+    if (!mounted) return;
+    setState(() {
+      _r = FinanceLogic.reverseVat(
+        totalWithVat: NumFmt.parse(_total.text),
+        vatPercent: NumFmt.parse(_rate.text),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _total.dispose();
+    _rate.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final has = NumFmt.parse(_total.text) > 0;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        Text(
+          'از روی مبلغ نهایی (با مالیات)، مبلغ خالص و سهم مالیات را جدا می‌کند.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _field(_total, 'مبلغ نهایی با مالیات (تومان)', Icons.receipt_outlined,
+            onChanged: _recalc),
+        const SizedBox(height: 12),
+        _field(_rate, 'نرخ مالیات (٪)', Icons.percent, onChanged: _recalc),
+        if (has) ...[
+          const SizedBox(height: 20),
+          Card(
+            elevation: 1,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: scheme.primary.withValues(alpha: 0.22)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+              child: Column(
+                children: [
+                  Text(
+                    'مبلغ خالص',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 13,
+                      color: scheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _copyableMoney(
+                    context,
+                    _r['net']!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.primary,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              dense: true,
+              title: const Text('سهم مالیات',
+                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14)),
+              trailing: _copyableMoney(context, _r['tax']!,
+                  style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 // ---------- تخفیف و درصد ----------
 class _DiscountTab extends StatefulWidget {
   const _DiscountTab();
@@ -3505,8 +3762,9 @@ class _DiscountTabState extends State<_DiscountTab> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    _fmtDepositMoney(_r['finalPrice']!),
+                  _copyableMoney(
+                    context,
+                    _r['finalPrice']!,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
@@ -3534,8 +3792,9 @@ class _DiscountTabState extends State<_DiscountTab> {
                     'مبلغ تخفیف',
                     style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                   ),
-                  trailing: Text(
-                    _fmtDepositMoney(_r['discount']!),
+                  trailing: _copyableMoney(
+                    context,
+                    _r['discount']!,
                     style: const TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 15,
@@ -3552,8 +3811,9 @@ class _DiscountTabState extends State<_DiscountTab> {
                     'مقدار درصد از مبلغ',
                     style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                   ),
-                  trailing: Text(
-                    _fmtDepositMoney(_r['portion']!),
+                  trailing: _copyableMoney(
+                    context,
+                    _r['portion']!,
                     style: const TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 15,
@@ -3642,6 +3902,7 @@ class _GoldTabState extends State<_GoldTab> {
 
   Future<void> _fetchGoldPrice() async {
     if (!mounted) return;
+    if (_loadingPrice) return; // جلوگیری از درخواست موازی
     setState(() {
       _loadingPrice = true;
       _priceMsg = 'در حال دریافت نرخ...';
@@ -3884,7 +4145,7 @@ class _GoldTabState extends State<_GoldTab> {
                 : IconButton(
                     icon: const Icon(Icons.refresh),
                     tooltip: 'دریافت نرخ آنلاین',
-                    onPressed: _fetchGoldPrice,
+                    onPressed: _loadingPrice ? null : _fetchGoldPrice,
                   ),
           ),
         ),
@@ -3944,8 +4205,9 @@ class _GoldTabState extends State<_GoldTab> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    _fmtDepositMoney(_r['total']!),
+                  _copyableMoney(
+                    context,
+                    _r['total']!,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
@@ -3973,8 +4235,9 @@ class _GoldTabState extends State<_GoldTab> {
                     'ارزش طلای خام',
                     style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                   ),
-                  trailing: Text(
-                    _fmtDepositMoney(_r['raw']!),
+                  trailing: _copyableMoney(
+                    context,
+                    _r['raw']!,
                     style: const TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 15,
@@ -3991,8 +4254,9 @@ class _GoldTabState extends State<_GoldTab> {
                     'اجرت ساخت',
                     style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                   ),
-                  trailing: Text(
-                    _fmtDepositMoney(_r['wage']!),
+                  trailing: _copyableMoney(
+                    context,
+                    _r['wage']!,
                     style: const TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 15,
@@ -4009,8 +4273,9 @@ class _GoldTabState extends State<_GoldTab> {
                     'سود فروشنده',
                     style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                   ),
-                  trailing: Text(
-                    _fmtDepositMoney(_r['profit']!),
+                  trailing: _copyableMoney(
+                    context,
+                    _r['profit']!,
                     style: const TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 15,
@@ -4027,8 +4292,9 @@ class _GoldTabState extends State<_GoldTab> {
                     'مالیات',
                     style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
                   ),
-                  trailing: Text(
-                    _fmtDepositMoney(_r['tax']!),
+                  trailing: _copyableMoney(
+                    context,
+                    _r['tax']!,
                     style: const TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 15,
@@ -4140,6 +4406,57 @@ String _fmtMoney(double v) {
 String _fmtDepositMoney(double v) {
   if (v.isNaN || v.isInfinite) return '—';
   return '${NumFmt.format(v.round())} تومان';
+}
+
+Future<void> _copyToClipboard(BuildContext context, String text) async {
+  final cleaned = text.trim();
+  if (cleaned.isEmpty || cleaned == '—') return;
+  await Clipboard.setData(ClipboardData(text: cleaned));
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text(
+        'کپی شد',
+        style: TextStyle(fontFamily: 'Vazirmatn'),
+      ),
+      behavior: SnackBarBehavior.floating,
+      duration: Duration(seconds: 1),
+    ),
+  );
+}
+
+/// فشار طولانی روی نتیجه برای کپی
+Widget _copyableText(
+  BuildContext context,
+  String text, {
+  TextStyle? style,
+  TextAlign? textAlign,
+  int? maxLines,
+}) {
+  return GestureDetector(
+    onLongPress: () => _copyToClipboard(context, text),
+    child: Text(
+      text,
+      style: style,
+      textAlign: textAlign,
+      maxLines: maxLines,
+    ),
+  );
+}
+
+Widget _copyableMoney(
+  BuildContext context,
+  double v, {
+  TextStyle? style,
+  TextAlign? textAlign,
+}) {
+  return _copyableText(
+    context,
+    _fmtDepositMoney(v),
+    style: style,
+    textAlign: textAlign,
+  );
 }
 
 // ---------- features/expenses/logic/expense_model.dart ----------
@@ -7566,20 +7883,28 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
-              child: Text(
-                showPreview
-                    ? preview
-                    : (_logic.result.isEmpty ? '0' : _logic.result),
-                style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 36,
-                  fontWeight: FontWeight.w800,
-                  color: showPreview
-                      ? (isDark ? Colors.tealAccent[100] : Colors.teal[700])
-                      : (isDark ? Colors.white : Colors.black87),
+              child: GestureDetector(
+                onLongPress: () {
+                  final text = showPreview
+                      ? preview
+                      : (_logic.result.isEmpty ? '0' : _logic.result);
+                  _copyToClipboard(context, text);
+                },
+                child: Text(
+                  showPreview
+                      ? preview
+                      : (_logic.result.isEmpty ? '0' : _logic.result),
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 36,
+                    fontWeight: FontWeight.w800,
+                    color: showPreview
+                        ? (isDark ? Colors.tealAccent[100] : Colors.teal[700])
+                        : (isDark ? Colors.white : Colors.black87),
+                  ),
+                  maxLines: 1,
+                  textDirection: TextDirection.ltr,
                 ),
-                maxLines: 1,
-                textDirection: TextDirection.ltr,
               ),
             ),
             if (showPreview)

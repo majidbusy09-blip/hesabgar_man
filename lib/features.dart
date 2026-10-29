@@ -2251,6 +2251,7 @@ class _DepositTabState extends State<_DepositTab> {
   };
 
   void _recalc() {
+    if (!mounted) return;
     setState(() {
       _r = FinanceLogic.depositSimple(
         principal: NumFmt.parse(_principal.text),
@@ -2406,6 +2407,7 @@ class _LoanTabState extends State<_LoanTab> {
   Map<String, double>? _result;
 
   void _calc() {
+    if (!mounted) return;
     setState(() {
       _result = FinanceLogic.loanSummary(
         principal: NumFmt.parse(_principal.text),
@@ -2418,6 +2420,7 @@ class _LoanTabState extends State<_LoanTab> {
   /// با تغییر هر ورودی، نتیجهٔ قبلی دیگر معتبر نیست تا دوباره محاسبه شود.
   void _invalidateResult() {
     if (_result == null) return;
+    if (!mounted) return;
     setState(() => _result = null);
   }
 
@@ -2590,6 +2593,7 @@ class _GoldTabState extends State<_GoldTab> {
   String? _priceMsg;
 
   void _recalc() {
+    if (!mounted) return;
     setState(() {
       _r = FinanceLogic.goldPrice(
         pricePerGram: NumFmt.parse(_price.text),
@@ -2602,6 +2606,7 @@ class _GoldTabState extends State<_GoldTab> {
   }
 
   Future<void> _fetchGoldPrice() async {
+    if (!mounted) return;
     setState(() {
       _loadingPrice = true;
       _priceMsg = 'در حال دریافت نرخ...';
@@ -2750,17 +2755,25 @@ class _GoldTabState extends State<_GoldTab> {
       }
     }
 
+    // اگر کاربر صفحه را بسته، هیچ setState نزن
+    if (!mounted) return;
+
     final fetched = price;
     if (fetched != null && fetched > 0) {
       _price.text = NumFmt.format(fetched);
       _priceMsg =
           'طلای ۱۸ عیار: ${NumFmt.format(fetched)} تومان ($source)';
       _recalc();
+      if (mounted) {
+        setState(() => _loadingPrice = false);
+      }
     } else {
-      _priceMsg =
-          'اتصال به سرورهای نرخ برقرار نشد (اینترنت/فیلتر). قیمت را دستی وارد کنید.';
+      setState(() {
+        _priceMsg =
+            'اتصال به سرورهای نرخ برقرار نشد (اینترنت/فیلتر). قیمت را دستی وارد کنید.';
+        _loadingPrice = false;
+      });
     }
-    if (mounted) setState(() => _loadingPrice = false);
   }
 
   @override

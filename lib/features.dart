@@ -1983,10 +1983,10 @@ class FinanceLogic {
 
   /// مالیات بر ارزش افزوده
   /// [amount] مبلغ قبل از مالیات
-  /// [vatPercent] درصد مالیات (پیش‌فرض ۹)
+  /// [vatPercent] درصد مالیات (پیش‌فرض ۱۰ — نرخ رایج ۱۴۰۳/۱۴۰۴)
   static Map<String, double> vat({
     required double amount,
-    double vatPercent = 9,
+    double vatPercent = 10,
   }) {
     final tax = amount * vatPercent / 100;
     return {
@@ -1999,7 +1999,7 @@ class FinanceLogic {
   /// مبلغ بدون مالیات از مبلغ نهایی
   static Map<String, double> reverseVat({
     required double totalWithVat,
-    double vatPercent = 9,
+    double vatPercent = 10,
   }) {
     final net = totalWithVat / (1 + vatPercent / 100);
     final tax = totalWithVat - net;
@@ -3431,7 +3431,7 @@ class _VatTab extends StatefulWidget {
 
 class _VatTabState extends State<_VatTab> {
   final _amount = TextEditingController();
-  final _rate = TextEditingController(text: '9');
+  final _rate = TextEditingController(text: '10');
   Map<String, double> _r = const {'tax': 0, 'total': 0, 'net': 0};
 
   void _recalc() {
@@ -3459,7 +3459,7 @@ class _VatTabState extends State<_VatTab> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         Text(
-          'از روی مبلغ خالص (بدون مالیات)، مبلغ مالیات و مبلغ نهایی را حساب می‌کند. نرخ پیش‌فرض ۹٪ است.',
+          'از روی مبلغ خالص (بدون مالیات)، مبلغ مالیات و مبلغ نهایی را حساب می‌کند. نرخ پیش‌فرض ۱۰٪ است.',
           style: TextStyle(
             fontFamily: 'Vazirmatn',
             fontSize: 12.5,
@@ -3554,7 +3554,7 @@ class _ReverseVatTab extends StatefulWidget {
 
 class _ReverseVatTabState extends State<_ReverseVatTab> {
   final _total = TextEditingController();
-  final _rate = TextEditingController(text: '9');
+  final _rate = TextEditingController(text: '10');
   Map<String, double> _r = const {'tax': 0, 'total': 0, 'net': 0};
 
   void _recalc() {
@@ -3876,7 +3876,7 @@ class _GoldTabState extends State<_GoldTab> {
   final _weight = TextEditingController();
   final _wage = TextEditingController(text: '10');
   final _profit = TextEditingController(text: '7');
-  final _tax = TextEditingController(text: '9');
+  final _tax = TextEditingController(text: '10');
   Map<String, double> _r = const {
     'raw': 0,
     'wage': 0,
@@ -4306,17 +4306,6 @@ class _GoldTabState extends State<_GoldTab> {
             ),
           ),
         ],
-        const SizedBox(height: 16),
-        Text(
-          'از دی‌ماه ۱۴۰۰ مالیات بر ارزش افزوده طلا تنها روی اجرت ساخت و سود فروشنده لحاظ می‌شود.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: 'Vazirmatn',
-            fontSize: 11,
-            height: 1.5,
-            color: Colors.grey[600],
-          ),
-        ),
       ],
     );
   }

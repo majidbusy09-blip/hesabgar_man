@@ -2632,23 +2632,54 @@ class _LoanTabState extends State<_LoanTab> {
   final _rate = TextEditingController(text: '18');
   final _months = TextEditingController(text: '12');
   Map<String, double>? _result;
+  String? _message;
 
   void _calc() {
     if (!mounted) return;
+    final principal = NumFmt.parse(_principal.text);
+    final months = NumFmt.parse(_months.text).round();
+    final rate = NumFmt.parse(_rate.text);
+
+    if (principal <= 0) {
+      setState(() {
+        _result = null;
+        _message = 'مبلغ وام را به‌درستی وارد کنید.';
+      });
+      return;
+    }
+    if (months <= 0) {
+      setState(() {
+        _result = null;
+        _message = 'مدت بازپرداخت باید حداقل ۱ ماه باشد.';
+      });
+      return;
+    }
+    if (rate < 0) {
+      setState(() {
+        _result = null;
+        _message = 'نرخ سود نمی‌تواند منفی باشد.';
+      });
+      return;
+    }
+
     setState(() {
+      _message = null;
       _result = FinanceLogic.loanSummary(
-        principal: NumFmt.parse(_principal.text),
-        annualRatePercent: NumFmt.parse(_rate.text),
-        months: NumFmt.parse(_months.text).round(),
+        principal: principal,
+        annualRatePercent: rate,
+        months: months,
       );
     });
   }
 
   /// با تغییر هر ورودی، نتیجهٔ قبلی دیگر معتبر نیست تا دوباره محاسبه شود.
   void _invalidateResult() {
-    if (_result == null) return;
+    if (_result == null && _message == null) return;
     if (!mounted) return;
-    setState(() => _result = null);
+    setState(() {
+      _result = null;
+      _message = null;
+    });
   }
 
   @override
@@ -2684,6 +2715,16 @@ class _LoanTabState extends State<_LoanTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
+        Text(
+          'قسط ماهانه، مجموع بازپرداخت و سود وام را بر اساس مبلغ، نرخ و مدت محاسبه می‌کند.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 16),
         sectionTitle('اطلاعات وام'),
         _field(_principal, 'مبلغ وام (تومان)', Icons.payments_outlined,
             onChanged: _invalidateResult),
@@ -2705,6 +2746,18 @@ class _LoanTabState extends State<_LoanTab> {
             ),
           ),
         ),
+        if (_message != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            _message!,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontSize: 13,
+              color: scheme.error,
+            ),
+          ),
+        ],
         if (hasResult) ...[
           const SizedBox(height: 22),
           Card(

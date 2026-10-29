@@ -25,6 +25,35 @@ import 'package:http/http.dart' as http;
 class CalcNum {
   CalcNum._();
 
+  /// ارقام فارسی/عربی → لاتین (برای فرمول دستی و پارس)
+  static String toLatinDigits(String input) {
+    const persian = '۰۱۲۳۴۵۶۷۸۹';
+    const arabic = '٠١٢٣٤٥٦٧٨٩';
+    final buf = StringBuffer();
+    for (final unit in input.runes) {
+      final c = String.fromCharCode(unit);
+      final pi = persian.indexOf(c);
+      if (pi >= 0) {
+        buf.write(pi);
+        continue;
+      }
+      final ai = arabic.indexOf(c);
+      if (ai >= 0) {
+        buf.write(ai);
+        continue;
+      }
+      if (c == '٫') {
+        buf.write('.');
+        continue;
+      }
+      if (c == '٬' || c == '،') {
+        continue;
+      }
+      buf.write(c);
+    }
+    return buf.toString();
+  }
+
   static const double _intEps = 1e-10;
   static const double _sciHigh = 1e12;
   static const double _sciLow = 1e-6;
@@ -106,7 +135,7 @@ class CalcNum {
 
   /// پارس امن متن نمایشی (با یا بدون ویرگول) به double
   static double? parse(String text) {
-    final t = NumFmt.toLatinDigits(text)
+    final t = CalcNum.toLatinDigits(text)
         .trim()
         .replaceAll(',', '')
         .replaceAll('٬', '')
@@ -517,7 +546,7 @@ class CalculatorLogic {
   /// آماده‌سازی عبارت برای parser
   /// π و e به عدد واقعی تبدیل می‌شوند تا به bind کتابخانه وابسته نباشیم.
   String? _prepareExpression(String input) {
-    var expr = NumFmt.toLatinDigits(input).trim();
+    var expr = CalcNum.toLatinDigits(input).trim();
     if (expr.isEmpty) return null;
 
     expr = expr
@@ -778,7 +807,7 @@ class CalculatorLogic {
 
   void calculateFromKeyboard(String formula) {
     // ارقام فارسی/عربی → لاتین قبل از محاسبه
-    final normalized = NumFmt.toLatinDigits(formula).trim();
+    final normalized = CalcNum.toLatinDigits(formula).trim();
     if (normalized.isEmpty) return;
     _expression = normalized;
     _openParens = _countOpenParens(_expression);

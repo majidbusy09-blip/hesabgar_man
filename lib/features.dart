@@ -1176,7 +1176,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
   }
 
   void _recalc() {
-    final v = double.tryParse(_controller.text.replaceAll(',', '.')) ?? 0;
+    final v = NumFmt.parse(_controller.text);
     setState(() {
       _result = UnitData.convert(
         category: _category,
@@ -1271,7 +1271,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true, signed: true),
                     inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\-]')),
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\-۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
                     ],
                     style: const TextStyle(
                       fontFamily: 'Vazirmatn',
@@ -1329,9 +1329,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
                 ),
                 const SizedBox(height: 8),
                 ..._category.units.map((u) {
-                  final v = double.tryParse(
-                          _controller.text.replaceAll(',', '.')) ??
-                      0;
+                  final v = NumFmt.parse(_controller.text);
                   final converted = UnitData.convert(
                     category: _category,
                     from: _from,
@@ -1644,7 +1642,7 @@ class _CompoundScreenState extends State<CompoundScreen> {
 
   List<int> _read(List<TextEditingController> ctrls) {
     return ctrls.map((c) {
-      final v = int.tryParse(c.text.trim()) ?? 0;
+      final v = NumFmt.parse(c.text).round();
       return v < 0 ? 0 : v;
     }).toList();
   }
@@ -1892,7 +1890,7 @@ class _CompoundScreenState extends State<CompoundScreen> {
                       controller: ctrls[i],
                       keyboardType: TextInputType.number,
                       inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩]')),
                       ],
                       textAlign: TextAlign.center,
                       style: const TextStyle(
@@ -2500,6 +2498,16 @@ class _DepositTabState extends State<_DepositTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
+        Text(
+          'سود ساده سپرده را به‌صورت روزانه، ماهانه و سالانه بر اساس مبلغ و نرخ سالانه محاسبه می‌کند.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 16),
         _field(_principal, 'مبلغ سرمایه‌گذاری', Icons.savings_outlined,
             onChanged: _recalc),
         const SizedBox(height: 14),
@@ -3090,6 +3098,16 @@ class _GoldTabState extends State<_GoldTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
+        Text(
+          'قیمت نهایی طلا را با وزن، اجرت، سود فروشنده و مالیات (فقط روی اجرت و سود) محاسبه می‌کند. نرخ را آنلاین بگیرید یا دستی وارد کنید.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 16),
         sectionTitle('نرخ روز طلا'),
         TextField(
           controller: _price,

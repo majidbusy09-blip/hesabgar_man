@@ -470,6 +470,37 @@ class FeedbackProvider extends ChangeNotifier {
 
 /// جداکننده سه‌رقمی برای ورودی و نمایش اعداد
 class NumFmt {
+  /// ارقام فارسی/عربی و جداکننده‌های متداول → لاتین برای پارس و نمایش یکدست
+  static String toLatinDigits(String input) {
+    const persian = '۰۱۲۳۴۵۶۷۸۹';
+    const arabic = '٠١٢٣٤٥٦٧٨٩';
+    final buf = StringBuffer();
+    for (final unit in input.runes) {
+      final c = String.fromCharCode(unit);
+      final pi = persian.indexOf(c);
+      if (pi >= 0) {
+        buf.write(pi);
+        continue;
+      }
+      final ai = arabic.indexOf(c);
+      if (ai >= 0) {
+        buf.write(ai);
+        continue;
+      }
+      // جداکننده اعشار عربی/فارسی
+      if (c == '٫') {
+        buf.write('.');
+        continue;
+      }
+      // جداکننده هزارگان عربی/فارسی — حذف در نرمال‌سازی
+      if (c == '٬' || c == '،') {
+        continue;
+      }
+      buf.write(c);
+    }
+    return buf.toString();
+  }
+
   static String format(num value, {int decimals = 0}) {
     final neg = value < 0;
     final v = value.abs();
@@ -491,10 +522,13 @@ class NumFmt {
     return neg ? '-$out' : out;
   }
 
-  /// متن فیلد را هنگام تایپ سه‌رقمی می‌کند
+  /// متن فیلد را هنگام تایپ سه‌رقمی می‌کند (ارقام فارسی/عربی پذیرفته می‌شوند)
   static String groupTyping(String input) {
-    final cleaned = input.replaceAll(',', '').replaceAll('،', '').trim();
-    if (cleaned.isEmpty || cleaned == '-' || cleaned == '.') return input;
+    final normalized = toLatinDigits(input);
+    final cleaned = normalized.replaceAll(',', '').replaceAll('،', '').trim();
+    if (cleaned.isEmpty || cleaned == '-' || cleaned == '.') {
+      return cleaned.isEmpty ? '' : cleaned;
+    }
     final neg = cleaned.startsWith('-');
     var body = neg ? cleaned.substring(1) : cleaned;
     final parts = body.split('.');
@@ -514,7 +548,11 @@ class NumFmt {
   }
 
   static double parse(String input) {
-    final s = input.replaceAll(',', '').replaceAll('،', '').trim();
+    final s = toLatinDigits(input)
+        .replaceAll(',', '')
+        .replaceAll('،', '')
+        .replaceAll('٬', '')
+        .trim();
     return double.tryParse(s) ?? 0;
   }
 }

@@ -49,6 +49,38 @@ jobs:
           if [ -d /tmp/backup/tool ]; then rm -rf tool; cp -r /tmp/backup/tool .; fi
           if [ -f /tmp/backup/pubspec.lock ]; then cp /tmp/backup/pubspec.lock .; fi
 
+      # NDK 28.x گاهی با خطای ZipFile خراب دانلود می‌شود؛ نسخه پایدارتر را پین می‌کنیم
+      - name: Setup Android NDK (pinned)
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+          link-to-sdk: true
+
+      - name: Pin ndkVersion in Gradle
+        run: |
+          NDK_VER="27.2.12479018"
+          if [ -f android/app/build.gradle.kts ]; then
+            if grep -q 'ndkVersion' android/app/build.gradle.kts; then
+              sed -i -E 's/ndkVersion\s*=\s*"[^"]+"/ndkVersion = "'"$NDK_VER"'"/' android/app/build.gradle.kts
+            else
+              sed -i '/^android {/a\    ndkVersion = "'"$NDK_VER"'"' android/app/build.gradle.kts
+            fi
+            echo "Pinned ndkVersion in build.gradle.kts"
+            grep -n ndkVersion android/app/build.gradle.kts || true
+          elif [ -f android/app/build.gradle ]; then
+            if grep -q 'ndkVersion' android/app/build.gradle; then
+              sed -i -E 's/ndkVersion\s+"[^"]+"/ndkVersion "'"$NDK_VER"'"/' android/app/build.gradle
+            else
+              sed -i '/^android {/a\    ndkVersion "'"$NDK_VER"'"' android/app/build.gradle
+            fi
+            echo "Pinned ndkVersion in build.gradle"
+            grep -n ndkVersion android/app/build.gradle || true
+          else
+            echo "No app build.gradle found yet"
+            ls -la android/app || true
+          fi
+
       - name: Read app version
         id: ver
         run: |
@@ -134,7 +166,9 @@ jobs:
         run: dart run flutter_launcher_icons || true
 
       - name: Build APK
-        run: flutter build apk --release
+        run: |
+          # یک بار تلاش مجدد در صورت خطای موقتی Gradle/NDK
+          flutter build apk --release || flutter build apk --release
 
       - name: Build App Bundle (AAB)
         run: flutter build appbundle --release

@@ -9,7 +9,10 @@ import 'package:flutter/services.dart';
 import 'package:math_expressions/math_expressions.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
-
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 // ---------- features/calculator/logic/calculator_logic.dart ----------
 
@@ -11457,27 +11460,55 @@ class FinancialDataPort {
               style: const pw.TextStyle(fontSize: 11),
             )
           else
-            pw.TableHelper.fromTextArray(
-              headers: ['دسته', 'مبلغ', 'سهم'],
-              data: [
-                for (final e in catRows)
-                  [
-                    e.key,
-                    money(e.value),
-                    expense > 0
-                        ? '${((e.value / expense) * 100).toStringAsFixed(0)}٪'
-                        : '—',
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey400),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey300),
+                  children: [
+                    for (final h in ['دسته', 'مبلغ', 'سهم'])
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          h,
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
                   ],
+                ),
+                for (final e in catRows)
+                  pw.TableRow(
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(e.key,
+                            style: const pw.TextStyle(fontSize: 10)),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          money(e.value),
+                          style: const pw.TextStyle(fontSize: 10),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          expense > 0
+                              ? '${((e.value / expense) * 100).toStringAsFixed(0)}٪'
+                              : '—',
+                          style: const pw.TextStyle(fontSize: 10),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
               ],
-              headerStyle: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold,
-                fontSize: 11,
-              ),
-              cellStyle: const pw.TextStyle(fontSize: 10),
-              cellAlignment: pw.Alignment.centerRight,
-              headerDecoration: const pw.BoxDecoration(
-                color: PdfColors.grey300,
-              ),
             ),
           pw.SizedBox(height: 24),
           pw.Text(

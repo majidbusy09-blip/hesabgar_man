@@ -4967,7 +4967,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('هزینه‌ها و درآمد'),
+        title: const Text('مدیریت مالی من'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -5069,9 +5069,9 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                 )
               : Column(
                   children: [
-                    // فیلتر ماه
+                    // انتخاب ماه جلالی
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
                       child: Row(
                         children: [
                           IconButton(
@@ -5088,12 +5088,13 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                           ),
                           Expanded(
                             child: Text(
-                              '$_filterYear / ${Jalali.monthNames[_filterMonth - 1]}',
+                              '${Jalali.monthNames[_filterMonth - 1]} $_filterYear',
                               textAlign: TextAlign.center,
                               style: const TextStyle(
-                                  fontFamily: 'Vazirmatn',
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16),
+                                fontFamily: 'Vazirmatn',
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                              ),
                             ),
                           ),
                           IconButton(
@@ -5111,37 +5112,11 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                         ],
                       ),
                     ),
-                    // کارت خلاصه ماه
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _miniStat('درآمد', _fmt(monthInc),
-                                Colors.green, Icons.south_west),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _miniStat('هزینه', _fmt(monthExp),
-                                Colors.redAccent, Icons.north_east),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _miniStat(
-                              'مانده',
-                              _fmt(monthBal),
-                              monthBal >= 0 ? scheme.primary : Colors.orange,
-                              Icons.account_balance_wallet_outlined,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     Expanded(
                       child: TabBarView(
                         controller: _tab,
                         children: [
-                          _buildSummary(scheme, monthExp, monthInc),
+                          _buildSummary(scheme, monthExp, monthInc, monthBal),
                           _buildList(),
                           _buildCategories(scheme),
                         ],
@@ -5152,24 +5127,258 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     );
   }
 
-  Widget _miniStat(String title, String value, Color color, IconData icon) {
+  Widget _buildSummary(
+    ColorScheme scheme,
+    double exp,
+    double inc,
+    double bal,
+  ) {
+    final items = _monthItems;
+    final recent = items.take(5).toList();
+    final balColor = bal >= 0 ? scheme.primary : scheme.error;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+      children: [
+        // کارت مانده — برجسته
+        Card(
+          elevation: 0,
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: balColor.withValues(alpha: 0.25)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+            child: Column(
+              children: [
+                Text(
+                  'مانده این ماه',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 13,
+                    color: scheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _fmt(bal),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: balColor,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'درآمد منهای هزینه',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 11.5,
+                    color: scheme.onSurface.withValues(alpha: 0.45),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // درآمد / هزینه
+        Row(
+          children: [
+            Expanded(
+              child: _dashMoneyCard(
+                title: 'درآمد این ماه',
+                value: _fmt(inc),
+                color: Colors.green.shade700,
+                icon: Icons.south_west_rounded,
+                scheme: scheme,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _dashMoneyCard(
+                title: 'هزینه این ماه',
+                value: _fmt(exp),
+                color: Colors.red.shade700,
+                icon: Icons.north_east_rounded,
+                scheme: scheme,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'عملیات سریع',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface.withValues(alpha: 0.85),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: () => _openEditor(income: true),
+                icon: Icon(Icons.add, color: Colors.green.shade700),
+                label: Text(
+                  'ثبت درآمد',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    color: Colors.green.shade800,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  backgroundColor: Colors.green.withValues(alpha: 0.12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: () => _openEditor(income: false),
+                icon: Icon(Icons.remove, color: Colors.red.shade700),
+                label: Text(
+                  'ثبت هزینه',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    color: Colors.red.shade800,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  backgroundColor: Colors.red.withValues(alpha: 0.12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 22),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'تراکنش‌های اخیر',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface.withValues(alpha: 0.85),
+                ),
+              ),
+            ),
+            if (items.isNotEmpty)
+              TextButton(
+                onPressed: () => _tab.animateTo(1),
+                child: const Text(
+                  'مشاهده همه',
+                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12.5),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        if (items.isEmpty)
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+              child: Column(
+                children: [
+                  Icon(Icons.receipt_long_outlined,
+                      size: 40,
+                      color: scheme.primary.withValues(alpha: 0.35)),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'این ماه تراکنشی ثبت نشده',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'از دکمه‌های بالا درآمد یا هزینه ثبت کنید',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 12,
+                      color: scheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (var i = 0; i < recent.length; i++) ...[
+                  if (i > 0) const Divider(height: 1),
+                  _dashRecentTile(recent[i], scheme),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _dashMoneyCard({
+    required String title,
+    required String value,
+    required Color color,
+    required IconData icon,
+    required ColorScheme scheme,
+  }) {
     return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: color.withValues(alpha: 0.08),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: color.withValues(alpha: 0.18)),
+      ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(height: 4),
-            Text(title,
-                style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 11)),
-            const SizedBox(height: 2),
-            FittedBox(
-              child: Text(value,
-                  style: TextStyle(
-                      fontFamily: 'Vazirmatn',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: color)),
+            Icon(icon, size: 18, color: color),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 11.5,
+                color: scheme.onSurface.withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
             ),
           ],
         ),
@@ -5177,102 +5386,48 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     );
   }
 
-  Widget _buildSummary(ColorScheme scheme, double exp, double inc) {
-    final items = _monthItems;
-    if (items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.receipt_long_outlined,
-                size: 64, color: scheme.primary.withValues(alpha: 0.35)),
-            const SizedBox(height: 12),
-            const Text('این ماه تراکنشی نیست',
-                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 16)),
-            const SizedBox(height: 8),
-            const Text('با دکمه «جدید» ثبت کنید',
-                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13)),
-          ],
+  Widget _dashRecentTile(Expense e, ColorScheme scheme) {
+    final j = Jalali.fromDateTime(e.date);
+    final color = e.isIncome ? Colors.green.shade700 : Colors.red.shade700;
+    return ListTile(
+      dense: true,
+      onTap: () => _openEditor(existing: e, income: e.isIncome),
+      onLongPress: () => _delete(e),
+      leading: CircleAvatar(
+        radius: 18,
+        backgroundColor: color.withValues(alpha: 0.12),
+        child: Icon(
+          e.isIncome ? Icons.south_west_rounded : Icons.north_east_rounded,
+          size: 18,
+          color: color,
         ),
-      );
-    }
-
-    final catMap = <String, double>{};
-    for (final e in _monthItems.where((e) => !e.isIncome)) {
-      catMap[e.category] = (catMap[e.category] ?? 0) + e.amount;
-    }
-    final total = catMap.values.fold(0.0, (a, b) => a + b);
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('توزیع هزینه‌ها',
-                    style: TextStyle(
-                        fontFamily: 'Vazirmatn', fontWeight: FontWeight.bold)),
-                const SizedBox(height: 12),
-                if (catMap.isEmpty)
-                  const Text('هزینه‌ای ثبت نشده',
-                      style: TextStyle(fontFamily: 'Vazirmatn'))
-                else
-                  ...catMap.entries.map((e) {
-                    final pct = total > 0 ? e.value / total : 0.0;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(e.key,
-                                  style: const TextStyle(
-                                      fontFamily: 'Vazirmatn', fontSize: 13)),
-                              const Spacer(),
-                              Text(
-                                '${_fmt(e.value)} (${(pct * 100).toStringAsFixed(0)}٪)',
-                                style: const TextStyle(
-                                    fontFamily: 'Vazirmatn',
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: pct.clamp(0.0, 1.0),
-                              minHeight: 8,
-                              backgroundColor:
-                                  scheme.surfaceContainerHighest,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-              ],
-            ),
-          ),
+      ),
+      title: Text(
+        e.title,
+        style: const TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
         ),
-        const SizedBox(height: 12),
-        Card(
-          child: ListTile(
-            title: const Text('تعداد تراکنش این ماه',
-                style: TextStyle(fontFamily: 'Vazirmatn')),
-            trailing: Text('${items.length}',
-                style: const TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18)),
-          ),
+      ),
+      subtitle: Text(
+        '${e.category} · ${j.year}/${j.month}/${j.day}',
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 11.5,
+          color: scheme.onSurface.withValues(alpha: 0.5),
         ),
-      ],
+      ),
+      trailing: Text(
+        '${e.isIncome ? '+' : '−'}${_fmt(e.amount)}',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+          color: color,
+        ),
+      ),
     );
   }
 

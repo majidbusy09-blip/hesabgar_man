@@ -4822,6 +4822,229 @@ class ExpenseStore {
   }
 }
 
+// ---------- گزارش و تحلیل مالی ----------
+class ReportLogic {
+  ReportLogic._();
+
+  static Jalali jalaliOf(Expense e) => Jalali.fromDateTime(e.date);
+
+  static List<Expense> inJalaliMonth(
+      List<Expense> items, int year, int month) {
+    return items.where((e) {
+      final j = jalaliOf(e);
+      return j.year == year && j.month == month;
+    }).toList();
+  }
+
+  static List<Expense> inJalaliYear(List<Expense> items, int year) {
+    return items.where((e) => jalaliOf(e).year == year).toList();
+  }
+
+  static double sumIncome(List<Expense> items) =>
+      items.where((e) => e.isIncome).fold(0.0, (s, e) => s + e.amount);
+
+  static double sumExpense(List<Expense> items) =>
+      items.where((e) => !e.isIncome).fold(0.0, (s, e) => s + e.amount);
+
+  static double balance(List<Expense> items) =>
+      sumIncome(items) - sumExpense(items);
+
+  static Map<String, double> expenseByCategory(List<Expense> items) {
+    final map = <String, double>{};
+    for (final e in items) {
+      if (e.isIncome) continue;
+      map[e.category] = (map[e.category] ?? 0) + e.amount;
+    }
+    final entries = map.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return {for (final e in entries) e.key: e.value};
+  }
+
+  static String? topExpenseCategory(List<Expense> items) {
+    final map = expenseByCategory(items);
+    if (map.isEmpty) return null;
+    return map.keys.first;
+  }
+
+  /// هزینه هر ماه جلالی در یک سال — کلید ۱..۱۲
+  static Map<int, double> monthlyExpenses(List<Expense> yearItems) {
+    final map = {for (var m = 1; m <= 12; m++) m: 0.0};
+    for (final e in yearItems) {
+      if (e.isIncome) continue;
+      final m = jalaliOf(e).month;
+      map[m] = (map[m] ?? 0) + e.amount;
+    }
+    return map;
+  }
+
+  static Map<int, double> monthlyIncomes(List<Expense> yearItems) {
+    final map = {for (var m = 1; m <= 12; m++) m: 0.0};
+    for (final e in yearItems) {
+      if (!e.isIncome) continue;
+      final m = jalaliOf(e).month;
+      map[m] = (map[m] ?? 0) + e.amount;
+    }
+    return map;
+  }
+
+  /// پرهزینه‌ترین ماه جلالی در لیست؛ null اگر هزینه نباشد
+  static int? costliestMonth(List<Expense> yearItems) {
+    final map = monthlyExpenses(yearItems);
+    var bestM = 0;
+    var bestV = 0.0;
+    map.forEach((m, v) {
+      if (v > bestV) {
+        bestV = v;
+        bestM = m;
+      }
+    });
+    return bestV > 0 ? bestM : null;
+  }
+
+  static double averageMonthlyExpense(List<Expense> yearItems) {
+    final map = monthlyExpenses(yearItems);
+    final active = map.values.where((v) => v > 0).length;
+    if (active == 0) return 0;
+    final total = map.values.fold(0.0, (s, v) => s + v);
+    return total / active;
+  }
+
+  /// درصد تغییر هزینه نسبت به دوره قبل؛ null اگر مبنای قبل صفر یا بدون داده باشد
+  static double? expenseChangePercent(double current, double previous) {
+    if (previous <= 0) return null;
+    return ((current - previous) / previous) * 100;
+  }
+}
+
+// ---------- بودجه ماهانه ----------
+class BudgetEntry {
+  /// اگر [category] خالی باشد، بودجه کل ماه است.
+  final String id;
+  final int year; // جلالی
+  final int month; // جلالی ۱–۱۲
+  final String? category;
+  final double limit;
+
+  BudgetEntry({
+    required this.id,
+    required this.year,
+    required this.month,
+    this.category,
+    required this.limit,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'year': year,
+        'month': month,
+        'category': category,
+        'limit': limit,
+      };
+
+  factory BudgetEntry.fromJson(Map<String, dynamic> json) => BudgetEntry(
+        id: json['id'] as String,
+        year: (json['year'] as num).toInt(),
+        month: (json['month'] as num).toInt(),
+        category: json['category'] as String?,
+        limit: (json['limit'] as num).toDouble(),
+      );
+}
+
+class BudgetStore {
+  static const _key = 'budgets_v1';
+  List<BudgetEntry> _items = [];
+  String? lastError;
+
+  List<BudgetEntry> get items => List.unmodifiable(_items);
+
+  List<BudgetEntry> forMonth(int year, int month) =>
+      _items.where((b) => b.year == year && b.month == month).toList();
+
+  BudgetEntry? totalForMonth(int year, int month) {
+    for (final b in _items) {
+      if (b.year == year && b.month == month && b.category == null) {
+        return b;
+      }
+    }
+    return null;
+  }
+
+  BudgetEntry? categoryForMonth(int year, int month, String category) {
+    for (final b in _items) {
+      if (b.year == year &&
+          b.month == month &&
+          b.category == category) {
+        return b;
+      }
+    }
+    return null;
+  }
+
+  Future<void> load() async {
+    lastError = null;
+    try {
+      final store = await LocalStore.instance;
+      final raw = store.getString(_key);
+      if (raw == null || raw.isEmpty) {
+        _items = [];
+        return;
+      }
+      final list = jsonDecode(raw) as List;
+      _items = list
+          .map((e) {
+            try {
+              return BudgetEntry.fromJson(e as Map<String, dynamic>);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<BudgetEntry>()
+          .toList();
+    } catch (e) {
+      debugPrint('BudgetStore load: $e');
+      lastError = e.toString();
+      rethrow;
+    }
+  }
+
+  Future<void> upsert(BudgetEntry entry) async {
+    final snapshot = List<BudgetEntry>.from(_items);
+    final i = _items.indexWhere((b) =>
+        b.year == entry.year &&
+        b.month == entry.month &&
+        b.category == entry.category);
+    if (i >= 0) {
+      _items[i] = entry;
+    } else {
+      _items.add(entry);
+    }
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> remove(String id) async {
+    final snapshot = List<BudgetEntry>.from(_items);
+    _items.removeWhere((b) => b.id == id);
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> _save() async {
+    final store = await LocalStore.instance;
+    final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
+    await store.setString(_key, raw);
+    lastError = null;
+  }
+}
+
 // ---------- features/expenses/presentation/expenses_screen.dart ----------
 class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({super.key});
@@ -4833,11 +5056,18 @@ class ExpensesScreen extends StatefulWidget {
 class _ExpensesScreenState extends State<ExpensesScreen>
     with SingleTickerProviderStateMixin {
   final _store = ExpenseStore();
+  final _budgets = BudgetStore();
   bool _loading = true;
   String? _error;
   late TabController _tab;
   late int _filterMonth;
   late int _filterYear;
+  final _searchCtrl = TextEditingController();
+  String _typeFilter = 'all'; // all | income | expense
+  String? _categoryFilter;
+  String _sortMode = 'newest'; // newest | oldest | amountDesc | amountAsc
+  double? _minAmount;
+  double? _maxAmount;
 
   @override
   void initState() {
@@ -4845,12 +5075,14 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     final j = Jalali.fromDateTime(DateTime.now());
     _filterYear = j.year;
     _filterMonth = j.month;
-    _tab = TabController(length: 3, vsync: this);
+    _tab = TabController(length: 5, vsync: this);
+    _searchCtrl.addListener(() => setState(() {}));
     _load();
   }
 
   @override
   void dispose() {
+    _searchCtrl.dispose();
     _tab.dispose();
     super.dispose();
   }
@@ -4862,6 +5094,11 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     });
     try {
       await _store.load().timeout(const Duration(seconds: 5));
+      try {
+        await _budgets.load().timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // بودجه جداست؛ شکست آن تراکنش‌ها را خالی نمی‌کند
+      }
     } catch (e) {
       _error =
           'خطا در بارگذاری اطلاعات. داده‌های قبلی پاک نشده‌اند؛ دوباره تلاش کنید.';
@@ -5015,6 +5252,8 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           tabs: const [
             Tab(text: 'خلاصه'),
             Tab(text: 'تراکنش‌ها'),
+            Tab(text: 'بودجه'),
+            Tab(text: 'گزارش'),
             Tab(text: 'دسته‌ها'),
           ],
         ),
@@ -5118,6 +5357,8 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                         children: [
                           _buildSummary(scheme, monthExp, monthInc, monthBal),
                           _buildList(),
+                          _buildBudgets(scheme),
+                          _buildReports(scheme),
                           _buildCategories(scheme),
                         ],
                       ),
@@ -5268,6 +5509,30 @@ class _ExpensesScreenState extends State<ExpensesScreen>
             ),
           ],
         ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'بودجه این ماه',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface.withValues(alpha: 0.85),
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => _tab.animateTo(2),
+              child: const Text(
+                'مدیریت',
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12.5),
+              ),
+            ),
+          ],
+        ),
+        _buildBudgetOverviewCard(scheme, exp),
         const SizedBox(height: 22),
         Row(
           children: [
@@ -5431,64 +5696,1382 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     );
   }
 
-  Widget _buildList() {
-    final items = _monthItems;
-    if (items.isEmpty) {
-      return const Center(
-          child: Text('تراکنشی در این ماه نیست',
-              style: TextStyle(fontFamily: 'Vazirmatn')));
+  List<Expense> get _filteredMonthItems {
+    var list = List<Expense>.from(_monthItems);
+    final q = _searchCtrl.text.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      list = list.where((e) {
+        final title = e.title.toLowerCase();
+        final note = (e.note ?? '').toLowerCase();
+        final cat = e.category.toLowerCase();
+        return title.contains(q) || note.contains(q) || cat.contains(q);
+      }).toList();
     }
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 100),
-      itemCount: items.length,
-      itemBuilder: (ctx, i) {
-        final e = items[i];
-        final color = e.isIncome ? Colors.green : Colors.redAccent;
-        return Dismissible(
-          key: Key(e.id),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.only(left: 20),
-            color: Colors.red,
-            child: const Icon(Icons.delete, color: Colors.white),
-          ),
-          onDismissed: (_) async {
-            await _store.remove(e.id);
-            setState(() {});
+    if (_typeFilter == 'income') {
+      list = list.where((e) => e.isIncome).toList();
+    } else if (_typeFilter == 'expense') {
+      list = list.where((e) => !e.isIncome).toList();
+    }
+    if (_categoryFilter != null) {
+      list = list.where((e) => e.category == _categoryFilter).toList();
+    }
+    if (_minAmount != null) {
+      list = list.where((e) => e.amount >= _minAmount!).toList();
+    }
+    if (_maxAmount != null) {
+      list = list.where((e) => e.amount <= _maxAmount!).toList();
+    }
+    switch (_sortMode) {
+      case 'oldest':
+        list.sort((a, b) => a.date.compareTo(b.date));
+        break;
+      case 'amountDesc':
+        list.sort((a, b) => b.amount.compareTo(a.amount));
+        break;
+      case 'amountAsc':
+        list.sort((a, b) => a.amount.compareTo(b.amount));
+        break;
+      case 'newest':
+      default:
+        list.sort((a, b) => b.date.compareTo(a.date));
+        break;
+    }
+    return list;
+  }
+
+  bool get _hasActiveFilters =>
+      _searchCtrl.text.trim().isNotEmpty ||
+      _typeFilter != 'all' ||
+      _categoryFilter != null ||
+      _minAmount != null ||
+      _maxAmount != null ||
+      _sortMode != 'newest';
+
+  void _clearFilters() {
+    setState(() {
+      _searchCtrl.clear();
+      _typeFilter = 'all';
+      _categoryFilter = null;
+      _minAmount = null;
+      _maxAmount = null;
+      _sortMode = 'newest';
+    });
+  }
+
+  Future<void> _openFilterSheet() async {
+    final minCtrl = TextEditingController(
+        text: _minAmount != null ? _minAmount!.round().toString() : '');
+    final maxCtrl = TextEditingController(
+        text: _maxAmount != null ? _maxAmount!.round().toString() : '');
+    String sort = _sortMode;
+    String? cat = _categoryFilter;
+
+    final cats = <String>{
+      ...Expense.expenseCategories,
+      ...Expense.incomeCategories,
+      ..._monthItems.map((e) => e.category),
+    }.toList()
+      ..sort();
+
+    final applied = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottom),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'فیلتر و مرتب‌سازی',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text('مرتب‌سازی',
+                        style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final opt in [
+                          ('newest', 'جدیدترین'),
+                          ('oldest', 'قدیمی‌ترین'),
+                          ('amountDesc', 'بیشترین مبلغ'),
+                          ('amountAsc', 'کمترین مبلغ'),
+                        ])
+                          ChoiceChip(
+                            label: Text(opt.$2,
+                                style: const TextStyle(
+                                    fontFamily: 'Vazirmatn', fontSize: 12)),
+                            selected: sort == opt.$1,
+                            onSelected: (_) => setLocal(() => sort = opt.$1),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const Text('دسته',
+                        style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('همه',
+                              style: TextStyle(
+                                  fontFamily: 'Vazirmatn', fontSize: 12)),
+                          selected: cat == null,
+                          onSelected: (_) => setLocal(() => cat = null),
+                        ),
+                        for (final c in cats)
+                          ChoiceChip(
+                            label: Text(c,
+                                style: const TextStyle(
+                                    fontFamily: 'Vazirmatn', fontSize: 12)),
+                            selected: cat == c,
+                            onSelected: (_) => setLocal(() => cat = c),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const Text('بازه مبلغ (تومان)',
+                        style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: minCtrl,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontFamily: 'Vazirmatn'),
+                            decoration: InputDecoration(
+                              labelText: 'از',
+                              labelStyle:
+                                  const TextStyle(fontFamily: 'Vazirmatn'),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: maxCtrl,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontFamily: 'Vazirmatn'),
+                            decoration: InputDecoration(
+                              labelText: 'تا',
+                              labelStyle:
+                                  const TextStyle(fontFamily: 'Vazirmatn'),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48)),
+                      child: const Text('اعمال',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        sort = 'newest';
+                        cat = null;
+                        minCtrl.clear();
+                        maxCtrl.clear();
+                        Navigator.pop(ctx, true);
+                      },
+                      child: const Text('پاک کردن فیلترها',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                    ),
+                  ],
+                ),
+              ),
+            );
           },
-          child: Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: color.withValues(alpha: 0.15),
-                child: Icon(
-                  e.isIncome ? Icons.arrow_downward : Icons.arrow_upward,
-                  color: color,
-                  size: 20,
-                ),
-              ),
-              title: Text(e.title,
-                  style: const TextStyle(
-                      fontFamily: 'Vazirmatn', fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                '${e.category} • ${Jalali.fromDateTime(e.date)}',
-                style:
-                    const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
-              ),
-              trailing: Text(
-                '${e.isIncome ? '+' : '-'}${_fmt(e.amount)}',
-                style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-              onTap: () => _openEditor(existing: e, income: e.isIncome),
-              onLongPress: () => _delete(e),
-            ),
-          ),
         );
       },
+    );
+
+    if (applied == true && mounted) {
+      setState(() {
+        _sortMode = sort;
+        _categoryFilter = cat;
+        final minV = NumFmt.parse(minCtrl.text);
+        final maxV = NumFmt.parse(maxCtrl.text);
+        _minAmount = minCtrl.text.trim().isEmpty ? null : minV;
+        _maxAmount = maxCtrl.text.trim().isEmpty ? null : maxV;
+      });
+    }
+    minCtrl.dispose();
+    maxCtrl.dispose();
+  }
+
+  Widget _buildList() {
+    final items = _filteredMonthItems;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchCtrl,
+                  style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'جست‌وجو در عنوان، یادداشت، دسته…',
+                    hintStyle: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                onPressed: _openFilterSheet,
+                icon: Badge(
+                  isLabelVisible: _hasActiveFilters,
+                  child: const Icon(Icons.tune, size: 20),
+                ),
+                tooltip: 'فیلتر',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 40,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            children: [
+              for (final opt in [
+                ('all', 'همه'),
+                ('expense', 'هزینه'),
+                ('income', 'درآمد'),
+              ])
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: ChoiceChip(
+                    label: Text(opt.$2,
+                        style: const TextStyle(
+                            fontFamily: 'Vazirmatn', fontSize: 12.5)),
+                    selected: _typeFilter == opt.$1,
+                    onSelected: (_) =>
+                        setState(() => _typeFilter = opt.$1),
+                  ),
+                ),
+              if (_hasActiveFilters)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: ActionChip(
+                    label: const Text('پاک کردن فیلتر',
+                        style: TextStyle(
+                            fontFamily: 'Vazirmatn', fontSize: 12)),
+                    onPressed: _clearFilters,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: items.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.search_off,
+                            size: 40,
+                            color: scheme.onSurface.withValues(alpha: 0.35)),
+                        const SizedBox(height: 10),
+                        Text(
+                          _monthItems.isEmpty
+                              ? 'تراکنشی در این ماه نیست'
+                              : 'نتیجه‌ای با این فیلتر پیدا نشد',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontFamily: 'Vazirmatn', fontSize: 14),
+                        ),
+                        if (_hasActiveFilters) ...[
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: _clearFilters,
+                            child: const Text('پاک کردن فیلترها',
+                                style: TextStyle(fontFamily: 'Vazirmatn')),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 100),
+                  itemCount: items.length,
+                  itemBuilder: (ctx, i) {
+                    final e = items[i];
+                    final color =
+                        e.isIncome ? Colors.green.shade700 : Colors.red.shade700;
+                    final j = Jalali.fromDateTime(e.date);
+                    return Dismissible(
+                      key: Key('tx_${e.id}'),
+                      direction: DismissDirection.endToStart,
+                      confirmDismiss: (_) async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (dCtx) => AlertDialog(
+                            title: const Text('حذف',
+                                style: TextStyle(fontFamily: 'Vazirmatn')),
+                            content: Text('«${e.title}» حذف شود؟',
+                                style:
+                                    const TextStyle(fontFamily: 'Vazirmatn')),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(dCtx, false),
+                                  child: const Text('انصراف',
+                                      style: TextStyle(
+                                          fontFamily: 'Vazirmatn'))),
+                              TextButton(
+                                  onPressed: () => Navigator.pop(dCtx, true),
+                                  child: const Text('حذف',
+                                      style: TextStyle(
+                                          fontFamily: 'Vazirmatn',
+                                          color: Colors.red))),
+                            ],
+                          ),
+                        );
+                        if (ok != true) return false;
+                        try {
+                          await _store.remove(e.id);
+                          return true;
+                        } catch (err) {
+                          _showStoreError(err);
+                          return false;
+                        }
+                      },
+                      background: Container(
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.only(left: 20),
+                        color: Colors.red,
+                        child: const Icon(Icons.delete, color: Colors.white),
+                      ),
+                      child: Card(
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: color.withValues(alpha: 0.12),
+                            child: Icon(
+                              e.isIncome
+                                  ? Icons.south_west_rounded
+                                  : Icons.north_east_rounded,
+                              color: color,
+                              size: 18,
+                            ),
+                          ),
+                          title: Text(e.title,
+                              style: const TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontWeight: FontWeight.w600)),
+                          subtitle: Text(
+                            '${e.category} · ${j.year}/${j.month}/${j.day}'
+                            '${e.note != null && e.note!.isNotEmpty ? ' · ${e.note}' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontFamily: 'Vazirmatn', fontSize: 12),
+                          ),
+                          trailing: Text(
+                            '${e.isIncome ? '+' : '−'}${_fmt(e.amount)}',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w700,
+                              color: color,
+                            ),
+                          ),
+                          onTap: () =>
+                              _openEditor(existing: e, income: e.isIncome),
+                          onLongPress: () => _delete(e),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  double _spentForCategory(String? category) {
+    return _monthItems
+        .where((e) =>
+            !e.isIncome &&
+            (category == null || e.category == category))
+        .fold(0.0, (s, e) => s + e.amount);
+  }
+
+  Widget _buildBudgetOverviewCard(ColorScheme scheme, double monthExp) {
+    final total = _budgets.totalForMonth(_filterYear, _filterMonth);
+    if (total == null) {
+      return Card(
+        margin: EdgeInsets.zero,
+        child: ListTile(
+          title: const Text(
+            'بودجه‌ای برای این ماه تعریف نشده',
+            style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+          ),
+          trailing: TextButton(
+            onPressed: () => _tab.animateTo(2),
+            child: const Text('تعریف',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
+        ),
+      );
+    }
+    final spent = monthExp;
+    final limit = total.limit;
+    final ratio = limit > 0 ? (spent / limit).clamp(0.0, 1.5) : 0.0;
+    final remain = limit - spent;
+    final over = spent > limit;
+    final near = !over && limit > 0 && spent / limit >= 0.8;
+    final barColor = over
+        ? scheme.error
+        : (near ? Colors.orange : scheme.primary);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    over
+                        ? 'از بودجه عبور کرده‌اید'
+                        : (near ? 'نزدیک به سقف بودجه' : 'مصرف بودجه'),
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: barColor,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${(ratio * 100).clamp(0, 999).toStringAsFixed(0)}٪',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w800,
+                    color: barColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: ratio.clamp(0.0, 1.0),
+                minHeight: 10,
+                backgroundColor: scheme.surfaceContainerHighest,
+                color: barColor,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  'مصرف: ${_fmt(spent)}',
+                  style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
+                ),
+                const Spacer(),
+                Text(
+                  over
+                      ? 'تجاوز: ${_fmt(spent - limit)}'
+                      : 'مانده: ${_fmt(remain)}',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: barColor,
+                  ),
+                ),
+              ],
+            ),
+            Text(
+              'سقف: ${_fmt(limit)}',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 11.5,
+                color: scheme.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editBudget({BudgetEntry? existing, String? category}) async {
+    final limitCtrl = TextEditingController(
+      text: existing != null ? existing.limit.round().toString() : '',
+    );
+    final title = category == null
+        ? 'بودجه کل ماه'
+        : 'بودجه دسته «$category»';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontFamily: 'Vazirmatn')),
+        content: TextField(
+          controller: limitCtrl,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          autofocus: true,
+          style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 18),
+          decoration: const InputDecoration(
+            labelText: 'سقف بودجه (تومان)',
+            labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('انصراف',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('ذخیره',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) {
+      limitCtrl.dispose();
+      return;
+    }
+    final limit = NumFmt.parse(limitCtrl.text);
+    limitCtrl.dispose();
+    if (limit <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('مبلغ بودجه باید بیشتر از صفر باشد',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+      ));
+      return;
+    }
+    final entry = BudgetEntry(
+      id: existing?.id ??
+          '${_filterYear}_${_filterMonth}_${category ?? 'total'}',
+      year: _filterYear,
+      month: _filterMonth,
+      category: category,
+      limit: limit,
+    );
+    try {
+      await _budgets.upsert(entry);
+      if (mounted) setState(() {});
+    } catch (e) {
+      _showStoreError(e);
+    }
+  }
+
+  Widget _buildBudgets(ColorScheme scheme) {
+    final total = _budgets.totalForMonth(_filterYear, _filterMonth);
+    final monthSpent = _monthExp;
+    final catSpent = <String, double>{};
+    for (final e in _monthItems) {
+      if (e.isIncome) continue;
+      catSpent[e.category] = (catSpent[e.category] ?? 0) + e.amount;
+    }
+    final catBudgets = _budgets
+        .forMonth(_filterYear, _filterMonth)
+        .where((b) => b.category != null)
+        .toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      children: [
+        Text(
+          'بودجه فقط از روی هزینه‌های ثبت‌شده محاسبه می‌شود؛ درآمدها در مصرف بودجه لحاظ نمی‌شوند.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12,
+            height: 1.4,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'بودجه کل ماه',
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => _editBudget(existing: total),
+                      child: Text(
+                        total == null ? 'تعریف' : 'ویرایش',
+                        style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      ),
+                    ),
+                    if (total != null)
+                      IconButton(
+                        tooltip: 'حذف',
+                        onPressed: () async {
+                          try {
+                            await _budgets.remove(total.id);
+                            if (mounted) setState(() {});
+                          } catch (e) {
+                            _showStoreError(e);
+                          }
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                      ),
+                  ],
+                ),
+                if (total == null)
+                  const Text(
+                    'هنوز سقف کلی برای این ماه تعیین نشده است.',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+                  )
+                else ...[
+                  const SizedBox(height: 8),
+                  _budgetProgressBlock(
+                    scheme: scheme,
+                    spent: monthSpent,
+                    limit: total.limit,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'بودجه دسته‌ها',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                final cat = await showModalBottomSheet<String>(
+                  context: context,
+                  builder: (ctx) => SafeArea(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text(
+                            'انتخاب دسته',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        for (final c in Expense.expenseCategories)
+                          ListTile(
+                            title: Text(c,
+                                style:
+                                    const TextStyle(fontFamily: 'Vazirmatn')),
+                            onTap: () => Navigator.pop(ctx, c),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+                if (cat != null) {
+                  final existing = _budgets.categoryForMonth(
+                      _filterYear, _filterMonth, cat);
+                  await _editBudget(existing: existing, category: cat);
+                }
+              },
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('دسته',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+            ),
+          ],
+        ),
+        if (catBudgets.isEmpty)
+          Card(
+            margin: EdgeInsets.zero,
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'بودجه دسته‌ای تعریف نشده است.',
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+              ),
+            ),
+          )
+        else
+          ...catBudgets.map((b) {
+            final spent = catSpent[b.category] ?? 0;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 8, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            b.category ?? '',
+                            style: const TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          onPressed: () =>
+                              _editBudget(existing: b, category: b.category),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          onPressed: () async {
+                            try {
+                              await _budgets.remove(b.id);
+                              if (mounted) setState(() {});
+                            } catch (e) {
+                              _showStoreError(e);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    _budgetProgressBlock(
+                      scheme: scheme,
+                      spent: spent,
+                      limit: b.limit,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _budgetProgressBlock({
+    required ColorScheme scheme,
+    required double spent,
+    required double limit,
+  }) {
+    final ratio = limit > 0 ? spent / limit : 0.0;
+    final over = spent > limit;
+    final near = !over && limit > 0 && ratio >= 0.8;
+    final color =
+        over ? scheme.error : (near ? Colors.orange : scheme.primary);
+    final remain = limit - spent;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: ratio.clamp(0.0, 1.0),
+            minHeight: 10,
+            backgroundColor: scheme.surfaceContainerHighest,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text(
+              'مصرف ${_fmt(spent)}',
+              style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
+            ),
+            const Spacer(),
+            Text(
+              over ? 'تجاوز ${_fmt(-remain)}' : 'مانده ${_fmt(remain)}',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          'سقف ${_fmt(limit)} · ${(ratio * 100).clamp(0, 999).toStringAsFixed(0)}٪',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 11.5,
+            color: scheme.onSurface.withValues(alpha: 0.5),
+          ),
+        ),
+        if (over || near)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              over ? 'از سقف بودجه عبور کرده‌اید.' : 'به سقف بودجه نزدیک شده‌اید.',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 12,
+                color: color,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ---- گزارش ----
+  int _reportMode = 0; // 0 ماهانه 1 سالانه 2 کل
+  int _reportYear = 0; // init on first build from filter
+
+  Widget _buildReports(ColorScheme scheme) {
+    if (_reportYear == 0) _reportYear = _filterYear;
+    final all = _store.items.toList();
+
+    List<Expense> scope;
+    String periodLabel;
+    List<Expense> prevScope = const [];
+
+    if (_reportMode == 0) {
+      scope = ReportLogic.inJalaliMonth(all, _filterYear, _filterMonth);
+      prevScope = ReportLogic.inJalaliMonth(
+        all,
+        _filterMonth == 1 ? _filterYear - 1 : _filterYear,
+        _filterMonth == 1 ? 12 : _filterMonth - 1,
+      );
+      periodLabel =
+          '${Jalali.monthNames[_filterMonth - 1]} $_filterYear';
+    } else if (_reportMode == 1) {
+      scope = ReportLogic.inJalaliYear(all, _reportYear);
+      prevScope = ReportLogic.inJalaliYear(all, _reportYear - 1);
+      periodLabel = 'سال $_reportYear';
+    } else {
+      scope = all;
+      periodLabel = 'کل دوره';
+    }
+
+    final inc = ReportLogic.sumIncome(scope);
+    final exp = ReportLogic.sumExpense(scope);
+    final bal = ReportLogic.balance(scope);
+    final cats = ReportLogic.expenseByCategory(scope);
+    final topCat = ReportLogic.topExpenseCategory(scope);
+    final prevExp = ReportLogic.sumExpense(prevScope);
+    final changePct = _reportMode == 2
+        ? null
+        : ReportLogic.expenseChangePercent(exp, prevExp);
+
+    final yearItems = _reportMode == 1
+        ? scope
+        : ReportLogic.inJalaliYear(all, _reportYear == 0 ? _filterYear : _reportYear);
+    final costliest = ReportLogic.costliestMonth(yearItems);
+    final avgMonth = ReportLogic.averageMonthlyExpense(yearItems);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      children: [
+        Center(
+          child: SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(
+                  value: 0,
+                  label: Text('ماهانه',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12))),
+              ButtonSegment(
+                  value: 1,
+                  label: Text('سالانه',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12))),
+              ButtonSegment(
+                  value: 2,
+                  label: Text('کل دوره',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12))),
+            ],
+            selected: {_reportMode},
+            onSelectionChanged: (s) => setState(() => _reportMode = s.first),
+          ),
+        ),
+        if (_reportMode == 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => setState(() => _reportYear--),
+                icon: const Icon(Icons.chevron_right),
+              ),
+              Expanded(
+                child: Text(
+                  'سال $_reportYear',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => setState(() => _reportYear++),
+                icon: const Icon(Icons.chevron_left),
+              ),
+            ],
+          ),
+        ] else if (_reportMode == 0) ...[
+          const SizedBox(height: 8),
+          Text(
+            'بر اساس ماه انتخاب‌شده در بالای صفحه: $periodLabel',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontSize: 12,
+              color: scheme.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Text(
+                  periodLabel,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 13,
+                    color: scheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _fmt(bal),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: bal >= 0 ? scheme.primary : scheme.error,
+                  ),
+                ),
+                const Text(
+                  'مانده',
+                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _reportStat(
+                        'درآمد',
+                        _fmt(inc),
+                        Colors.green.shade700,
+                      ),
+                    ),
+                    Expanded(
+                      child: _reportStat(
+                        'هزینه',
+                        _fmt(exp),
+                        Colors.red.shade700,
+                      ),
+                    ),
+                    Expanded(
+                      child: _reportStat(
+                        'تراکنش',
+                        '${scope.length}',
+                        scheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          'مقایسه درآمد و هزینه',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface.withValues(alpha: 0.85),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _barCompare(scheme, inc, exp),
+        if (_reportMode == 1) ...[
+          const SizedBox(height: 16),
+          Text(
+            'روند ماه‌های سال',
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurface.withValues(alpha: 0.85),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _yearTrendChart(scheme, yearItems),
+        ],
+        const SizedBox(height: 16),
+        Text(
+          'سهم دسته‌های هزینه',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface.withValues(alpha: 0.85),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (cats.isEmpty)
+          Card(
+            margin: EdgeInsets.zero,
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'در این بازه هزینه‌ای ثبت نشده است.',
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+              ),
+            ),
+          )
+        else
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                children: [
+                  for (final e in cats.entries) ...[
+                    _catShareRow(scheme, e.key, e.value, exp),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
+        Text(
+          'تحلیل',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface.withValues(alpha: 0.85),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Column(
+            children: [
+              ListTile(
+                title: const Text('بیشترین دسته هزینه',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13)),
+                trailing: Text(
+                  topCat ?? '—',
+                  style: const TextStyle(
+                      fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (_reportMode != 2) ...[
+                const Divider(height: 1),
+                ListTile(
+                  title: const Text('تغییر هزینه نسبت به دوره قبل',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13)),
+                  trailing: Text(
+                    changePct == null
+                        ? 'داده کافی نیست'
+                        : '${changePct >= 0 ? '+' : ''}${changePct.toStringAsFixed(1)}٪',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontWeight: FontWeight.w700,
+                      color: changePct == null
+                          ? scheme.onSurface
+                          : (changePct > 0
+                              ? Colors.red.shade700
+                              : Colors.green.shade700),
+                    ),
+                  ),
+                ),
+              ],
+              if (_reportMode == 1 || _reportMode == 2) ...[
+                const Divider(height: 1),
+                ListTile(
+                  title: const Text('پرهزینه‌ترین ماه (در سال گزارش)',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13)),
+                  trailing: Text(
+                    costliest == null
+                        ? '—'
+                        : Jalali.monthNames[costliest - 1],
+                    style: const TextStyle(
+                        fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  title: const Text('میانگین هزینه ماه‌های دارای داده',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13)),
+                  trailing: Text(
+                    avgMonth <= 0 ? '—' : _fmt(avgMonth),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+              if (scope.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'برای این بازه تراکنشی نیست؛ تحلیلی نمایش داده نمی‌شود.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _reportStat(String title, String value, Color color) {
+    return Column(
+      children: [
+        Text(title,
+            style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 11)),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontWeight: FontWeight.w800,
+            fontSize: 14,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _barCompare(ColorScheme scheme, double inc, double exp) {
+    final maxV = [inc, exp, 1.0].reduce((a, b) => a > b ? a : b);
+    Widget bar(String label, double v, Color c) {
+      final w = (v / maxV).clamp(0.0, 1.0);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text(label,
+                    style:
+                        const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                const Spacer(),
+                Text(_fmt(v),
+                    style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: c)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: w,
+                minHeight: 12,
+                backgroundColor: scheme.surfaceContainerHighest,
+                color: c,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          children: [
+            bar('درآمد', inc, Colors.green.shade700),
+            bar('هزینه', exp, Colors.red.shade700),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _catShareRow(
+      ColorScheme scheme, String name, double value, double totalExp) {
+    final pct = totalExp > 0 ? value / totalExp : 0.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(name,
+                  style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 13)),
+            ),
+            Text(
+              '${_fmt(value)} (${(pct * 100).toStringAsFixed(0)}٪)',
+              style: const TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: pct.clamp(0.0, 1.0),
+            minHeight: 8,
+            backgroundColor: scheme.surfaceContainerHighest,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _yearTrendChart(ColorScheme scheme, List<Expense> yearItems) {
+    final expM = ReportLogic.monthlyExpenses(yearItems);
+    final incM = ReportLogic.monthlyIncomes(yearItems);
+    final maxV = [
+      ...expM.values,
+      ...incM.values,
+      1.0,
+    ].reduce((a, b) => a > b ? a : b);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+        child: SizedBox(
+          height: 140,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (var m = 1; m <= 12; m++)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  height: 100 *
+                                      ((incM[m] ?? 0) / maxV).clamp(0.0, 1.0),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withValues(alpha: 0.75),
+                                    borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(3)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 1),
+                              Expanded(
+                                child: Container(
+                                  height: 100 *
+                                      ((expM[m] ?? 0) / maxV).clamp(0.0, 1.0),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.75),
+                                    borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(3)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$m',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 9,
+                            color: scheme.onSurface.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -5565,6 +7148,9 @@ class _AddSheetState extends State<_AddSheet> {
   late final TextEditingController _note;
   late String _category;
   late bool _isIncome;
+  late DateTime _date;
+  bool _saving = false;
+  String? _fieldError;
 
   @override
   void initState() {
@@ -5573,8 +7159,10 @@ class _AddSheetState extends State<_AddSheet> {
     _isIncome = i?.isIncome ?? widget.asIncome;
     _title = TextEditingController(text: i?.title ?? '');
     _amount = TextEditingController(
-        text: i != null ? i.amount.toStringAsFixed(0) : '');
+      text: i != null && i.amount > 0 ? NumFmt.format(i.amount.round()) : '',
+    );
     _note = TextEditingController(text: i?.note ?? '');
+    _date = i?.date ?? DateTime.now();
     _category = i?.category ??
         (_isIncome
             ? Expense.incomeCategories.first
@@ -5589,15 +7177,37 @@ class _AddSheetState extends State<_AddSheet> {
     super.dispose();
   }
 
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      helpText: 'انتخاب تاریخ',
+      cancelText: 'انصراف',
+      confirmText: 'تأیید',
+    );
+    if (picked != null && mounted) {
+      setState(() => _date = picked);
+    }
+  }
+
   void _submit() {
+    if (_saving) return;
     final title = _title.text.trim();
     final amount = NumFmt.parse(_amount.text);
-    if (title.isEmpty || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('عنوان و مبلغ را درست وارد کنید',
-              style: TextStyle(fontFamily: 'Vazirmatn'))));
+    if (title.isEmpty) {
+      setState(() => _fieldError = 'عنوان را وارد کنید.');
       return;
     }
+    if (amount <= 0) {
+      setState(() => _fieldError = 'مبلغ معتبر وارد کنید.');
+      return;
+    }
+    setState(() {
+      _fieldError = null;
+      _saving = true;
+    });
     Navigator.pop(
       context,
       Expense(
@@ -5606,7 +7216,7 @@ class _AddSheetState extends State<_AddSheet> {
         title: title,
         amount: amount,
         category: _category,
-        date: widget.initial?.date ?? DateTime.now(),
+        date: _date,
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
         isIncome: _isIncome,
       ),
@@ -5615,37 +7225,58 @@ class _AddSheetState extends State<_AddSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final cats =
         _isIncome ? Expense.incomeCategories : Expense.expenseCategories;
     if (!cats.contains(_category)) _category = cats.first;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final j = Jalali.fromDateTime(_date);
+    final isEdit = widget.initial != null;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottom),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottom),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(_isIncome ? 'ثبت درآمد' : 'ثبت هزینه',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: scheme.onSurface.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              isEdit
+                  ? ( _isIncome ? 'ویرایش درآمد' : 'ویرایش هزینه')
+                  : (_isIncome ? 'ثبت درآمد' : 'ثبت هزینه'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 14),
             SegmentedButton<bool>(
               segments: const [
                 ButtonSegment(
-                    value: false,
-                    label: Text('هزینه',
-                        style: TextStyle(fontFamily: 'Vazirmatn')),
-                    icon: Icon(Icons.arrow_upward)),
+                  value: false,
+                  label: Text('هزینه',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                  icon: Icon(Icons.north_east, size: 18),
+                ),
                 ButtonSegment(
-                    value: true,
-                    label: Text('درآمد',
-                        style: TextStyle(fontFamily: 'Vazirmatn')),
-                    icon: Icon(Icons.arrow_downward)),
+                  value: true,
+                  label: Text('درآمد',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                  icon: Icon(Icons.south_west, size: 18),
+                ),
               ],
               selected: {_isIncome},
               onSelectionChanged: (s) => setState(() {
@@ -5653,80 +7284,169 @@ class _AddSheetState extends State<_AddSheet> {
                 _category = _isIncome
                     ? Expense.incomeCategories.first
                     : Expense.expenseCategories.first;
+                _fieldError = null;
               }),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
+            Text(
+              'مبلغ (تومان)',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 12.5,
+                color: scheme.onSurface.withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _amount,
+              autofocus: !isEdit,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              textAlign: TextAlign.center,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(
+                    RegExp(r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
+                GroupedNumberFormatter(),
+              ],
+              onChanged: (_) {
+                if (_fieldError != null) setState(() => _fieldError = null);
+              },
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                color: _isIncome ? Colors.green.shade700 : Colors.red.shade700,
+              ),
+              decoration: InputDecoration(
+                hintText: '0',
+                hintStyle: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  color: scheme.onSurface.withValues(alpha: 0.25),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              ),
+            ),
+            const SizedBox(height: 14),
             TextField(
               controller: _title,
-              style: const TextStyle(fontFamily: 'Vazirmatn'),
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 15),
+              onChanged: (_) {
+                if (_fieldError != null) setState(() => _fieldError = null);
+              },
               decoration: InputDecoration(
                 labelText: 'عنوان',
                 labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _amount,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
-                GroupedNumberFormatter(),
+            const SizedBox(height: 14),
+            Text(
+              'دسته‌بندی',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 12.5,
+                color: scheme.onSurface.withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final c in cats)
+                  ChoiceChip(
+                    label: Text(
+                      c,
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn', fontSize: 12.5),
+                    ),
+                    selected: _category == c,
+                    onSelected: (_) => setState(() => _category = c),
+                  ),
               ],
-              onChanged: (v) {
-                final g = NumFmt.groupTyping(v);
-                if (g != v) {
-                  _amount.value = TextEditingValue(
-                    text: g,
-                    selection: TextSelection.collapsed(offset: g.length),
-                  );
-                }
-              },
-              style: const TextStyle(fontFamily: 'Vazirmatn'),
-              decoration: InputDecoration(
-                labelText: 'مبلغ (تومان)',
-                labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            const SizedBox(height: 14),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.calendar_month_outlined,
+                  color: scheme.primary),
+              title: const Text(
+                'تاریخ',
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+              ),
+              subtitle: Text(
+                '${j.day} ${Jalali.monthNames[j.month - 1]} ${j.year}',
+                style: const TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              trailing: TextButton(
+                onPressed: _pickDate,
+                child: const Text(
+                  'تغییر',
+                  style: TextStyle(fontFamily: 'Vazirmatn'),
+                ),
               ),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _category,
-              decoration: InputDecoration(
-                labelText: 'دسته‌بندی',
-                labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              items: cats
-                  .map((c) => DropdownMenuItem(
-                      value: c,
-                      child: Text(c,
-                          style: const TextStyle(fontFamily: 'Vazirmatn'))))
-                  .toList(),
-              onChanged: (v) => setState(() => _category = v ?? _category),
-            ),
-            const SizedBox(height: 12),
             TextField(
               controller: _note,
+              textAlign: TextAlign.right,
+              maxLines: 2,
               style: const TextStyle(fontFamily: 'Vazirmatn'),
               decoration: InputDecoration(
                 labelText: 'یادداشت (اختیاری)',
                 labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
-            const SizedBox(height: 20),
+            if (_fieldError != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _fieldError!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 13,
+                  color: scheme.error,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
             FilledButton(
-              onPressed: _submit,
+              onPressed: _saving ? null : _submit,
               style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48)),
-              child: const Text('ذخیره',
-                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 16)),
+                minimumSize: const Size.fromHeight(50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: Text(
+                isEdit ? 'ذخیره تغییرات' : 'ذخیره',
+                style: const TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _saving ? null : () => Navigator.pop(context),
+              child: const Text(
+                'انصراف',
+                style: TextStyle(fontFamily: 'Vazirmatn'),
+              ),
             ),
           ],
         ),

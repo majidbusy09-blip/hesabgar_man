@@ -4619,6 +4619,207 @@ Widget _copyableMoney(
 }
 
 // ---------- features/expenses/logic/expense_model.dart ----------
+/// دسته درآمد/هزینه با شناسه پایدار
+class AppCategory {
+  final String id;
+  final String name;
+  final bool isIncome;
+  final bool archived;
+  final bool builtIn;
+
+  const AppCategory({
+    required this.id,
+    required this.name,
+    required this.isIncome,
+    this.archived = false,
+    this.builtIn = false,
+  });
+
+  AppCategory copyWith({
+    String? name,
+    bool? archived,
+  }) =>
+      AppCategory(
+        id: id,
+        name: name ?? this.name,
+        isIncome: isIncome,
+        archived: archived ?? this.archived,
+        builtIn: builtIn,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'isIncome': isIncome,
+        'archived': archived,
+        'builtIn': builtIn,
+      };
+
+  factory AppCategory.fromJson(Map<String, dynamic> json) => AppCategory(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        isIncome: json['isIncome'] as bool? ?? false,
+        archived: json['archived'] as bool? ?? false,
+        builtIn: json['builtIn'] as bool? ?? false,
+      );
+}
+
+class CategoryStore {
+  static const _key = 'categories_v1';
+
+  static const List<AppCategory> defaults = [
+    AppCategory(id: 'exp_food', name: 'خوراک', isIncome: false, builtIn: true),
+    AppCategory(
+        id: 'exp_transport', name: 'حمل‌ونقل', isIncome: false, builtIn: true),
+    AppCategory(id: 'exp_home', name: 'مسکن', isIncome: false, builtIn: true),
+    AppCategory(id: 'exp_bills', name: 'قبوض', isIncome: false, builtIn: true),
+    AppCategory(
+        id: 'exp_health', name: 'سلامت', isIncome: false, builtIn: true),
+    AppCategory(
+        id: 'exp_education', name: 'آموزش', isIncome: false, builtIn: true),
+    AppCategory(id: 'exp_fun', name: 'تفریح', isIncome: false, builtIn: true),
+    AppCategory(
+        id: 'exp_clothes', name: 'پوشاک', isIncome: false, builtIn: true),
+    AppCategory(id: 'exp_shop', name: 'خرید', isIncome: false, builtIn: true),
+    AppCategory(id: 'exp_other', name: 'سایر', isIncome: false, builtIn: true),
+    AppCategory(
+        id: 'inc_salary', name: 'حقوق', isIncome: true, builtIn: true),
+    AppCategory(id: 'inc_sale', name: 'فروش', isIncome: true, builtIn: true),
+    AppCategory(id: 'inc_gift', name: 'هدیه', isIncome: true, builtIn: true),
+    AppCategory(
+        id: 'inc_profit', name: 'سود', isIncome: true, builtIn: true),
+    AppCategory(
+        id: 'inc_other', name: 'سایر درآمد', isIncome: true, builtIn: true),
+  ];
+
+  List<AppCategory> _items = List.from(defaults);
+  String? lastError;
+
+  List<AppCategory> get items => List.unmodifiable(_items);
+
+  List<AppCategory> active({required bool income}) => _items
+      .where((c) => c.isIncome == income && !c.archived)
+      .toList();
+
+  List<AppCategory> allForKind({required bool income}) =>
+      _items.where((c) => c.isIncome == income).toList();
+
+  AppCategory? byId(String id) {
+    for (final c in _items) {
+      if (c.id == id) return c;
+    }
+    return null;
+  }
+
+  /// نمایش نام از روی id یا نام قدیمی ذخیره‌شده
+  String displayName(String stored) {
+    final byId = this.byId(stored);
+    if (byId != null) return byId.name;
+    for (final c in _items) {
+      if (c.name == stored) return c.name;
+    }
+    return stored;
+  }
+
+  /// نرمال‌سازی مقدار ذخیره‌شده به id در صورت امکان
+  String resolveId(String stored, {required bool isIncome}) {
+    final byId = this.byId(stored);
+    if (byId != null) return byId.id;
+    for (final c in _items) {
+      if (c.isIncome == isIncome && c.name == stored) return c.id;
+    }
+    return stored;
+  }
+
+  Future<void> load() async {
+    lastError = null;
+    try {
+      final store = await LocalStore.instance;
+      final raw = store.getString(_key);
+      if (raw == null || raw.isEmpty) {
+        _items = List.from(defaults);
+        await _save(); // seed
+        return;
+      }
+      final list = jsonDecode(raw) as List;
+      final parsed = list
+          .map((e) {
+            try {
+              return AppCategory.fromJson(e as Map<String, dynamic>);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<AppCategory>()
+          .toList();
+      // اطمینان از وجود پیش‌فرض‌ها
+      final ids = parsed.map((e) => e.id).toSet();
+      for (final d in defaults) {
+        if (!ids.contains(d.id)) parsed.add(d);
+      }
+      _items = parsed;
+    } catch (e) {
+      debugPrint('CategoryStore load: $e');
+      lastError = e.toString();
+      _items = List.from(defaults);
+      rethrow;
+    }
+  }
+
+  Future<void> upsert(AppCategory cat) async {
+    final snapshot = List<AppCategory>.from(_items);
+    final i = _items.indexWhere((c) => c.id == cat.id);
+    if (i >= 0) {
+      _items[i] = cat;
+    } else {
+      _items.add(cat);
+    }
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  /// حذف فقط اگر استفاده نشده؛ وگرنه آرشیو
+  Future<String> removeOrArchive(
+    String id, {
+    required bool Function(String idOrName) isUsed,
+  }) async {
+    final cat = byId(id);
+    if (cat == null) return 'not_found';
+    if (cat.builtIn) {
+      // پیش‌فرض: فقط آرشیو
+      if (isUsed(cat.id) || isUsed(cat.name)) {
+        await upsert(cat.copyWith(archived: true));
+        return 'archived';
+      }
+      await upsert(cat.copyWith(archived: true));
+      return 'archived';
+    }
+    if (isUsed(cat.id) || isUsed(cat.name)) {
+      await upsert(cat.copyWith(archived: true));
+      return 'archived';
+    }
+    final snapshot = List<AppCategory>.from(_items);
+    _items.removeWhere((c) => c.id == id);
+    try {
+      await _save();
+      return 'deleted';
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> _save() async {
+    final store = await LocalStore.instance;
+    final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
+    await store.setString(_key, raw);
+  }
+}
+
 class Expense {
   final String id;
   final String title;
@@ -5057,6 +5258,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     with SingleTickerProviderStateMixin {
   final _store = ExpenseStore();
   final _budgets = BudgetStore();
+  final _categories = CategoryStore();
   bool _loading = true;
   String? _error;
   late TabController _tab;
@@ -5099,6 +5301,9 @@ class _ExpensesScreenState extends State<ExpensesScreen>
       } catch (_) {
         // بودجه جداست؛ شکست آن تراکنش‌ها را خالی نمی‌کند
       }
+      try {
+        await _categories.load().timeout(const Duration(seconds: 5));
+      } catch (_) {}
     } catch (e) {
       _error =
           'خطا در بارگذاری اطلاعات. داده‌های قبلی پاک نشده‌اند؛ دوباره تلاش کنید.';
@@ -5139,7 +5344,11 @@ class _ExpensesScreenState extends State<ExpensesScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => _AddSheet(initial: existing, asIncome: income),
+      builder: (ctx) => _AddSheet(
+        initial: existing,
+        asIncome: income,
+        categories: _categories,
+      ),
     );
     if (result == null) return;
     try {
@@ -5248,7 +5457,18 @@ class _ExpensesScreenState extends State<ExpensesScreen>
         ],
         bottom: TabBar(
           controller: _tab,
-          labelStyle: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          labelPadding: const EdgeInsets.symmetric(horizontal: 14),
+          labelStyle: const TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+          unselectedLabelStyle: const TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 13,
+          ),
           tabs: const [
             Tab(text: 'خلاصه'),
             Tab(text: 'تراکنش‌ها'),
@@ -5713,7 +5933,14 @@ class _ExpensesScreenState extends State<ExpensesScreen>
       list = list.where((e) => !e.isIncome).toList();
     }
     if (_categoryFilter != null) {
-      list = list.where((e) => e.category == _categoryFilter).toList();
+      final fid = _categoryFilter!;
+      final fname = _categories.displayName(fid);
+      list = list
+          .where((e) =>
+              e.category == fid ||
+              e.category == fname ||
+              _categories.displayName(e.category) == fname)
+          .toList();
     }
     if (_minAmount != null) {
       list = list.where((e) => e.amount >= _minAmount!).toList();
@@ -5767,8 +5994,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     String? cat = _categoryFilter;
 
     final cats = <String>{
-      ...Expense.expenseCategories,
-      ...Expense.incomeCategories,
+      ..._categories.items.map((c) => c.id),
       ..._monthItems.map((e) => e.category),
     }.toList()
       ..sort();
@@ -5839,7 +6065,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                         ),
                         for (final c in cats)
                           ChoiceChip(
-                            label: Text(c,
+                            label: Text(_categories.displayName(c),
                                 style: const TextStyle(
                                     fontFamily: 'Vazirmatn', fontSize: 12)),
                             selected: cat == c,
@@ -6133,10 +6359,18 @@ class _ExpensesScreenState extends State<ExpensesScreen>
   }
 
   double _spentForCategory(String? category) {
+    if (category == null) {
+      return _monthItems
+          .where((e) => !e.isIncome)
+          .fold(0.0, (s, e) => s + e.amount);
+    }
+    final name = _categories.displayName(category);
     return _monthItems
         .where((e) =>
             !e.isIncome &&
-            (category == null || e.category == category))
+            (e.category == category ||
+                e.category == name ||
+                _categories.displayName(e.category) == name))
         .fold(0.0, (s, e) => s + e.amount);
   }
 
@@ -6254,6 +6488,9 @@ class _ExpensesScreenState extends State<ExpensesScreen>
         ? 'بودجه کل ماه'
         : 'بودجه دسته «$category»';
 
+    if (existing != null && existing.limit > 0) {
+      limitCtrl.text = NumFmt.format(existing.limit.round());
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -6263,6 +6500,11 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           keyboardType: TextInputType.number,
           textAlign: TextAlign.center,
           autofocus: true,
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(
+                RegExp(r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
+            GroupedNumberFormatter(),
+          ],
           style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 18),
           decoration: const InputDecoration(
             labelText: 'سقف بودجه (تومان)',
@@ -6429,12 +6671,12 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                             ),
                           ),
                         ),
-                        for (final c in Expense.expenseCategories)
+                        for (final c in _categories.active(income: false))
                           ListTile(
-                            title: Text(c,
+                            title: Text(c.name,
                                 style:
                                     const TextStyle(fontFamily: 'Vazirmatn')),
-                            onTap: () => Navigator.pop(ctx, c),
+                            onTap: () => Navigator.pop(ctx, c.id),
                           ),
                       ],
                     ),
@@ -6465,7 +6707,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           )
         else
           ...catBudgets.map((b) {
-            final spent = catSpent[b.category] ?? 0;
+            final spent = _spentForCategory(b.category);
             return Card(
               margin: const EdgeInsets.only(bottom: 10),
               child: Padding(
@@ -6477,7 +6719,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                       children: [
                         Expanded(
                           child: Text(
-                            b.category ?? '',
+                            _categories.displayName(b.category ?? ''),
                             style: const TextStyle(
                               fontFamily: 'Vazirmatn',
                               fontWeight: FontWeight.w700,
@@ -7076,58 +7318,241 @@ class _ExpensesScreenState extends State<ExpensesScreen>
   }
 
   Widget _buildCategories(ColorScheme scheme) {
+    final expenseCats = _categories.allForKind(income: false);
+    final incomeCats = _categories.allForKind(income: true);
+
+    bool used(String idOrName) {
+      final name = _categories.displayName(idOrName);
+      for (final e in _store.items) {
+        if (e.category == idOrName ||
+            e.category == name ||
+            _categories.displayName(e.category) == name) {
+          return true;
+        }
+      }
+      for (final b in _budgets.items) {
+        if (b.category == null) continue;
+        if (b.category == idOrName ||
+            b.category == name ||
+            _categories.displayName(b.category!) == name) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    Future<void> addOrEdit({AppCategory? existing, required bool income}) async {
+      final nameCtrl =
+          TextEditingController(text: existing?.name ?? '');
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(
+            existing == null
+                ? (income ? 'دسته درآمد جدید' : 'دسته هزینه جدید')
+                : 'ویرایش دسته',
+            style: const TextStyle(fontFamily: 'Vazirmatn'),
+          ),
+          content: TextField(
+            controller: nameCtrl,
+            autofocus: true,
+            style: const TextStyle(fontFamily: 'Vazirmatn'),
+            decoration: const InputDecoration(
+              labelText: 'نام دسته',
+              labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('انصراف',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('ذخیره',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+            ),
+          ],
+        ),
+      );
+      final name = nameCtrl.text.trim();
+      nameCtrl.dispose();
+      if (ok != true || name.isEmpty) return;
+      final cat = existing != null
+          ? existing.copyWith(name: name, archived: false)
+          : AppCategory(
+              id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+              name: name,
+              isIncome: income,
+            );
+      try {
+        await _categories.upsert(cat);
+        if (mounted) setState(() {});
+      } catch (e) {
+        _showStoreError(e);
+      }
+    }
+
+    Widget section(String title, List<AppCategory> list, bool income) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => addOrEdit(income: income),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('جدید',
+                    style: TextStyle(fontFamily: 'Vazirmatn')),
+              ),
+            ],
+          ),
+          if (list.isEmpty)
+            const Text('—', style: TextStyle(fontFamily: 'Vazirmatn'))
+          else
+            ...list.map((c) {
+              final isUsed = used(c.id) || used(c.name);
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  title: Text(
+                    c.name,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      decoration:
+                          c.archived ? TextDecoration.lineThrough : null,
+                      color: c.archived
+                          ? scheme.onSurface.withValues(alpha: 0.45)
+                          : null,
+                    ),
+                  ),
+                  subtitle: Text(
+                    c.archived
+                        ? 'آرشیو شده'
+                        : (c.builtIn ? 'پیش‌فرض' : 'سفارشی'),
+                    style: const TextStyle(
+                        fontFamily: 'Vazirmatn', fontSize: 11.5),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'ویرایش نام',
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        onPressed: () =>
+                            addOrEdit(existing: c, income: income),
+                      ),
+                      IconButton(
+                        tooltip: c.archived ? 'فعال‌سازی' : 'حذف/آرشیو',
+                        icon: Icon(
+                          c.archived
+                              ? Icons.unarchive_outlined
+                              : Icons.delete_outline,
+                          size: 18,
+                        ),
+                        onPressed: () async {
+                          try {
+                            if (c.archived) {
+                              await _categories
+                                  .upsert(c.copyWith(archived: false));
+                            } else {
+                              final r = await _categories.removeOrArchive(
+                                c.id,
+                                isUsed: used,
+                              );
+                              if (mounted && r == 'archived') {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'دسته در تراکنش/بودجه استفاده شده و آرشیو شد',
+                                      style:
+                                          TextStyle(fontFamily: 'Vazirmatn'),
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                            if (mounted) setState(() {});
+                          } catch (e) {
+                            _showStoreError(e);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      );
+    }
+
+    // مجموع ماه برای نمایش سریع
     final expMap = <String, double>{};
     final incMap = <String, double>{};
     for (final e in _monthItems) {
+      final name = _categories.displayName(e.category);
       if (e.isIncome) {
-        incMap[e.category] = (incMap[e.category] ?? 0) + e.amount;
+        incMap[name] = (incMap[name] ?? 0) + e.amount;
       } else {
-        expMap[e.category] = (expMap[e.category] ?? 0) + e.amount;
+        expMap[name] = (expMap[name] ?? 0) + e.amount;
       }
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
       children: [
-        const Text('هزینه‌ها بر اساس دسته',
-            style: TextStyle(
-                fontFamily: 'Vazirmatn', fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        if (expMap.isEmpty)
-          const Text('—', style: TextStyle(fontFamily: 'Vazirmatn'))
-        else
-          ...expMap.entries.map((e) => Card(
-                child: ListTile(
-                  leading: const Icon(Icons.shopping_bag_outlined),
-                  title: Text(e.key,
-                      style: const TextStyle(fontFamily: 'Vazirmatn')),
-                  trailing: Text(_fmt(e.value),
-                      style: const TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          fontWeight: FontWeight.bold,
-                          color: Colors.redAccent)),
-                ),
-              )),
+        section('دسته‌های هزینه', expenseCats, false),
         const SizedBox(height: 16),
-        const Text('درآمدها بر اساس دسته',
-            style: TextStyle(
-                fontFamily: 'Vazirmatn', fontWeight: FontWeight.bold)),
+        section('دسته‌های درآمد', incomeCats, true),
+        const SizedBox(height: 20),
+        const Text(
+          'جمع این ماه',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+          ),
+        ),
         const SizedBox(height: 8),
-        if (incMap.isEmpty)
-          const Text('—', style: TextStyle(fontFamily: 'Vazirmatn'))
-        else
-          ...incMap.entries.map((e) => Card(
-                child: ListTile(
-                  leading: const Icon(Icons.payments_outlined),
-                  title: Text(e.key,
-                      style: const TextStyle(fontFamily: 'Vazirmatn')),
-                  trailing: Text(_fmt(e.value),
-                      style: const TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green)),
-                ),
-              )),
+        if (expMap.isEmpty && incMap.isEmpty)
+          const Text('تراکنشی در این ماه نیست',
+              style: TextStyle(fontFamily: 'Vazirmatn'))
+        else ...[
+          for (final e in expMap.entries)
+            ListTile(
+              dense: true,
+              title: Text(e.key,
+                  style: const TextStyle(fontFamily: 'Vazirmatn')),
+              trailing: Text(_fmt(e.value),
+                  style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontWeight: FontWeight.w700,
+                      color: Colors.red.shade700)),
+            ),
+          for (final e in incMap.entries)
+            ListTile(
+              dense: true,
+              title: Text(e.key,
+                  style: const TextStyle(fontFamily: 'Vazirmatn')),
+              trailing: Text(_fmt(e.value),
+                  style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontWeight: FontWeight.w700,
+                      color: Colors.green.shade700)),
+            ),
+        ],
       ],
     );
   }
@@ -7136,7 +7561,12 @@ class _ExpensesScreenState extends State<ExpensesScreen>
 class _AddSheet extends StatefulWidget {
   final Expense? initial;
   final bool asIncome;
-  const _AddSheet({this.initial, this.asIncome = false});
+  final CategoryStore categories;
+  const _AddSheet({
+    this.initial,
+    this.asIncome = false,
+    required this.categories,
+  });
 
   @override
   State<_AddSheet> createState() => _AddSheetState();
@@ -7163,10 +7593,12 @@ class _AddSheetState extends State<_AddSheet> {
     );
     _note = TextEditingController(text: i?.note ?? '');
     _date = i?.date ?? DateTime.now();
-    _category = i?.category ??
-        (_isIncome
-            ? Expense.incomeCategories.first
-            : Expense.expenseCategories.first);
+    if (i != null) {
+      _category = widget.categories.resolveId(i.category, isIncome: _isIncome);
+    } else {
+      final act = widget.categories.active(income: _isIncome);
+      _category = act.isNotEmpty ? act.first.id : '';
+    }
   }
 
   @override
@@ -7178,17 +7610,12 @@ class _AddSheetState extends State<_AddSheet> {
   }
 
   Future<void> _pickDate() async {
-    final picked = await showDatePicker(
+    final picked = await showJalaliDatePicker(
       context: context,
-      initialDate: _date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-      helpText: 'انتخاب تاریخ',
-      cancelText: 'انصراف',
-      confirmText: 'تأیید',
+      initial: Jalali.fromDateTime(_date),
     );
     if (picked != null && mounted) {
-      setState(() => _date = picked);
+      setState(() => _date = picked.toDateTime());
     }
   }
 
@@ -7226,9 +7653,11 @@ class _AddSheetState extends State<_AddSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final cats =
-        _isIncome ? Expense.incomeCategories : Expense.expenseCategories;
-    if (!cats.contains(_category)) _category = cats.first;
+    final catObjs = widget.categories.active(income: _isIncome);
+    final cats = catObjs.map((c) => c.id).toList();
+    if (cats.isNotEmpty && !cats.contains(_category)) {
+      _category = cats.first;
+    }
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     final j = Jalali.fromDateTime(_date);
     final isEdit = widget.initial != null;
@@ -7281,9 +7710,8 @@ class _AddSheetState extends State<_AddSheet> {
               selected: {_isIncome},
               onSelectionChanged: (s) => setState(() {
                 _isIncome = s.first;
-                _category = _isIncome
-                    ? Expense.incomeCategories.first
-                    : Expense.expenseCategories.first;
+                final act = widget.categories.active(income: _isIncome);
+                _category = act.isNotEmpty ? act.first.id : '';
                 _fieldError = null;
               }),
             ),
@@ -7360,15 +7788,15 @@ class _AddSheetState extends State<_AddSheet> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final c in cats)
+                for (final c in catObjs)
                   ChoiceChip(
                     label: Text(
-                      c,
+                      c.name,
                       style: const TextStyle(
                           fontFamily: 'Vazirmatn', fontSize: 12.5),
                     ),
-                    selected: _category == c,
-                    onSelected: (_) => setState(() => _category = c),
+                    selected: _category == c.id,
+                    onSelected: (_) => setState(() => _category = c.id),
                   ),
               ],
             ),
@@ -7457,6 +7885,203 @@ class _AddSheetState extends State<_AddSheet> {
 
 // ---------- features/calendar/logic/jalali.dart ----------
 /// تبدیل ساده میلادی ↔ شمسی (الگوریتم استاندارد)
+/// انتخابگر تاریخ شمسی ساده بر اساس کلاس Jalali موجود
+Future<Jalali?> showJalaliDatePicker({
+  required BuildContext context,
+  required Jalali initial,
+}) {
+  return showModalBottomSheet<Jalali>(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => _JalaliPickerSheet(initial: initial),
+  );
+}
+
+class _JalaliPickerSheet extends StatefulWidget {
+  final Jalali initial;
+  const _JalaliPickerSheet({required this.initial});
+
+  @override
+  State<_JalaliPickerSheet> createState() => _JalaliPickerSheetState();
+}
+
+class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
+  late int _year;
+  late int _month;
+  late int _day;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.initial.year;
+    _month = widget.initial.month;
+    _day = widget.initial.day;
+  }
+
+  Jalali get _current {
+    final len = Jalali(_year, _month, 1).monthLength;
+    final d = _day.clamp(1, len);
+    return Jalali(_year, _month, d);
+  }
+
+  void _shiftMonth(int delta) {
+    var m = _month + delta;
+    var y = _year;
+    if (m < 1) {
+      m = 12;
+      y--;
+    } else if (m > 12) {
+      m = 1;
+      y++;
+    }
+    setState(() {
+      _month = m;
+      _year = y;
+      final len = Jalali(_year, _month, 1).monthLength;
+      if (_day > len) _day = len;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final first = Jalali(_year, _month, 1);
+    final len = first.monthLength;
+    final g = first.toDateTime();
+    // شنبه اول هفته: Sat=6→0, Sun=7→1, Mon=1→2, ... Fri=5→6
+    final lead2 = g.weekday == 6
+        ? 0
+        : g.weekday == 7
+            ? 1
+            : g.weekday + 1;
+
+    final days = <Widget>[];
+    for (var i = 0; i < lead2; i++) {
+      days.add(const SizedBox());
+    }
+    for (var d = 1; d <= len; d++) {
+      final selected = d == _current.day;
+      days.add(
+        InkWell(
+          onTap: () => setState(() => _day = d),
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? scheme.primary : null,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$d',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                color: selected ? scheme.onPrimary : null,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: scheme.onSurface.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Text(
+            'انتخاب تاریخ شمسی',
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => _shiftMonth(-1),
+                icon: const Icon(Icons.chevron_right),
+              ),
+              Expanded(
+                child: Text(
+                  '${Jalali.monthNames[_month - 1]} $_year',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => _shiftMonth(1),
+                icon: const Icon(Icons.chevron_left),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              for (final w in Jalali.weekDays)
+                Expanded(
+                  child: Text(
+                    w.substring(0, 1),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 11,
+                      color: scheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 7,
+            children: days,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('انصراف',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context, _current),
+                  child: const Text('تأیید',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class Jalali {
   final int year;
   final int month;

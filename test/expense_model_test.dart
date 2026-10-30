@@ -77,3 +77,20 @@ void main() {
     });
   });
 }
+
+
+  group('expenses_v2 compatibility', () {
+    test('legacy JSON map still parses', () {
+      final e = Expense.fromJson({
+        'id': 'legacy1',
+        'title': 'نان',
+        'amount': 50000,
+        'category': 'خوراک',
+        'date': '2024-06-01T10:00:00.000',
+        'isIncome': false,
+      });
+      expect(e.id, 'legacy1');
+      expect(e.amount, 50000);
+      expect(e.note, isNull);
+    });
+  });

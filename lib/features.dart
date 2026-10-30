@@ -3136,39 +3136,48 @@ class _LoanTabState extends State<_LoanTab> {
                   ),
                   const Divider(height: 1),
                   for (var i = 0; i < _schedule.length; i++) ...[
-                    if (i > 0) const Divider(height: 1),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      child: Row(
-                        children: [
-                          _schedCell(
-                            context,
-                            _schedule[i]['month']!.round().toString(),
-                            flex: 1,
-                            bold: true,
-                          ),
-                          _schedCell(
-                            context,
-                            NumFmt.format(_schedule[i]['payment']!.round()),
-                            flex: 3,
-                          ),
-                          _schedCell(
-                            context,
-                            NumFmt.format(_schedule[i]['interest']!.round()),
-                            flex: 3,
-                          ),
-                          _schedCell(
-                            context,
-                            NumFmt.format(_schedule[i]['principal']!.round()),
-                            flex: 3,
-                          ),
-                          _schedCell(
-                            context,
-                            NumFmt.format(_schedule[i]['balance']!.round()),
-                            flex: 3,
-                          ),
-                        ],
+                    ColoredBox(
+                      color: i.isEven
+                          ? scheme.surfaceContainerHighest
+                              .withValues(alpha: 0.35)
+                          : scheme.surface.withValues(alpha: 0.0),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Row(
+                          children: [
+                            _schedCell(
+                              context,
+                              _schedule[i]['month']!.round().toString(),
+                              flex: 1,
+                              bold: true,
+                            ),
+                            _schedCell(
+                              context,
+                              NumFmt.format(
+                                  _schedule[i]['payment']!.round()),
+                              flex: 3,
+                            ),
+                            _schedCell(
+                              context,
+                              NumFmt.format(
+                                  _schedule[i]['interest']!.round()),
+                              flex: 3,
+                            ),
+                            _schedCell(
+                              context,
+                              NumFmt.format(
+                                  _schedule[i]['principal']!.round()),
+                              flex: 3,
+                            ),
+                            _schedCell(
+                              context,
+                              NumFmt.format(
+                                  _schedule[i]['balance']!.round()),
+                              flex: 3,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -4671,9 +4680,14 @@ class Expense {
   ];
 }
 
+/// وضعیت بارگذاری هزینه‌ها — خطای خواندن با «خالی بودن» اشتباه نشود
+enum ExpenseLoadStatus { notLoaded, loaded, empty, error }
+
 class ExpenseStore {
   static const _key = 'expenses_v2';
   List<Expense> _items = [];
+  ExpenseLoadStatus loadStatus = ExpenseLoadStatus.notLoaded;
+  String? lastError;
 
   List<Expense> get items => List.unmodifiable(_items);
 
@@ -4712,16 +4726,19 @@ class ExpenseStore {
     return map;
   }
 
+  /// بارگذاری از دیسک. در صورت خطا، فهرست قبلی حافظه پاک نمی‌شود.
   Future<void> load() async {
+    lastError = null;
     try {
       final store = await LocalStore.instance;
       final raw = store.getString(_key);
       if (raw == null || raw.isEmpty) {
         _items = [];
+        loadStatus = ExpenseLoadStatus.empty;
         return;
       }
       final list = jsonDecode(raw) as List;
-      _items = list
+      final parsed = list
           .map((e) {
             try {
               return Expense.fromJson(e as Map<String, dynamic>);
@@ -4732,35 +4749,76 @@ class ExpenseStore {
           .whereType<Expense>()
           .toList()
         ..sort((a, b) => b.date.compareTo(a.date));
+      _items = parsed;
+      loadStatus = parsed.isEmpty
+          ? ExpenseLoadStatus.empty
+          : ExpenseLoadStatus.loaded;
     } catch (e) {
       debugPrint('ExpenseStore load: $e');
-      _items = [];
+      lastError = e.toString();
+      loadStatus = ExpenseLoadStatus.error;
+      // _items را خالی نکن — اگر قبلاً داده در حافظه بود حفظ شود
+      rethrow;
     }
   }
 
   Future<void> add(Expense expense) async {
+    final snapshot = List<Expense>.from(_items);
     _items.insert(0, expense);
-    await _save();
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  /// جایگزینی اتمیک (ویرایش): در صورت شکست ذخیره، فهرست قبلی برمی‌گردد.
+  Future<void> replace(Expense previous, Expense updated) async {
+    final snapshot = List<Expense>.from(_items);
+    final i = _items.indexWhere((e) => e.id == previous.id);
+    if (i >= 0) {
+      _items[i] = updated;
+    } else {
+      _items.insert(0, updated);
+    }
+    _items.sort((a, b) => b.date.compareTo(a.date));
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
   }
 
   Future<void> remove(String id) async {
+    final snapshot = List<Expense>.from(_items);
     _items.removeWhere((e) => e.id == id);
-    await _save();
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
   }
 
   Future<void> clear() async {
+    final snapshot = List<Expense>.from(_items);
     _items = [];
-    await _save();
+    try {
+      await _save();
+      loadStatus = ExpenseLoadStatus.empty;
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
   }
 
   Future<void> _save() async {
-    try {
-      final store = await LocalStore.instance;
-      final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
-      await store.setString(_key, raw);
-    } catch (e) {
-      debugPrint('ExpenseStore save: $e');
-    }
+    final store = await LocalStore.instance;
+    final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
+    await store.setString(_key, raw);
+    lastError = null;
   }
 }
 
@@ -4805,9 +4863,25 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     try {
       await _store.load().timeout(const Duration(seconds: 5));
     } catch (e) {
-      _error = 'خطا در بارگذاری';
+      _error =
+          'خطا در بارگذاری اطلاعات. داده‌های قبلی پاک نشده‌اند؛ دوباره تلاش کنید.';
     }
     if (mounted) setState(() => _loading = false);
+  }
+
+  void _showStoreError(Object e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'ذخیره انجام نشد. تغییرات اعمال نشد.',
+          style: const TextStyle(fontFamily: 'Vazirmatn'),
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   String _fmt(double v) {
@@ -4830,10 +4904,16 @@ class _ExpensesScreenState extends State<ExpensesScreen>
       ),
       builder: (ctx) => _AddSheet(initial: existing, asIncome: income),
     );
-    if (result != null) {
-      if (existing != null) await _store.remove(existing.id);
-      await _store.add(result);
-      setState(() {});
+    if (result == null) return;
+    try {
+      if (existing != null) {
+        await _store.replace(existing, result);
+      } else {
+        await _store.add(result);
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      _showStoreError(e);
     }
   }
 
@@ -4857,9 +4937,12 @@ class _ExpensesScreenState extends State<ExpensesScreen>
         ],
       ),
     );
-    if (ok == true) {
+    if (ok != true) return;
+    try {
       await _store.remove(e.id);
-      setState(() {});
+      if (mounted) setState(() {});
+    } catch (e) {
+      _showStoreError(e);
     }
   }
 
@@ -4916,8 +4999,12 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                   ),
                 );
                 if (ok == true) {
-                  await _store.clear();
-                  setState(() {});
+                  try {
+                    await _store.clear();
+                    if (mounted) setState(() {});
+                  } catch (e) {
+                    _showStoreError(e);
+                  }
                 }
               },
             ),

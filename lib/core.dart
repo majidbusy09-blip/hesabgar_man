@@ -45,11 +45,14 @@ class LocalStore {
   }
 
   Future<void> _flush() async {
-    if (_file == null) return;
+    if (_file == null) {
+      throw StateError('LocalStore: مسیر ذخیره‌سازی آماده نیست');
+    }
     try {
       await _file!.writeAsString(jsonEncode(_data), flush: true);
     } catch (e) {
       debugPrint('LocalStore flush: $e');
+      rethrow;
     }
   }
 
@@ -71,24 +74,63 @@ class LocalStore {
   }
 
   Future<void> setString(String key, String value) async {
+    final prev = _data.containsKey(key) ? _data[key] : _absent;
     _data[key] = value;
-    await _flush();
+    try {
+      await _flush();
+    } catch (e) {
+      if (identical(prev, _absent)) {
+        _data.remove(key);
+      } else {
+        _data[key] = prev;
+      }
+      rethrow;
+    }
   }
 
   Future<void> setInt(String key, int value) async {
+    final prev = _data.containsKey(key) ? _data[key] : _absent;
     _data[key] = value;
-    await _flush();
+    try {
+      await _flush();
+    } catch (e) {
+      if (identical(prev, _absent)) {
+        _data.remove(key);
+      } else {
+        _data[key] = prev;
+      }
+      rethrow;
+    }
   }
 
   Future<void> setBool(String key, bool value) async {
+    final prev = _data.containsKey(key) ? _data[key] : _absent;
     _data[key] = value;
-    await _flush();
+    try {
+      await _flush();
+    } catch (e) {
+      if (identical(prev, _absent)) {
+        _data.remove(key);
+      } else {
+        _data[key] = prev;
+      }
+      rethrow;
+    }
   }
 
   Future<void> remove(String key) async {
+    if (!_data.containsKey(key)) return;
+    final prev = _data[key];
     _data.remove(key);
-    await _flush();
+    try {
+      await _flush();
+    } catch (e) {
+      _data[key] = prev;
+      rethrow;
+    }
   }
+
+  static final Object _absent = Object();
 }
 
 // ---------- core/theme/app_colors.dart ----------

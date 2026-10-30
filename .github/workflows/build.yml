@@ -160,7 +160,7 @@ jobs:
         run: |
           # تست پیش‌فرض flutter create (counter) با اپ واقعی سازگار نیست
           rm -f test/widget_test.dart
-          flutter test test/calculator_logic_test.dart test/finance_logic_test.dart test/expense_model_test.dart test/accounting_logic_test.dart
+          flutter test test/calculator_logic_test.dart test/finance_logic_test.dart test/expense_model_test.dart test/accounting_logic_test.dart test/report_logic_test.dart
 
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons || true

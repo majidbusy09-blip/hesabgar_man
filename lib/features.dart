@@ -1964,6 +1964,52 @@ class FinanceLogic {
     };
   }
 
+  /// جدول اقساط (همان قسط ماهانه loanInstallment)
+  /// هر ردیف: month, payment, interest, principal, balance
+  static List<Map<String, double>> loanSchedule({
+    required double principal,
+    required double annualRatePercent,
+    required int months,
+  }) {
+    if (principal <= 0 || months <= 0) return const [];
+    final pmt = loanInstallment(
+      principal: principal,
+      annualRatePercent: annualRatePercent,
+      months: months,
+    );
+    if (pmt <= 0) return const [];
+
+    final r = annualRatePercent <= 0 ? 0.0 : annualRatePercent / 100 / 12;
+    var balance = principal;
+    final rows = <Map<String, double>>[];
+
+    for (var m = 1; m <= months; m++) {
+      final interest = balance * r;
+      var principalPart = pmt - interest;
+      var payment = pmt;
+
+      // ماه آخر: تسویه مانده برای خطای گرد کردن
+      if (m == months || principalPart > balance) {
+        principalPart = balance;
+        payment = principalPart + interest;
+        balance = 0;
+      } else {
+        balance -= principalPart;
+        if (balance < 0.5) balance = 0; // نزدیک صفر
+      }
+
+      rows.add({
+        'month': m.toDouble(),
+        'payment': payment,
+        'interest': interest,
+        'principal': principalPart,
+        'balance': balance < 0 ? 0 : balance,
+      });
+      if (balance <= 0) break;
+    }
+    return rows;
+  }
+
   /// سود مرکب سپرده
   /// [principal] مبلغ اولیه
   /// [annualRatePercent] نرخ سالانه
@@ -2836,6 +2882,7 @@ class _LoanTabState extends State<_LoanTab> {
   final _rate = TextEditingController(text: '18');
   final _months = TextEditingController(text: '12');
   Map<String, double>? _result;
+  List<Map<String, double>> _schedule = const [];
   String? _message;
 
   void _calc() {
@@ -2847,6 +2894,7 @@ class _LoanTabState extends State<_LoanTab> {
     if (principal <= 0) {
       setState(() {
         _result = null;
+        _schedule = const [];
         _message = 'مبلغ وام را به‌درستی وارد کنید.';
       });
       return;
@@ -2854,6 +2902,7 @@ class _LoanTabState extends State<_LoanTab> {
     if (months <= 0) {
       setState(() {
         _result = null;
+        _schedule = const [];
         _message = 'مدت بازپرداخت باید حداقل ۱ ماه باشد.';
       });
       return;
@@ -2861,6 +2910,7 @@ class _LoanTabState extends State<_LoanTab> {
     if (rate < 0) {
       setState(() {
         _result = null;
+        _schedule = const [];
         _message = 'نرخ سود نمی‌تواند منفی باشد.';
       });
       return;
@@ -2873,15 +2923,21 @@ class _LoanTabState extends State<_LoanTab> {
         annualRatePercent: rate,
         months: months,
       );
+      _schedule = FinanceLogic.loanSchedule(
+        principal: principal,
+        annualRatePercent: rate,
+        months: months,
+      );
     });
   }
 
   /// با تغییر هر ورودی، نتیجهٔ قبلی دیگر معتبر نیست تا دوباره محاسبه شود.
   void _invalidateResult() {
-    if (_result == null && _message == null) return;
+    if (_result == null && _message == null && _schedule.isEmpty) return;
     if (!mounted) return;
     setState(() {
       _result = null;
+      _schedule = const [];
       _message = null;
     });
   }
@@ -3049,10 +3105,115 @@ class _LoanTabState extends State<_LoanTab> {
               ],
             ),
           ),
+          if (_schedule.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            sectionTitle('جدول اقساط'),
+            Text(
+              'برای هر ماه: قسط، سهم سود، سهم اصل و مانده وام',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 11.5,
+                color: scheme.onSurface.withValues(alpha: 0.45),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              margin: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    child: Row(
+                      children: [
+                        _schedHead(context, 'ماه', flex: 1),
+                        _schedHead(context, 'قسط', flex: 3),
+                        _schedHead(context, 'سود', flex: 3),
+                        _schedHead(context, 'اصل', flex: 3),
+                        _schedHead(context, 'مانده', flex: 3),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  for (var i = 0; i < _schedule.length; i++) ...[
+                    if (i > 0) const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      child: Row(
+                        children: [
+                          _schedCell(
+                            context,
+                            _schedule[i]['month']!.round().toString(),
+                            flex: 1,
+                            bold: true,
+                          ),
+                          _schedCell(
+                            context,
+                            NumFmt.format(_schedule[i]['payment']!.round()),
+                            flex: 3,
+                          ),
+                          _schedCell(
+                            context,
+                            NumFmt.format(_schedule[i]['interest']!.round()),
+                            flex: 3,
+                          ),
+                          _schedCell(
+                            context,
+                            NumFmt.format(_schedule[i]['principal']!.round()),
+                            flex: 3,
+                          ),
+                          _schedCell(
+                            context,
+                            NumFmt.format(_schedule[i]['balance']!.round()),
+                            flex: 3,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ],
       ],
     );
   }
+}
+
+Widget _schedHead(BuildContext context, String t, {int flex = 1}) {
+  return Expanded(
+    flex: flex,
+    child: Text(
+      t,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontFamily: 'Vazirmatn',
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+      ),
+    ),
+  );
+}
+
+Widget _schedCell(BuildContext context, String t,
+    {int flex = 1, bool bold = false}) {
+  return Expanded(
+    flex: flex,
+    child: Text(
+      t,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: 'Vazirmatn',
+        fontSize: 11,
+        fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+      ),
+    ),
+  );
 }
 
 // ---------- سود و زیان فروش ----------

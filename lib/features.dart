@@ -8969,6 +8969,52 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           ),
         ],
         const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () async {
+              try {
+                final file = await FinancialDataPort.buildReportPdf(
+                  periodLabel: periodLabel,
+                  income: inc,
+                  expense: exp,
+                  balance: bal,
+                  txCount: scope.length,
+                  categories: {
+                    for (final e in cats.entries)
+                      _categories.displayName(e.key): e.value,
+                  },
+                  topCategory: topCat == null
+                      ? null
+                      : _categories.displayName(topCat),
+                  changePercent: changePct,
+                );
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(
+                    'PDF ذخیره شد: ${file.path}',
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                  ),
+                  duration: const Duration(seconds: 4),
+                ));
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(
+                    'خطا در ساخت PDF: $e',
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                  ),
+                ));
+              }
+            },
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+            label: const Text(
+              'خروجی PDF',
+              style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12.5),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
         Card(
           margin: EdgeInsets.zero,
           child: Padding(
@@ -11198,12 +11244,286 @@ class _ThemeGalleryScreenState extends State<ThemeGalleryScreen> {
 // ---------- features/settings/presentation/settings_screen.dart ----------
 
 // ---------- راهنمای داخل اپ (با هر قابلیت جدید این متن را به‌روز کن) ----------
+// ---------- پشتیبان‌گیری، CSV و PDF ----------
+class FinancialDataPort {
+  static const formatVersion = 1;
+  static const keys = [
+    'expenses_v2',
+    'budgets_v1',
+    'categories_v1',
+    'planned_v1',
+    'recurring_v1',
+    'savings_v1',
+    'reminders_v1',
+  ];
+
+  static Future<Map<String, dynamic>> buildBackupMap() async {
+    final store = await LocalStore.instance;
+    final data = <String, dynamic>{};
+    for (final k in keys) {
+      final v = store.getString(k);
+      if (v != null && v.isNotEmpty) {
+        try {
+          data[k] = jsonDecode(v);
+        } catch (_) {
+          data[k] = v;
+        }
+      } else {
+        data[k] = [];
+      }
+    }
+    return {
+      'app': 'hesabgar_man',
+      'formatVersion': formatVersion,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'data': data,
+    };
+  }
+
+  static Future<String> buildBackupJson() async {
+    final map = await buildBackupMap();
+    return jsonEncode(map);
+  }
+
+  static Future<String> buildTransactionsCsv() async {
+    final store = await LocalStore.instance;
+    final raw = store.getString('expenses_v2');
+    final buf = StringBuffer();
+    buf.writeln('id,title,amount,category,date,note,isIncome');
+    if (raw == null || raw.isEmpty) return buf.toString();
+    final list = jsonDecode(raw) as List;
+    for (final e in list) {
+      if (e is! Map) continue;
+      String esc(dynamic v) {
+        final s = '${v ?? ''}'.replaceAll('"', '""');
+        return '"$s"';
+      }
+      buf.writeln([
+        esc(e['id']),
+        esc(e['title']),
+        esc(e['amount']),
+        esc(e['category']),
+        esc(e['date']),
+        esc(e['note']),
+        esc(e['isIncome']),
+      ].join(','));
+    }
+    return buf.toString();
+  }
+
+  static Future<File> writeToDocuments(String name, String content) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, name));
+    await file.writeAsString(content, flush: true);
+    return file;
+  }
+
+  static Future<String> restoreFromJson(String raw, {bool replace = true}) async {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) {
+      throw FormatException('فایل پشتیبان نامعتبر است');
+    }
+    final map = Map<String, dynamic>.from(decoded);
+    if (map['app'] != null && map['app'] != 'hesabgar_man') {
+      throw FormatException('این فایل برای حسابگر من نیست');
+    }
+    final data = map['data'];
+    if (data is! Map) {
+      throw FormatException('بخش data در پشتیبان پیدا نشد');
+    }
+    final store = await LocalStore.instance;
+    final safety = await buildBackupJson();
+    await writeToDocuments('hesabgar_autosave_before_restore.json', safety);
+
+    for (final k in keys) {
+      if (!data.containsKey(k)) continue;
+      final val = data[k];
+      final encoded = val is String ? val : jsonEncode(val);
+      jsonDecode(encoded);
+      await store.setString(k, encoded);
+    }
+    return 'ok';
+  }
+
+  /// گزارش مالی PDF سبک
+  static Future<File> buildReportPdf({
+    required String periodLabel,
+    required double income,
+    required double expense,
+    required double balance,
+    required int txCount,
+    required Map<String, double> categories,
+    String? topCategory,
+    double? changePercent,
+  }) async {
+    pw.Font? font;
+    pw.Font? fontBold;
+    try {
+      final reg = await rootBundle.load('assets/fonts/Vazirmatn-Regular.ttf');
+      font = pw.Font.ttf(reg);
+    } catch (_) {}
+    try {
+      final bold = await rootBundle.load('assets/fonts/Vazirmatn-Bold.ttf');
+      fontBold = pw.Font.ttf(bold);
+    } catch (_) {
+      fontBold = font;
+    }
+
+    final doc = pw.Document();
+    final theme = font != null
+        ? pw.ThemeData.withFont(base: font, bold: fontBold ?? font)
+        : pw.ThemeData.withFont(
+            base: pw.Font.helvetica(),
+            bold: pw.Font.helveticaBold(),
+          );
+
+    String money(double v) {
+      final n = v.round();
+      final s = n.abs().toString();
+      final buf = StringBuffer();
+      for (var i = 0; i < s.length; i++) {
+        if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+        buf.write(s[i]);
+      }
+      final body = buf.toString();
+      return n < 0 ? '-$body' : body;
+    }
+
+    final catRows = categories.entries.toList();
+    final nowJ = Jalali.fromDateTime(DateTime.now());
+
+    doc.addPage(
+      pw.MultiPage(
+        theme: theme,
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        textDirection: pw.TextDirection.rtl,
+        build: (context) => [
+          pw.Text(
+            'گزارش مالی — حسابگر من',
+            style: pw.TextStyle(
+              fontSize: 18,
+              fontWeight: pw.FontWeight.bold,
+            ),
+            textAlign: pw.TextAlign.center,
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text(
+            periodLabel,
+            style: const pw.TextStyle(fontSize: 13),
+            textAlign: pw.TextAlign.center,
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'تاریخ صدور: ${nowJ.day} ${Jalali.monthNames[nowJ.month - 1]} ${nowJ.year}',
+            style: const pw.TextStyle(fontSize: 10),
+            textAlign: pw.TextAlign.center,
+          ),
+          pw.SizedBox(height: 20),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.grey400),
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Column(
+              children: [
+                _pdfRow('درآمد', money(income)),
+                _pdfRow('هزینه', money(expense)),
+                _pdfRow('مانده', money(balance)),
+                _pdfRow('تعداد تراکنش', '$txCount'),
+                if (topCategory != null)
+                  _pdfRow('بیشترین دسته هزینه', topCategory),
+                if (changePercent != null)
+                  _pdfRow(
+                    'تغییر هزینه نسبت به دوره قبل',
+                    '${changePercent >= 0 ? '+' : ''}${changePercent.toStringAsFixed(1)}٪',
+                  ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 18),
+          pw.Text(
+            'سهم دسته‌های هزینه',
+            style: pw.TextStyle(
+              fontSize: 13,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          if (catRows.isEmpty)
+            pw.Text(
+              'در این بازه هزینه‌ای ثبت نشده است.',
+              style: const pw.TextStyle(fontSize: 11),
+            )
+          else
+            pw.TableHelper.fromTextArray(
+              headers: ['دسته', 'مبلغ', 'سهم'],
+              data: [
+                for (final e in catRows)
+                  [
+                    e.key,
+                    money(e.value),
+                    expense > 0
+                        ? '${((e.value / expense) * 100).toStringAsFixed(0)}٪'
+                        : '—',
+                  ],
+              ],
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 11,
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 10),
+              cellAlignment: pw.Alignment.centerRight,
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColors.grey300,
+              ),
+            ),
+          pw.SizedBox(height: 24),
+          pw.Text(
+            'این گزارش از داده‌های ثبت‌شده در اپ ساخته شده و جنبه رسمی ندارد.',
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+            textAlign: pw.TextAlign.center,
+          ),
+        ],
+      ),
+    );
+
+    final bytes = await doc.save();
+    final name =
+        'hesabgar_report_${DateTime.now().millisecondsSinceEpoch}.pdf';
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, name));
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
+  }
+
+  static pw.Widget _pdfRow(String label, String value) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 3),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(label, style: const pw.TextStyle(fontSize: 11)),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AppGuide {
   static const String title = 'راهنمای حسابگر من';
   static const String versionLabel = '۱.۰.۷';
 
   /// متن راهنما — خلاصه و قابل‌فهم برای همه
-  static const String body = 'حسابگر من سه ماشین‌حساب و چند ابزار روزمره را یک‌جا جمع کرده است.\n\n■ ماشین‌حساب\n• ساده: جمع، تفریق، ضرب، تقسیم و درصد\n• علمی: سینوس، لگاریتم، ریشه، توان و حافظه — با دکمه توابع در بالای صفحه\n• حسابداری: مثل ماشین‌حساب اداری\n  – عدد بزنید، بعد += یا −=\n  – برای تکرار همان عدد، دوباره همان دکمه را بزنید\n  – ضرب و تقسیم: اول عمل، بعد عدد دوم، بعد =\n  – مثال درصد: ۱۰۰ × ۲۵ ٪ = می‌شود ۲۵\n\nآیکون ساعت بالای صفحه، تاریخچه را نشان می‌دهد و تا وقتی خودتان پاک نکنید می‌ماند.\n\n■ مالی و هزینه\n• هزینه‌ها: ثبت خرج با تاریخ شمسی\n• مالی: سود سپرده، وام و قیمت طلا (با به‌روزرسانی آنلاین)\n• مبدل: تبدیل واحدها\n\n■ تقویم\nشمسی، میلادی و قمری در یک صفحه؛ با لمس هر روز مناسبت همان روز را ببینید.\n\n■ تنظیمات و ظاهر\nاز تنظیمات تم، صدا و ویبره را عوض کنید. می‌توانید از یک عکس، تم اختصاصی بسازید.\n\nنکته: اعداد به‌صورت سه‌رقم‌سه‌رقم نمایش داده می‌شوند تا خواندن راحت‌تر باشد.';
+  static const String body = 'حسابگر من سه ماشین‌حساب و چند ابزار روزمره را یک‌جا جمع کرده است.\n\n■ ماشین‌حساب\n• ساده، علمی و حسابداری\n• تاریخچه تا پاک‌کردن دستی می‌ماند\n\n■ مدیریت مالی من\n• ثبت درآمد و هزینه با تاریخ شمسی و دسته‌های سفارشی\n• بودجه ماه و دسته، گزارش ماهانه/سالانه\n• برنامه‌های آینده و تراکنش تکرارشونده\n• اهداف پس‌انداز و یادآوری داخل برنامه\n• پشتیبان‌گیری، CSV و PDF گزارش از تنظیمات/گزارش\n\n■ مالی\nسود سپرده، وام، جدول اقساط، طلا، تخفیف و مالیات\n\n■ تقویم\nشمسی، میلادی و قمری با مناسبت‌ها\n\n■ تنظیمات\nتم، صدا، ویبره، تم از عکس، پشتیبان اطلاعات\n\nاعداد سه‌رقم‌سه‌رقم نمایش داده می‌شوند.';
 }
 
 class GuideScreen extends StatelessWidget {
@@ -11379,6 +11699,174 @@ class SettingsScreen extends StatelessWidget {
                   onChanged: (v) {
                     feedback.setSound(v);
                     if (v) feedback.playTap();
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(Icons.backup_outlined, color: scheme.primary),
+                  title: const Text('پشتیبان‌گیری اطلاعات مالی',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                  subtitle: const Text('ذخیره JSON در حافظه برنامه + کپی',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                  onTap: () async {
+                    try {
+                      final json = await FinancialDataPort.buildBackupJson();
+                      final file = await FinancialDataPort.writeToDocuments(
+                        'hesabgar_backup.json',
+                        json,
+                      );
+                      await Clipboard.setData(ClipboardData(text: json));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(
+                            'پشتیبان ساخته و کپی شد: ${file.path}',
+                            style: const TextStyle(fontFamily: 'Vazirmatn'),
+                          ),
+                          duration: const Duration(seconds: 4),
+                        ));
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('خطا در پشتیبان: $e',
+                              style: const TextStyle(fontFamily: 'Vazirmatn')),
+                        ));
+                      }
+                    }
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(Icons.restore, color: scheme.primary),
+                  title: const Text('بازیابی از پشتیبان',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                  subtitle: const Text('جای‌گذاری متن JSON پشتیبان',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                  onTap: () async {
+                    final ctrl = TextEditingController();
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('بازیابی',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                        content: SizedBox(
+                          width: double.maxFinite,
+                          child: TextField(
+                            controller: ctrl,
+                            maxLines: 8,
+                            style: const TextStyle(
+                                fontFamily: 'Vazirmatn', fontSize: 12),
+                            decoration: const InputDecoration(
+                              hintText: 'محتوای فایل JSON را اینجا بچسبانید',
+                              hintStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('انصراف',
+                                style: TextStyle(fontFamily: 'Vazirmatn')),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('بازیابی',
+                                style: TextStyle(
+                                    fontFamily: 'Vazirmatn',
+                                    color: Colors.red)),
+                          ),
+                        ],
+                      ),
+                    );
+                    final raw = ctrl.text.trim();
+                    ctrl.dispose();
+                    if (ok != true || raw.isEmpty) return;
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('تأیید بازیابی',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                        content: const Text(
+                          'اطلاعات مالی فعلی با پشتیبان جایگزین می‌شود. قبل از بازیابی یک نسخه ایمنی خودکار ذخیره می‌شود.',
+                          style: TextStyle(fontFamily: 'Vazirmatn'),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('انصراف',
+                                style: TextStyle(fontFamily: 'Vazirmatn')),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('ادامه',
+                                style: TextStyle(fontFamily: 'Vazirmatn')),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm != true) return;
+                    try {
+                      await FinancialDataPort.restoreFromJson(raw);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'بازیابی انجام شد. یک‌بار برنامه را ببندید و دوباره باز کنید.',
+                              style: TextStyle(fontFamily: 'Vazirmatn'),
+                            ),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('بازیابی ناموفق: $e',
+                              style: const TextStyle(fontFamily: 'Vazirmatn')),
+                        ));
+                      }
+                    }
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(Icons.table_view_outlined, color: scheme.primary),
+                  title: const Text('خروجی CSV تراکنش‌ها',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                  subtitle: const Text('قابل باز شدن در Excel',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                  onTap: () async {
+                    try {
+                      final csv = await FinancialDataPort.buildTransactionsCsv();
+                      final file = await FinancialDataPort.writeToDocuments(
+                        'hesabgar_transactions.csv',
+                        csv,
+                      );
+                      await Clipboard.setData(ClipboardData(text: csv));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(
+                            'CSV ذخیره و کپی شد: ${file.path}',
+                            style: const TextStyle(fontFamily: 'Vazirmatn'),
+                          ),
+                          duration: const Duration(seconds: 4),
+                        ));
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('خطا: $e',
+                              style: const TextStyle(fontFamily: 'Vazirmatn')),
+                        ));
+                      }
+                    }
                   },
                 ),
               ],

@@ -5368,6 +5368,240 @@ class PlannedStore {
   }
 }
 
+// ---------- تراکنش‌های تکرارشونده ----------
+class RecurringRule {
+  final String id;
+  final String title;
+  final double amount;
+  final String category;
+  final bool isIncome;
+  final String? note;
+  /// monthly | weekly
+  final String interval;
+  final DateTime startDate;
+  final DateTime? endDate;
+  final bool active;
+  final DateTime? lastGenerated;
+
+  RecurringRule({
+    required this.id,
+    required this.title,
+    required this.amount,
+    required this.category,
+    this.isIncome = false,
+    this.note,
+    this.interval = 'monthly',
+    required this.startDate,
+    this.endDate,
+    this.active = true,
+    this.lastGenerated,
+  });
+
+  RecurringRule copyWith({
+    bool? active,
+    DateTime? lastGenerated,
+    String? title,
+    double? amount,
+    String? category,
+    String? note,
+    String? interval,
+    DateTime? startDate,
+    DateTime? endDate,
+    bool clearEnd = false,
+  }) =>
+      RecurringRule(
+        id: id,
+        title: title ?? this.title,
+        amount: amount ?? this.amount,
+        category: category ?? this.category,
+        isIncome: isIncome,
+        note: note ?? this.note,
+        interval: interval ?? this.interval,
+        startDate: startDate ?? this.startDate,
+        endDate: clearEnd ? null : (endDate ?? this.endDate),
+        active: active ?? this.active,
+        lastGenerated: lastGenerated ?? this.lastGenerated,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'amount': amount,
+        'category': category,
+        'isIncome': isIncome,
+        'note': note,
+        'interval': interval,
+        'startDate': startDate.toIso8601String(),
+        'endDate': endDate?.toIso8601String(),
+        'active': active,
+        'lastGenerated': lastGenerated?.toIso8601String(),
+      };
+
+  factory RecurringRule.fromJson(Map<String, dynamic> json) => RecurringRule(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        amount: (json['amount'] as num).toDouble(),
+        category: json['category'] as String? ?? 'سایر',
+        isIncome: json['isIncome'] as bool? ?? false,
+        note: json['note'] as String?,
+        interval: json['interval'] as String? ?? 'monthly',
+        startDate: DateTime.tryParse(json['startDate'] as String? ?? '') ??
+            DateTime.now(),
+        endDate: json['endDate'] != null
+            ? DateTime.tryParse(json['endDate'] as String)
+            : null,
+        active: json['active'] as bool? ?? true,
+        lastGenerated: json['lastGenerated'] != null
+            ? DateTime.tryParse(json['lastGenerated'] as String)
+            : null,
+      );
+}
+
+class RecurringStore {
+  static const _key = 'recurring_v1';
+  List<RecurringRule> _items = [];
+  String? lastError;
+
+  List<RecurringRule> get items => List.unmodifiable(_items);
+
+  Future<void> load() async {
+    lastError = null;
+    try {
+      final store = await LocalStore.instance;
+      final raw = store.getString(_key);
+      if (raw == null || raw.isEmpty) {
+        _items = [];
+        return;
+      }
+      final list = jsonDecode(raw) as List;
+      _items = list
+          .map((e) {
+            try {
+              return RecurringRule.fromJson(e as Map<String, dynamic>);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<RecurringRule>()
+          .toList();
+    } catch (e) {
+      debugPrint('RecurringStore load: $e');
+      lastError = e.toString();
+      rethrow;
+    }
+  }
+
+  Future<void> upsert(RecurringRule rule) async {
+    final snapshot = List<RecurringRule>.from(_items);
+    final i = _items.indexWhere((e) => e.id == rule.id);
+    if (i >= 0) {
+      _items[i] = rule;
+    } else {
+      _items.add(rule);
+    }
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> remove(String id) async {
+    final snapshot = List<RecurringRule>.from(_items);
+    _items.removeWhere((e) => e.id == id);
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  static DateTime _addMonth(DateTime d) {
+    var y = d.year;
+    var m = d.month + 1;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+    final last = DateTime(y, m + 1, 0).day;
+    final day = d.day.clamp(1, last);
+    return DateTime(y, m, day);
+  }
+
+  static DateTime? nextDue(RecurringRule rule, {DateTime? from}) {
+    final today = _dateOnly(from ?? DateTime.now());
+    if (!rule.active) return null;
+    if (rule.endDate != null &&
+        _dateOnly(rule.endDate!).isBefore(today)) {
+      return null;
+    }
+    DateTime cursor;
+    if (rule.lastGenerated != null) {
+      cursor = rule.interval == 'weekly'
+          ? _dateOnly(rule.lastGenerated!).add(const Duration(days: 7))
+          : _addMonth(_dateOnly(rule.lastGenerated!));
+    } else {
+      cursor = _dateOnly(rule.startDate);
+    }
+    if (rule.endDate != null && cursor.isAfter(_dateOnly(rule.endDate!))) {
+      return null;
+    }
+    return cursor;
+  }
+
+  Future<int> generateDue(ExpenseStore expenseStore) async {
+    final today = _dateOnly(DateTime.now());
+    var created = 0;
+    final snapshot = List<RecurringRule>.from(_items);
+
+    try {
+      for (var i = 0; i < _items.length; i++) {
+        var rule = _items[i];
+        if (!rule.active) continue;
+        var safety = 0;
+        while (safety < 36) {
+          safety++;
+          final next = nextDue(rule);
+          if (next == null || next.isAfter(today)) break;
+          if (rule.endDate != null &&
+              next.isAfter(_dateOnly(rule.endDate!))) {
+            break;
+          }
+          await expenseStore.add(Expense(
+            id: 'rec_${rule.id}_${next.millisecondsSinceEpoch}',
+            title: rule.title,
+            amount: rule.amount,
+            category: rule.category,
+            date: next,
+            note: rule.note == null
+                ? 'تکرارشونده'
+                : '${rule.note} · تکرارشونده',
+            isIncome: rule.isIncome,
+          ));
+          rule = rule.copyWith(lastGenerated: next);
+          _items[i] = rule;
+          created++;
+        }
+      }
+      if (created > 0) await _save();
+      return created;
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> _save() async {
+    final store = await LocalStore.instance;
+    final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
+    await store.setString(_key, raw);
+  }
+}
+
 // ---------- اهداف پس‌انداز و یادآوری داخل‌برنامه ----------
 class SavingsGoal {
   final String id;
@@ -5632,6 +5866,9 @@ class _ExpensesScreenState extends State<ExpensesScreen>
   final _budgets = BudgetStore();
   final _categories = CategoryStore();
   final _planned = PlannedStore();
+  final _recurring = RecurringStore();
+  final _savings = SavingsStore();
+  final _reminders = ReminderStore();
   bool _loading = true;
   String? _error;
   late TabController _tab;
@@ -5679,6 +5916,16 @@ class _ExpensesScreenState extends State<ExpensesScreen>
       } catch (_) {}
       try {
         await _planned.load().timeout(const Duration(seconds: 5));
+      } catch (_) {}
+      try {
+        await _recurring.load().timeout(const Duration(seconds: 5));
+        await _recurring.generateDue(_store);
+      } catch (_) {}
+      try {
+        await _savings.load().timeout(const Duration(seconds: 5));
+      } catch (_) {}
+      try {
+        await _reminders.load().timeout(const Duration(seconds: 5));
       } catch (_) {}
     } catch (e) {
       _error =

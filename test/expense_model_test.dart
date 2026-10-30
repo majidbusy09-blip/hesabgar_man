@@ -76,8 +76,6 @@ void main() {
       );
     });
   });
-}
-
 
   group('expenses_v2 compatibility', () {
     test('legacy JSON map still parses', () {
@@ -94,3 +92,4 @@ void main() {
       expect(e.note, isNull);
     });
   });
+}

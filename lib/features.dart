@@ -533,7 +533,7 @@ class CalculatorLogic {
       var expr = _prepareExpression(formula);
       if (expr == null) return null;
 
-      final parser = ShuntingYardParser();
+      final parser = Parser();
       final exp = parser.parse(expr);
       final cm = ContextModel();
       final value = exp.evaluate(EvaluationType.REAL, cm);

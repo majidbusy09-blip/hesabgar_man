@@ -5246,6 +5246,378 @@ class BudgetStore {
   }
 }
 
+// ---------- برنامه‌های آینده (هزینه/درآمد برنامه‌ریزی‌شده) ----------
+class PlannedItem {
+  final String id;
+  final String title;
+  final double amount;
+  final String category;
+  final DateTime dueDate;
+  final String? note;
+  final bool isIncome;
+
+  PlannedItem({
+    required this.id,
+    required this.title,
+    required this.amount,
+    required this.category,
+    required this.dueDate,
+    this.note,
+    this.isIncome = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'amount': amount,
+        'category': category,
+        'dueDate': dueDate.toIso8601String(),
+        'note': note,
+        'isIncome': isIncome,
+      };
+
+  factory PlannedItem.fromJson(Map<String, dynamic> json) => PlannedItem(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        amount: (json['amount'] as num).toDouble(),
+        category: json['category'] as String? ?? 'سایر',
+        dueDate: DateTime.tryParse(json['dueDate'] as String? ?? '') ??
+            DateTime.now(),
+        note: json['note'] as String?,
+        isIncome: json['isIncome'] as bool? ?? false,
+      );
+}
+
+class PlannedStore {
+  static const _key = 'planned_v1';
+  List<PlannedItem> _items = [];
+  String? lastError;
+
+  List<PlannedItem> get items {
+    final list = List<PlannedItem>.from(_items);
+    list.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    return list;
+  }
+
+  double get upcomingExpenseTotal => _items
+      .where((e) => !e.isIncome)
+      .fold(0.0, (s, e) => s + e.amount);
+
+  double get upcomingIncomeTotal => _items
+      .where((e) => e.isIncome)
+      .fold(0.0, (s, e) => s + e.amount);
+
+  Future<void> load() async {
+    lastError = null;
+    try {
+      final store = await LocalStore.instance;
+      final raw = store.getString(_key);
+      if (raw == null || raw.isEmpty) {
+        _items = [];
+        return;
+      }
+      final list = jsonDecode(raw) as List;
+      _items = list
+          .map((e) {
+            try {
+              return PlannedItem.fromJson(e as Map<String, dynamic>);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<PlannedItem>()
+          .toList();
+    } catch (e) {
+      debugPrint('PlannedStore load: $e');
+      lastError = e.toString();
+      rethrow;
+    }
+  }
+
+  Future<void> upsert(PlannedItem item) async {
+    final snapshot = List<PlannedItem>.from(_items);
+    final i = _items.indexWhere((e) => e.id == item.id);
+    if (i >= 0) {
+      _items[i] = item;
+    } else {
+      _items.add(item);
+    }
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> remove(String id) async {
+    final snapshot = List<PlannedItem>.from(_items);
+    _items.removeWhere((e) => e.id == id);
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> _save() async {
+    final store = await LocalStore.instance;
+    final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
+    await store.setString(_key, raw);
+  }
+}
+
+// ---------- اهداف پس‌انداز و یادآوری داخل‌برنامه ----------
+class SavingsGoal {
+  final String id;
+  final String title;
+  final double target;
+  final double saved;
+  final DateTime? deadline;
+  final DateTime createdAt;
+
+  SavingsGoal({
+    required this.id,
+    required this.title,
+    required this.target,
+    this.saved = 0,
+    this.deadline,
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  double get remaining => (target - saved).clamp(0, double.infinity);
+  double get progress => target > 0 ? (saved / target).clamp(0.0, 1.0) : 0.0;
+
+  SavingsGoal copyWith({
+    String? title,
+    double? target,
+    double? saved,
+    DateTime? deadline,
+    bool clearDeadline = false,
+  }) =>
+      SavingsGoal(
+        id: id,
+        title: title ?? this.title,
+        target: target ?? this.target,
+        saved: saved ?? this.saved,
+        deadline: clearDeadline ? null : (deadline ?? this.deadline),
+        createdAt: createdAt,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'target': target,
+        'saved': saved,
+        'deadline': deadline?.toIso8601String(),
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  factory SavingsGoal.fromJson(Map<String, dynamic> json) => SavingsGoal(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        target: (json['target'] as num).toDouble(),
+        saved: (json['saved'] as num?)?.toDouble() ?? 0,
+        deadline: json['deadline'] != null
+            ? DateTime.tryParse(json['deadline'] as String)
+            : null,
+        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+            DateTime.now(),
+      );
+}
+
+class SavingsStore {
+  static const _key = 'savings_v1';
+  List<SavingsGoal> _items = [];
+
+  List<SavingsGoal> get items => List.unmodifiable(_items);
+
+  Future<void> load() async {
+    try {
+      final store = await LocalStore.instance;
+      final raw = store.getString(_key);
+      if (raw == null || raw.isEmpty) {
+        _items = [];
+        return;
+      }
+      final list = jsonDecode(raw) as List;
+      _items = list
+          .map((e) {
+            try {
+              return SavingsGoal.fromJson(e as Map<String, dynamic>);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<SavingsGoal>()
+          .toList();
+    } catch (e) {
+      debugPrint('SavingsStore load: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> upsert(SavingsGoal g) async {
+    final snapshot = List<SavingsGoal>.from(_items);
+    final i = _items.indexWhere((e) => e.id == g.id);
+    if (i >= 0) {
+      _items[i] = g;
+    } else {
+      _items.add(g);
+    }
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> remove(String id) async {
+    final snapshot = List<SavingsGoal>.from(_items);
+    _items.removeWhere((e) => e.id == id);
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> _save() async {
+    final store = await LocalStore.instance;
+    await store.setString(
+        _key, jsonEncode(_items.map((e) => e.toJson()).toList()));
+  }
+}
+
+class AppReminder {
+  final String id;
+  final String title;
+  final DateTime dueDate;
+  final bool enabled;
+  final String? note;
+
+  AppReminder({
+    required this.id,
+    required this.title,
+    required this.dueDate,
+    this.enabled = true,
+    this.note,
+  });
+
+  AppReminder copyWith({
+    String? title,
+    DateTime? dueDate,
+    bool? enabled,
+    String? note,
+  }) =>
+      AppReminder(
+        id: id,
+        title: title ?? this.title,
+        dueDate: dueDate ?? this.dueDate,
+        enabled: enabled ?? this.enabled,
+        note: note ?? this.note,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'dueDate': dueDate.toIso8601String(),
+        'enabled': enabled,
+        'note': note,
+      };
+
+  factory AppReminder.fromJson(Map<String, dynamic> json) => AppReminder(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        dueDate: DateTime.tryParse(json['dueDate'] as String? ?? '') ??
+            DateTime.now(),
+        enabled: json['enabled'] as bool? ?? true,
+        note: json['note'] as String?,
+      );
+}
+
+class ReminderStore {
+  static const _key = 'reminders_v1';
+  List<AppReminder> _items = [];
+
+  List<AppReminder> get items {
+    final list = List<AppReminder>.from(_items);
+    list.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    return list;
+  }
+
+  List<AppReminder> get upcomingEnabled {
+    final today = DateTime.now();
+    final start = DateTime(today.year, today.month, today.day);
+    return items
+        .where((r) =>
+            r.enabled &&
+            !r.dueDate.isBefore(start.subtract(const Duration(days: 1))))
+        .toList();
+  }
+
+  Future<void> load() async {
+    try {
+      final store = await LocalStore.instance;
+      final raw = store.getString(_key);
+      if (raw == null || raw.isEmpty) {
+        _items = [];
+        return;
+      }
+      final list = jsonDecode(raw) as List;
+      _items = list
+          .map((e) {
+            try {
+              return AppReminder.fromJson(e as Map<String, dynamic>);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<AppReminder>()
+          .toList();
+    } catch (e) {
+      debugPrint('ReminderStore load: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> upsert(AppReminder r) async {
+    final snapshot = List<AppReminder>.from(_items);
+    final i = _items.indexWhere((e) => e.id == r.id);
+    if (i >= 0) {
+      _items[i] = r;
+    } else {
+      _items.add(r);
+    }
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> remove(String id) async {
+    final snapshot = List<AppReminder>.from(_items);
+    _items.removeWhere((e) => e.id == id);
+    try {
+      await _save();
+    } catch (e) {
+      _items = snapshot;
+      rethrow;
+    }
+  }
+
+  Future<void> _save() async {
+    final store = await LocalStore.instance;
+    await store.setString(
+        _key, jsonEncode(_items.map((e) => e.toJson()).toList()));
+  }
+}
+
 // ---------- features/expenses/presentation/expenses_screen.dart ----------
 class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({super.key});
@@ -5259,6 +5631,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
   final _store = ExpenseStore();
   final _budgets = BudgetStore();
   final _categories = CategoryStore();
+  final _planned = PlannedStore();
   bool _loading = true;
   String? _error;
   late TabController _tab;
@@ -5277,7 +5650,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     final j = Jalali.fromDateTime(DateTime.now());
     _filterYear = j.year;
     _filterMonth = j.month;
-    _tab = TabController(length: 5, vsync: this);
+    _tab = TabController(length: 7, vsync: this);
     _searchCtrl.addListener(() => setState(() {}));
     _load();
   }
@@ -5303,6 +5676,9 @@ class _ExpensesScreenState extends State<ExpensesScreen>
       }
       try {
         await _categories.load().timeout(const Duration(seconds: 5));
+      } catch (_) {}
+      try {
+        await _planned.load().timeout(const Duration(seconds: 5));
       } catch (_) {}
     } catch (e) {
       _error =
@@ -5473,6 +5849,8 @@ class _ExpensesScreenState extends State<ExpensesScreen>
             Tab(text: 'خلاصه'),
             Tab(text: 'تراکنش‌ها'),
             Tab(text: 'بودجه'),
+            Tab(text: 'آینده'),
+            Tab(text: 'اهداف'),
             Tab(text: 'گزارش'),
             Tab(text: 'دسته‌ها'),
           ],
@@ -5578,6 +5956,8 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                           _buildSummary(scheme, monthExp, monthInc, monthBal),
                           _buildList(),
                           _buildBudgets(scheme),
+                          _buildPlanned(scheme),
+                          _buildGoals(scheme),
                           _buildReports(scheme),
                           _buildCategories(scheme),
                         ],
@@ -5753,6 +6133,72 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           ],
         ),
         _buildBudgetOverviewCard(scheme, exp),
+        if (_planned.items.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'برنامه‌های پیش‌رو',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface.withValues(alpha: 0.85),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => _tab.animateTo(3),
+                child: const Text(
+                  'همه',
+                  style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12.5),
+                ),
+              ),
+            ],
+          ),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'تعهد هزینه: ${_fmt(_planned.upcomingExpenseTotal)}',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 12.5,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        'درآمد مورد انتظار: ${_fmt(_planned.upcomingIncomeTotal)}',
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 12.5,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'این مبالغ در هزینه و درآمد واقعی ماه محاسبه نمی‌شوند.',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 11,
+                      color: scheme.onSurface.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 22),
         Row(
           children: [
@@ -6828,6 +7274,1350 @@ class _ExpensesScreenState extends State<ExpensesScreen>
   // ---- گزارش ----
   int _reportMode = 0; // 0 ماهانه 1 سالانه 2 کل
   int _reportYear = 0; // init on first build from filter
+
+  Future<void> _openPlannedEditor({PlannedItem? existing, bool income = false}) async {
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final amountCtrl = TextEditingController(
+      text: existing != null && existing.amount > 0
+          ? NumFmt.format(existing.amount.round())
+          : '',
+    );
+    final noteCtrl = TextEditingController(text: existing?.note ?? '');
+    var isIncome = existing?.isIncome ?? income;
+    var due = existing?.dueDate ?? DateTime.now().add(const Duration(days: 7));
+    var category = existing != null
+        ? _categories.resolveId(existing.category, isIncome: isIncome)
+        : (_categories.active(income: isIncome).isNotEmpty
+            ? _categories.active(income: isIncome).first.id
+            : '');
+
+    final saved = await showModalBottomSheet<PlannedItem>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+            final cats = _categories.active(income: isIncome);
+            final j = Jalali.fromDateTime(due);
+            return Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottom),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      existing == null
+                          ? (isIncome
+                              ? 'درآمد برنامه‌ریزی‌شده'
+                              : 'هزینه برنامه‌ریزی‌شده')
+                          : 'ویرایش برنامه',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                          value: false,
+                          label: Text('هزینه',
+                              style: TextStyle(fontFamily: 'Vazirmatn')),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          label: Text('درآمد',
+                              style: TextStyle(fontFamily: 'Vazirmatn')),
+                        ),
+                      ],
+                      selected: {isIncome},
+                      onSelectionChanged: (s) => setLocal(() {
+                        isIncome = s.first;
+                        final act = _categories.active(income: isIncome);
+                        category = act.isNotEmpty ? act.first.id : '';
+                      }),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: amountCtrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(
+                            r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
+                        GroupedNumberFormatter(),
+                      ],
+                      style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'مبلغ (تومان)',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: titleCtrl,
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      decoration: const InputDecoration(
+                        labelText: 'عنوان',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final c in cats)
+                          ChoiceChip(
+                            label: Text(c.name,
+                                style: const TextStyle(
+                                    fontFamily: 'Vazirmatn', fontSize: 12)),
+                            selected: category == c.id,
+                            onSelected: (_) =>
+                                setLocal(() => category = c.id),
+                          ),
+                      ],
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('سررسید',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                      subtitle: Text(
+                        '${j.day} ${Jalali.monthNames[j.month - 1]} ${j.year}',
+                        style: const TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontWeight: FontWeight.w600),
+                      ),
+                      trailing: TextButton(
+                        onPressed: () async {
+                          final picked = await showJalaliDatePicker(
+                            context: ctx,
+                            initial: Jalali.fromDateTime(due),
+                          );
+                          if (picked != null) {
+                            setLocal(() => due = picked.toDateTime());
+                          }
+                        },
+                        child: const Text('تغییر',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
+                    ),
+                    TextField(
+                      controller: noteCtrl,
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      decoration: const InputDecoration(
+                        labelText: 'یادداشت (اختیاری)',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    FilledButton(
+                      onPressed: () {
+                        final title = titleCtrl.text.trim();
+                        final amount = NumFmt.parse(amountCtrl.text);
+                        if (title.isEmpty || amount <= 0) return;
+                        Navigator.pop(
+                          ctx,
+                          PlannedItem(
+                            id: existing?.id ??
+                                DateTime.now()
+                                    .millisecondsSinceEpoch
+                                    .toString(),
+                            title: title,
+                            amount: amount,
+                            category: category,
+                            dueDate: due,
+                            note: noteCtrl.text.trim().isEmpty
+                                ? null
+                                : noteCtrl.text.trim(),
+                            isIncome: isIncome,
+                          ),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48)),
+                      child: const Text('ذخیره برنامه',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    titleCtrl.dispose();
+    amountCtrl.dispose();
+    noteCtrl.dispose();
+    if (saved == null) return;
+    try {
+      await _planned.upsert(saved);
+      if (mounted) setState(() {});
+    } catch (e) {
+      _showStoreError(e);
+    }
+  }
+
+  Future<void> _convertPlanned(PlannedItem p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ثبت به‌عنوان تراکنش واقعی',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+        content: Text(
+          '«${p.title}» به تراکنش واقعی تبدیل شود و از فهرست برنامه حذف شود؟',
+          style: const TextStyle(fontFamily: 'Vazirmatn'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('انصراف',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('ثبت',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final expense = Expense(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      title: p.title,
+      amount: p.amount,
+      category: p.category,
+      date: p.dueDate,
+      note: p.note,
+      isIncome: p.isIncome,
+    );
+    try {
+      await _store.add(expense);
+      await _planned.remove(p.id);
+      if (mounted) setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تراکنش واقعی ثبت شد',
+              style: TextStyle(fontFamily: 'Vazirmatn')),
+        ));
+      }
+    } catch (e) {
+      _showStoreError(e);
+    }
+  }
+
+  Widget _buildPlanned(ColorScheme scheme) {
+    final items = _planned.items;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      children: [
+        Text(
+          'هزینه و درآمد برنامه‌ریزی‌شده در آمار واقعی ماه محاسبه نمی‌شوند تا وقتی که به تراکنش واقعی تبدیل شوند.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12,
+            height: 1.4,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: () => _openPlannedEditor(income: false),
+                icon: Icon(Icons.event, color: Colors.red.shade700),
+                label: Text('هزینه آینده',
+                    style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        color: Colors.red.shade800)),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: () => _openPlannedEditor(income: true),
+                icon: Icon(Icons.event_available, color: Colors.green.shade700),
+                label: Text('درآمد آینده',
+                    style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        color: Colors.green.shade800)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
+                      const Text('تعهد هزینه',
+                          style:
+                              TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                      Text(
+                        _fmt(_planned.upcomingExpenseTotal),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w800,
+                          color: Colors.red.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      const Text('درآمد مورد انتظار',
+                          style:
+                              TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                      Text(
+                        _fmt(_planned.upcomingIncomeTotal),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w800,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (items.isEmpty)
+          Card(
+            margin: EdgeInsets.zero,
+            child: const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'برنامه‌ای ثبت نشده است.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Vazirmatn'),
+              ),
+            ),
+          )
+        else
+          ...items.map((p) {
+            final j = Jalali.fromDateTime(p.dueDate);
+            final color =
+                p.isIncome ? Colors.green.shade700 : Colors.red.shade700;
+            final overdue = p.dueDate
+                .isBefore(DateTime.now().subtract(const Duration(days: 1)));
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: color.withValues(alpha: 0.12),
+                  child: Icon(
+                    p.isIncome ? Icons.south_west : Icons.north_east,
+                    color: color,
+                    size: 18,
+                  ),
+                ),
+                title: Text(
+                  p.title,
+                  style: const TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  '${_categories.displayName(p.category)} · ${j.day} ${Jalali.monthNames[j.month - 1]} ${j.year}'
+                  '${overdue ? ' · سررسید گذشته' : ''}',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 12,
+                    color: overdue ? scheme.error : null,
+                  ),
+                ),
+                trailing: Text(
+                  '${p.isIncome ? '+' : '−'}${_fmt(p.amount)}',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                onTap: () => _openPlannedEditor(existing: p, income: p.isIncome),
+                onLongPress: () async {
+                  final action = await showModalBottomSheet<String>(
+                    context: context,
+                    builder: (ctx) => SafeArea(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.check_circle_outline),
+                            title: const Text('ثبت به‌عنوان تراکنش واقعی',
+                                style: TextStyle(fontFamily: 'Vazirmatn')),
+                            onTap: () => Navigator.pop(ctx, 'convert'),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.edit_outlined),
+                            title: const Text('ویرایش',
+                                style: TextStyle(fontFamily: 'Vazirmatn')),
+                            onTap: () => Navigator.pop(ctx, 'edit'),
+                          ),
+                          ListTile(
+                            leading:
+                                const Icon(Icons.delete_outline, color: Colors.red),
+                            title: const Text('حذف برنامه',
+                                style: TextStyle(
+                                    fontFamily: 'Vazirmatn', color: Colors.red)),
+                            onTap: () => Navigator.pop(ctx, 'delete'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                  if (action == 'convert') {
+                    await _convertPlanned(p);
+                  } else if (action == 'edit') {
+                    await _openPlannedEditor(existing: p, income: p.isIncome);
+                  } else if (action == 'delete') {
+                    try {
+                      await _planned.remove(p.id);
+                      if (mounted) setState(() {});
+                    } catch (e) {
+                      _showStoreError(e);
+                    }
+                  }
+                },
+              ),
+            );
+          }),
+        const SizedBox(height: 28),
+        const Text(
+          'تراکنش‌های تکرارشونده',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'مثل حقوق ماهانه یا اجاره. در باز شدن برنامه، سررسیدهای گذشته تا امروز به‌صورت خودکار ثبت می‌شوند (بدون تکرار).',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12,
+            height: 1.4,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _openRecurringEditor(income: false),
+                icon: const Icon(Icons.repeat, size: 18),
+                label: const Text('هزینه تکراری',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12.5)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _openRecurringEditor(income: true),
+                icon: const Icon(Icons.repeat, size: 18),
+                label: const Text('درآمد تکراری',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12.5)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_recurring.items.isEmpty)
+          const Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'قانون تکراری تعریف نشده است.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+              ),
+            ),
+          )
+        else
+          ..._recurring.items.map((r) {
+            final next = RecurringStore.nextDue(r);
+            final jNext = next != null ? Jalali.fromDateTime(next) : null;
+            final intervalLabel =
+                r.interval == 'weekly' ? 'هفتگی' : 'ماهانه';
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                title: Text(
+                  r.title,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w600,
+                    color: r.active
+                        ? null
+                        : scheme.onSurface.withValues(alpha: 0.45),
+                  ),
+                ),
+                subtitle: Text(
+                  '${r.isIncome ? 'درآمد' : 'هزینه'} · $intervalLabel · ${_categories.displayName(r.category)}'
+                  '${jNext != null ? ' · بعدی: ${jNext.day}/${jNext.month}/${jNext.year}' : ' · متوقف'}'
+                  '${r.active ? '' : ' · غیرفعال'}',
+                  style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
+                ),
+                trailing: Text(
+                  _fmt(r.amount),
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w700,
+                    color: r.isIncome
+                        ? Colors.green.shade700
+                        : Colors.red.shade700,
+                  ),
+                ),
+                onTap: () =>
+                    _openRecurringEditor(existing: r, income: r.isIncome),
+                onLongPress: () async {
+                  final action = await showModalBottomSheet<String>(
+                    context: context,
+                    builder: (ctx) => SafeArea(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ListTile(
+                            leading: Icon(r.active
+                                ? Icons.pause_circle_outline
+                                : Icons.play_circle_outline),
+                            title: Text(
+                              r.active ? 'توقف' : 'فعال‌سازی',
+                              style: const TextStyle(fontFamily: 'Vazirmatn'),
+                            ),
+                            onTap: () => Navigator.pop(ctx, 'toggle'),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.edit_outlined),
+                            title: const Text('ویرایش',
+                                style: TextStyle(fontFamily: 'Vazirmatn')),
+                            onTap: () => Navigator.pop(ctx, 'edit'),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.delete_outline,
+                                color: Colors.red),
+                            title: const Text('حذف قانون',
+                                style: TextStyle(
+                                    fontFamily: 'Vazirmatn',
+                                    color: Colors.red)),
+                            onTap: () => Navigator.pop(ctx, 'delete'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                  if (action == 'toggle') {
+                    try {
+                      await _recurring.upsert(r.copyWith(active: !r.active));
+                      if (mounted) setState(() {});
+                    } catch (e) {
+                      _showStoreError(e);
+                    }
+                  } else if (action == 'edit') {
+                    await _openRecurringEditor(
+                        existing: r, income: r.isIncome);
+                  } else if (action == 'delete') {
+                    try {
+                      await _recurring.remove(r.id);
+                      if (mounted) setState(() {});
+                    } catch (e) {
+                      _showStoreError(e);
+                    }
+                  }
+                },
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Future<void> _openRecurringEditor(
+      {RecurringRule? existing, bool income = false}) async {
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final amountCtrl = TextEditingController(
+      text: existing != null && existing.amount > 0
+          ? NumFmt.format(existing.amount.round())
+          : '',
+    );
+    final noteCtrl = TextEditingController(text: existing?.note ?? '');
+    var isIncome = existing?.isIncome ?? income;
+    var interval = existing?.interval ?? 'monthly';
+    var start = existing?.startDate ?? DateTime.now();
+    var category = existing != null
+        ? _categories.resolveId(existing.category, isIncome: isIncome)
+        : (_categories.active(income: isIncome).isNotEmpty
+            ? _categories.active(income: isIncome).first.id
+            : '');
+
+    final saved = await showModalBottomSheet<RecurringRule>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+            final cats = _categories.active(income: isIncome);
+            final j = Jalali.fromDateTime(start);
+            return Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottom),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      existing == null ? 'قانون تکرارشونده' : 'ویرایش قانون',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                            value: false,
+                            label: Text('هزینه',
+                                style: TextStyle(fontFamily: 'Vazirmatn'))),
+                        ButtonSegment(
+                            value: true,
+                            label: Text('درآمد',
+                                style: TextStyle(fontFamily: 'Vazirmatn'))),
+                      ],
+                      selected: {isIncome},
+                      onSelectionChanged: (s) => setLocal(() {
+                        isIncome = s.first;
+                        final act = _categories.active(income: isIncome);
+                        category = act.isNotEmpty ? act.first.id : '';
+                      }),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(
+                            value: 'monthly',
+                            label: Text('ماهانه',
+                                style: TextStyle(fontFamily: 'Vazirmatn'))),
+                        ButtonSegment(
+                            value: 'weekly',
+                            label: Text('هفتگی',
+                                style: TextStyle(fontFamily: 'Vazirmatn'))),
+                      ],
+                      selected: {interval},
+                      onSelectionChanged: (s) =>
+                          setLocal(() => interval = s.first),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: amountCtrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(
+                            r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
+                        GroupedNumberFormatter(),
+                      ],
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800),
+                      decoration: const InputDecoration(
+                        labelText: 'مبلغ (تومان)',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: titleCtrl,
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      decoration: const InputDecoration(
+                        labelText: 'عنوان (مثلاً حقوق / اجاره)',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final c in cats)
+                          ChoiceChip(
+                            label: Text(c.name,
+                                style: const TextStyle(
+                                    fontFamily: 'Vazirmatn', fontSize: 12)),
+                            selected: category == c.id,
+                            onSelected: (_) =>
+                                setLocal(() => category = c.id),
+                          ),
+                      ],
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('تاریخ شروع',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                      subtitle: Text(
+                        '${j.day} ${Jalali.monthNames[j.month - 1]} ${j.year}',
+                        style: const TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontWeight: FontWeight.w600),
+                      ),
+                      trailing: TextButton(
+                        onPressed: () async {
+                          final picked = await showJalaliDatePicker(
+                            context: ctx,
+                            initial: Jalali.fromDateTime(start),
+                          );
+                          if (picked != null) {
+                            setLocal(() => start = picked.toDateTime());
+                          }
+                        },
+                        child: const Text('تغییر',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
+                    ),
+                    TextField(
+                      controller: noteCtrl,
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      decoration: const InputDecoration(
+                        labelText: 'یادداشت (اختیاری)',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () {
+                        final title = titleCtrl.text.trim();
+                        final amount = NumFmt.parse(amountCtrl.text);
+                        if (title.isEmpty || amount <= 0) return;
+                        Navigator.pop(
+                          ctx,
+                          RecurringRule(
+                            id: existing?.id ??
+                                'r_${DateTime.now().millisecondsSinceEpoch}',
+                            title: title,
+                            amount: amount,
+                            category: category,
+                            isIncome: isIncome,
+                            note: noteCtrl.text.trim().isEmpty
+                                ? null
+                                : noteCtrl.text.trim(),
+                            interval: interval,
+                            startDate: start,
+                            endDate: existing?.endDate,
+                            active: existing?.active ?? true,
+                            lastGenerated: existing?.lastGenerated,
+                          ),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48)),
+                      child: const Text('ذخیره',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    titleCtrl.dispose();
+    amountCtrl.dispose();
+    noteCtrl.dispose();
+    if (saved == null) return;
+    try {
+      await _recurring.upsert(saved);
+      final n = await _recurring.generateDue(_store);
+      if (mounted) {
+        setState(() {});
+        if (n > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              '$n تراکنش سررسیدشده ثبت شد',
+              style: const TextStyle(fontFamily: 'Vazirmatn'),
+            ),
+          ));
+        }
+      }
+    } catch (e) {
+      _showStoreError(e);
+    }
+  }
+
+  Future<void> _openGoalEditor({SavingsGoal? existing}) async {
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final targetCtrl = TextEditingController(
+      text: existing != null && existing.target > 0
+          ? NumFmt.format(existing.target.round())
+          : '',
+    );
+    DateTime? deadline = existing?.deadline;
+
+    final saved = await showModalBottomSheet<SavingsGoal>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+            final j = deadline != null ? Jalali.fromDateTime(deadline!) : null;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottom),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      existing == null ? 'هدف پس‌انداز جدید' : 'ویرایش هدف',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: titleCtrl,
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      decoration: const InputDecoration(
+                        labelText: 'عنوان (مثلاً سفر / پیش‌پرداخت)',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: targetCtrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(
+                            r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
+                        GroupedNumberFormatter(),
+                      ],
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800),
+                      decoration: const InputDecoration(
+                        labelText: 'مبلغ هدف (تومان)',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('مهلت (اختیاری)',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                      subtitle: Text(
+                        j == null
+                            ? 'تعیین نشده'
+                            : '${j.day} ${Jalali.monthNames[j.month - 1]} ${j.year}',
+                        style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      ),
+                      trailing: TextButton(
+                        onPressed: () async {
+                          final picked = await showJalaliDatePicker(
+                            context: ctx,
+                            initial: Jalali.fromDateTime(
+                                deadline ?? DateTime.now()),
+                          );
+                          if (picked != null) {
+                            setLocal(() => deadline = picked.toDateTime());
+                          }
+                        },
+                        child: const Text('انتخاب',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
+                    ),
+                    FilledButton(
+                      onPressed: () {
+                        final title = titleCtrl.text.trim();
+                        final target = NumFmt.parse(targetCtrl.text);
+                        if (title.isEmpty || target <= 0) return;
+                        Navigator.pop(
+                          ctx,
+                          SavingsGoal(
+                            id: existing?.id ??
+                                's_${DateTime.now().millisecondsSinceEpoch}',
+                            title: title,
+                            target: target,
+                            saved: existing?.saved ?? 0,
+                            deadline: deadline,
+                            createdAt: existing?.createdAt,
+                          ),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48)),
+                      child: const Text('ذخیره',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    titleCtrl.dispose();
+    targetCtrl.dispose();
+    if (saved == null) return;
+    try {
+      await _savings.upsert(saved);
+      if (mounted) setState(() {});
+    } catch (e) {
+      _showStoreError(e);
+    }
+  }
+
+  Future<void> _addToGoal(SavingsGoal g) async {
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('افزودن به «${g.title}»',
+            style: const TextStyle(fontFamily: 'Vazirmatn')),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          autofocus: true,
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(
+                RegExp(r'[\d.,۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]')),
+            GroupedNumberFormatter(),
+          ],
+          style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 18),
+          decoration: const InputDecoration(
+            labelText: 'مبلغ (تومان)',
+            labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('انصراف',
+                  style: TextStyle(fontFamily: 'Vazirmatn'))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('افزودن',
+                  style: TextStyle(fontFamily: 'Vazirmatn'))),
+        ],
+      ),
+    );
+    final amount = NumFmt.parse(ctrl.text);
+    ctrl.dispose();
+    if (ok != true || amount <= 0) return;
+    try {
+      await _savings.upsert(g.copyWith(saved: g.saved + amount));
+      if (mounted) setState(() {});
+    } catch (e) {
+      _showStoreError(e);
+    }
+  }
+
+  Future<void> _openReminderEditor({AppReminder? existing}) async {
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final noteCtrl = TextEditingController(text: existing?.note ?? '');
+    var due = existing?.dueDate ?? DateTime.now().add(const Duration(days: 3));
+    var enabled = existing?.enabled ?? true;
+
+    final saved = await showModalBottomSheet<AppReminder>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+            final j = Jalali.fromDateTime(due);
+            return Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottom),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'یادآوری داخل برنامه',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'اعلان سیستم فعال نیست؛ یادآوری فقط داخل همین بخش دیده می‌شود.',
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 11.5,
+                        color: Theme.of(ctx)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.5),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: titleCtrl,
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      decoration: const InputDecoration(
+                        labelText: 'عنوان (اجاره، قسط، قبض…)',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('تاریخ',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                      subtitle: Text(
+                        '${j.day} ${Jalali.monthNames[j.month - 1]} ${j.year}',
+                        style: const TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontWeight: FontWeight.w600),
+                      ),
+                      trailing: TextButton(
+                        onPressed: () async {
+                          final picked = await showJalaliDatePicker(
+                            context: ctx,
+                            initial: Jalali.fromDateTime(due),
+                          );
+                          if (picked != null) {
+                            setLocal(() => due = picked.toDateTime());
+                          }
+                        },
+                        child: const Text('تغییر',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('فعال',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                      value: enabled,
+                      onChanged: (v) => setLocal(() => enabled = v),
+                    ),
+                    TextField(
+                      controller: noteCtrl,
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      decoration: const InputDecoration(
+                        labelText: 'یادداشت (اختیاری)',
+                        labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () {
+                        final title = titleCtrl.text.trim();
+                        if (title.isEmpty) return;
+                        Navigator.pop(
+                          ctx,
+                          AppReminder(
+                            id: existing?.id ??
+                                'rm_${DateTime.now().millisecondsSinceEpoch}',
+                            title: title,
+                            dueDate: due,
+                            enabled: enabled,
+                            note: noteCtrl.text.trim().isEmpty
+                                ? null
+                                : noteCtrl.text.trim(),
+                          ),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48)),
+                      child: const Text('ذخیره',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    titleCtrl.dispose();
+    noteCtrl.dispose();
+    if (saved == null) return;
+    try {
+      await _reminders.upsert(saved);
+      if (mounted) setState(() {});
+    } catch (e) {
+      _showStoreError(e);
+    }
+  }
+
+  Widget _buildGoals(ColorScheme scheme) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      children: [
+        Text(
+          'اهداف پس‌انداز مستقل از موجودی حساب هستند و در درآمد/هزینه دوبار شمارش نمی‌شوند.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12,
+            height: 1.4,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 12),
+        FilledButton.tonalIcon(
+          onPressed: () => _openGoalEditor(),
+          icon: const Icon(Icons.flag_outlined),
+          label: const Text('هدف جدید',
+              style: TextStyle(fontFamily: 'Vazirmatn')),
+        ),
+        const SizedBox(height: 12),
+        if (_savings.items.isEmpty)
+          const Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Text(
+                'هنوز هدفی تعریف نشده است.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Vazirmatn'),
+              ),
+            ),
+          )
+        else
+          ..._savings.items.map((g) {
+            final j = g.deadline != null
+                ? Jalali.fromDateTime(g.deadline!)
+                : null;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            g.title,
+                            style: const TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline, size: 22),
+                          tooltip: 'افزودن مبلغ',
+                          onPressed: () => _addToGoal(g),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 20),
+                          onPressed: () => _openGoalEditor(existing: g),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          onPressed: () async {
+                            try {
+                              await _savings.remove(g.id);
+                              if (mounted) setState(() {});
+                            } catch (e) {
+                              _showStoreError(e);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: g.progress,
+                        minHeight: 10,
+                        backgroundColor: scheme.surfaceContainerHighest,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          '${_fmt(g.saved)} از ${_fmt(g.target)}',
+                          style: const TextStyle(
+                              fontFamily: 'Vazirmatn', fontSize: 12.5),
+                        ),
+                        const Spacer(),
+                        Text(
+                          'مانده ${_fmt(g.remaining)}',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (j != null)
+                      Text(
+                        'مهلت: ${j.day} ${Jalali.monthNames[j.month - 1]} ${j.year}',
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 11.5,
+                          color: scheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'یادآوری‌ها',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => _openReminderEditor(),
+              icon: const Icon(Icons.alarm_add, size: 18),
+              label: const Text('جدید',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+            ),
+          ],
+        ),
+        Text(
+          'بدون دسترسی اعلان سیستم؛ فقط نمایش داخل برنامه.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 11.5,
+            color: scheme.onSurface.withValues(alpha: 0.45),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (_reminders.items.isEmpty)
+          const Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'یادآوری ثبت نشده است.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+              ),
+            ),
+          )
+        else
+          ..._reminders.items.map((r) {
+            final j = Jalali.fromDateTime(r.dueDate);
+            final overdue = r.enabled &&
+                r.dueDate.isBefore(
+                    DateTime.now().subtract(const Duration(days: 0)));
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                leading: Icon(
+                  r.enabled ? Icons.alarm : Icons.alarm_off,
+                  color: r.enabled ? scheme.primary : scheme.outline,
+                ),
+                title: Text(
+                  r.title,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w600,
+                    color: r.enabled
+                        ? null
+                        : scheme.onSurface.withValues(alpha: 0.45),
+                  ),
+                ),
+                subtitle: Text(
+                  '${j.day} ${Jalali.monthNames[j.month - 1]} ${j.year}'
+                  '${overdue ? ' · رسیده' : ''}'
+                  '${r.note != null ? ' · ${r.note}' : ''}',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 12,
+                    color: overdue ? scheme.error : null,
+                  ),
+                ),
+                onTap: () => _openReminderEditor(existing: r),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  onPressed: () async {
+                    try {
+                      await _reminders.remove(r.id);
+                      if (mounted) setState(() {});
+                    } catch (e) {
+                      _showStoreError(e);
+                    }
+                  },
+                ),
+              ),
+            );
+          }),
+      ],
+    );
+  }
 
   Widget _buildReports(ColorScheme scheme) {
     if (_reportYear == 0) _reportYear = _filterYear;

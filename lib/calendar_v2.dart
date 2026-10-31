@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core.dart';
 import 'features.dart'
-    show Jalali, HijriDate, OccasionData, showJalaliDatePicker, FinanceScreen;
+    show Jalali, HijriDate, OccasionData, showJalaliDatePicker, FinanceScreen,
+        DateConverterSheet;
 
 // ─── مدل‌ها ───
 class CalCategory {
@@ -647,29 +648,34 @@ class _CalendarScreenState extends State<CalendarScreen>
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تقویم'),
+        title: const Text('تقویم',
+            style: TextStyle(fontFamily: 'Vazirmatn', fontWeight: FontWeight.w800)),
         actions: [
+          IconButton(
+            tooltip: 'مبدل تاریخ',
+            onPressed: _openDateConverter,
+            icon: const Icon(Icons.compare_arrows_rounded),
+          ),
           IconButton(
             tooltip: 'امروز',
             onPressed: _goToday,
-            icon: const Icon(Icons.today),
+            icon: const Icon(Icons.today_rounded),
           ),
           IconButton(
             tooltip: 'ابزارها',
             onPressed: _openTools,
-            icon: const Icon(Icons.apps),
+            icon: const Icon(Icons.grid_view_rounded),
           ),
           IconButton(
             tooltip: 'تنظیمات',
             onPressed: _openSettings,
-            icon: const Icon(Icons.tune),
+            icon: const Icon(Icons.tune_rounded),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: () => _openAddMenu(),
-        icon: const Icon(Icons.add),
-        label: const Text('جدید', style: TextStyle(fontFamily: 'Vazirmatn')),
+        child: const Icon(Icons.add_rounded),
       ),
       body: Column(
         children: [
@@ -687,28 +693,48 @@ class _CalendarScreenState extends State<CalendarScreen>
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-            child: SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(
-                    value: 'month',
-                    label: Text('ماه',
-                        style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12))),
-                ButtonSegment(
-                    value: 'week',
-                    label: Text('هفته',
-                        style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12))),
-                ButtonSegment(
-                    value: 'day',
-                    label: Text('روز',
-                        style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12))),
-                ButtonSegment(
-                    value: 'agenda',
-                    label: Text('فهرست',
-                        style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12))),
-              ],
-              selected: {_view},
-              onSelectionChanged: (s) => setState(() => _view = s.first),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: SegmentedButton<String>(
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    shape: WidgetStatePropertyAll(
+                      RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  segments: const [
+                    ButtonSegment(
+                        value: 'month',
+                        label: Text('ماه',
+                            style: TextStyle(
+                                fontFamily: 'Vazirmatn', fontSize: 12))),
+                    ButtonSegment(
+                        value: 'week',
+                        label: Text('هفته',
+                            style: TextStyle(
+                                fontFamily: 'Vazirmatn', fontSize: 12))),
+                    ButtonSegment(
+                        value: 'day',
+                        label: Text('روز',
+                            style: TextStyle(
+                                fontFamily: 'Vazirmatn', fontSize: 12))),
+                    ButtonSegment(
+                        value: 'agenda',
+                        label: Text('فهرست',
+                            style: TextStyle(
+                                fontFamily: 'Vazirmatn', fontSize: 12))),
+                  ],
+                  selected: {_view},
+                  onSelectionChanged: (s) => setState(() => _view = s.first),
+                ),
+              ),
             ),
           ),
           Expanded(child: _buildBody(scheme)),
@@ -743,127 +769,202 @@ class _CalendarScreenState extends State<CalendarScreen>
 
     return Column(
       children: [
-        Row(
-          children: [
-            IconButton(
-                onPressed: () => setState(
-                    () => _focused = _focused.addMonths(-1)),
-                icon: const Icon(Icons.chevron_right)),
-            Expanded(
-              child: Text(
-                '${_focused.monthName} ${_focused.year}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+          child: Row(
+            children: [
+              IconButton.filledTonal(
+                onPressed: () =>
+                    setState(() => _focused = _focused.addMonths(-1)),
+                icon: const Icon(Icons.chevron_right_rounded),
               ),
-            ),
-            IconButton(
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      _focused.monthName,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontWeight: FontWeight.w900,
+                        fontSize: 20,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    Text(
+                      '${_focused.year}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 13,
+                        color: scheme.onSurface.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton.filledTonal(
                 onPressed: () =>
                     setState(() => _focused = _focused.addMonths(1)),
-                icon: const Icon(Icons.chevron_left)),
-          ],
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+            ],
+          ),
         ),
-        Row(
-          children: [
-            for (final w in Jalali.weekDays)
-              Expanded(
-                child: Text(w.substring(0, 1),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+          child: Row(
+            children: [
+              for (var wi = 0; wi < Jalali.weekDays.length; wi++)
+                Expanded(
+                  child: Text(
+                    Jalali.weekDays[wi].substring(0, 1),
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontSize: 11,
-                        color: scheme.onSurface.withValues(alpha: 0.5))),
-              ),
-          ],
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: wi == 6
+                          ? scheme.error.withValues(alpha: 0.85)
+                          : scheme.onSurface.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
         Expanded(
           flex: 5,
-          child: GridView.builder(
+          child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              childAspectRatio: 0.9,
-            ),
-            itemCount: lead + len,
-            itemBuilder: (_, i) {
-              if (i < lead) return const SizedBox();
-              final day = i - lead + 1;
-              final j = Jalali(_focused.year, _focused.month, day);
-              final g = j.toDateTime();
-              final isToday = j.year == _todayJ.year &&
-                  j.month == _todayJ.month &&
-                  j.day == _todayJ.day;
-              final isSel = g.year == sel.year &&
-                  g.month == sel.month &&
-                  g.day == sel.day;
-              final occasions = [
-                if (_store.settings.showOccasions)
-                  ...OccasionData.forDay(
-                      system: 'jalali', month: j.month, day: j.day),
-              ];
-              final holiday = _store.settings.showHolidays &&
-                  (occasions.any((o) => o.isHoliday) || j.weekdayIndex == 6);
-              final mark = _store.hasMarker(g);
-              return InkWell(
-                onTap: () => setState(() => _selectedG = g),
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  margin: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
+            child: GridView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                childAspectRatio: 0.92,
+              ),
+              itemCount: lead + len,
+              itemBuilder: (_, i) {
+                if (i < lead) return const SizedBox.shrink();
+                final day = i - lead + 1;
+                final j = Jalali(_focused.year, _focused.month, day);
+                final g = j.toDateTime();
+                final isToday = j.year == _todayJ.year &&
+                    j.month == _todayJ.month &&
+                    j.day == _todayJ.day;
+                final isSel = g.year == sel.year &&
+                    g.month == sel.month &&
+                    g.day == sel.day;
+                final occasions = [
+                  if (_store.settings.showOccasions)
+                    ...OccasionData.forDay(
+                        system: 'jalali', month: j.month, day: j.day),
+                ];
+                final holiday = _store.settings.showHolidays &&
+                    (occasions.any((o) => o.isHoliday) ||
+                        j.weekdayIndex == 6);
+                final hasEv = _store.occurrencesOn(g).isNotEmpty;
+                final hasNote = _store.notesOn(g).isNotEmpty;
+                final hasTask = _store.tasksOn(g).isNotEmpty;
+                final hasPers = _store.personalOccasions.any(
+                    (o) => o.month == j.month && o.day == j.day);
+                final hasMark = hasEv || hasNote || hasTask || hasPers;
+
+                return Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Material(
                     color: isSel
-                        ? scheme.primary.withValues(alpha: 0.25)
+                        ? scheme.primary
                         : (isToday
-                            ? scheme.primaryContainer.withValues(alpha: 0.4)
-                            : null),
-                    borderRadius: BorderRadius.circular(10),
-                    border: isToday
-                        ? Border.all(color: scheme.primary, width: 1.2)
-                        : null,
-                  ),
-                  child: Stack(
-                    children: [
-                      Center(
-                        child: Text(
-                          '$day',
-                          style: TextStyle(
-                            fontFamily: 'Vazirmatn',
-                            fontWeight:
-                                isSel ? FontWeight.w800 : FontWeight.w500,
-                            color: holiday ? scheme.error : null,
-                          ),
-                        ),
-                      ),
-                      if (mark)
-                        Positioned(
-                          bottom: 4,
-                          left: 0,
-                          right: 0,
-                          child: Center(
-                            child: Container(
-                              width: 5,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: scheme.tertiary,
-                                shape: BoxShape.circle,
+                            ? scheme.primaryContainer.withValues(alpha: 0.65)
+                            : Colors.transparent),
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      onTap: () => setState(() => _selectedG = g),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Stack(
+                        children: [
+                          if (isToday && !isSel)
+                            Positioned.fill(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: scheme.primary,
+                                    width: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          Center(
+                            child: Text(
+                              '$day',
+                              style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontSize: 15,
+                                fontWeight: isSel || isToday
+                                    ? FontWeight.w800
+                                    : FontWeight.w500,
+                                color: isSel
+                                    ? scheme.onPrimary
+                                    : (holiday
+                                        ? scheme.error
+                                        : scheme.onSurface),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                          if (hasMark)
+                            Positioned(
+                              bottom: 5,
+                              left: 0,
+                              right: 0,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (hasEv)
+                                    _dot(isSel
+                                        ? scheme.onPrimary
+                                        : scheme.primary),
+                                  if (hasTask)
+                                    _dot(isSel
+                                        ? scheme.onPrimary
+                                            .withValues(alpha: 0.85)
+                                        : scheme.tertiary),
+                                  if (hasNote || hasPers)
+                                    _dot(isSel
+                                        ? scheme.onPrimary
+                                            .withValues(alpha: 0.7)
+                                        : scheme.secondary),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
-        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Divider(
+            height: 1,
+            color: scheme.outlineVariant.withValues(alpha: 0.5),
+          ),
+        ),
         Expanded(flex: 4, child: _dayPanel(scheme)),
       ],
     );
   }
+
+  Widget _dot(Color c) => Container(
+        width: 5,
+        height: 5,
+        margin: const EdgeInsets.symmetric(horizontal: 1.2),
+        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+      );
 
   Widget _dayPanel(ColorScheme scheme) {
     final g = _selectedG ?? DateTime.now();
@@ -882,22 +983,39 @@ class _CalendarScreenState extends State<CalendarScreen>
         .toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 88),
       children: [
-        Text(
-          '${Jalali.weekDays[j.weekdayIndex]} ${j.day} ${j.monthName} ${j.year}',
-          style: const TextStyle(
-              fontFamily: 'Vazirmatn',
-              fontWeight: FontWeight.w800,
-              fontSize: 15),
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${Jalali.weekDays[j.weekdayIndex]} ${j.day} ${j.monthName}',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontWeight: FontWeight.w900,
+                  fontSize: 17,
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'شمسی ${j.year}  ·  میلادی ${g.day}/${g.month}/${g.year}  ·  قمری ${h.day} ${HijriDate.monthNames[h.month - 1]}',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 11.5,
+                  color: scheme.onSurface.withValues(alpha: 0.55),
+                ),
+              ),
+            ],
+          ),
         ),
-        Text(
-          'میلادی: ${g.year}/${g.month}/${g.day} · قمری: ${h.day} ${HijriDate.monthNames[h.month - 1]} ${h.year}',
-          style: TextStyle(
-              fontFamily: 'Vazirmatn',
-              fontSize: 11.5,
-              color: scheme.onSurface.withValues(alpha: 0.55)),
-        ),
+        const SizedBox(height: 8),
         if (occ.isNotEmpty || personal.isNotEmpty) ...[
           const SizedBox(height: 8),
           Wrap(
@@ -927,10 +1045,35 @@ class _CalendarScreenState extends State<CalendarScreen>
         ],
         const SizedBox(height: 8),
         if (evs.isEmpty && nts.isEmpty && tks.isEmpty)
-          Text('رویداد یا یادداشتی برای این روز نیست.',
-              style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  color: scheme.onSurface.withValues(alpha: 0.5))),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              children: [
+                Icon(Icons.event_available_outlined,
+                    size: 36,
+                    color: scheme.onSurface.withValues(alpha: 0.28)),
+                const SizedBox(height: 8),
+                Text(
+                  'برای این روز برنامه‌ای نیست',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 13.5,
+                    color: scheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+                Text(
+                  'با دکمه + رویداد، یادداشت یا تسک اضافه کنید',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 12,
+                    color: scheme.onSurface.withValues(alpha: 0.38),
+                  ),
+                ),
+              ],
+            ),
+          ),
         for (final e in evs)
           ListTile(
             dense: true,
@@ -1405,6 +1548,8 @@ class _CalendarScreenState extends State<CalendarScreen>
                     fontWeight: FontWeight.w800,
                     fontSize: 16)),
             const Divider(),
+            _toolTile(Icons.compare_arrows_rounded, 'مبدل تاریخ',
+                _openDateConverter),
             _toolTile(Icons.mosque, 'اوقات شرعی (تقریبی)', _showPrayer),
             _toolTile(Icons.explore, 'زاویه قبله', _showQibla),
             _toolTile(Icons.fingerprint, 'ذکرشمار', _showDhikr),

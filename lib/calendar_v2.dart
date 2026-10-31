@@ -1530,6 +1530,18 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 
+
+  void _openDateConverter() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const DateConverterSheet(),
+    );
+  }
+
   void _openTools() {
     showModalBottomSheet(
       context: context,

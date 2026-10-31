@@ -10452,7 +10452,10 @@ class OccasionData {
 // CalendarScreen در calendar_v2.dart پیاده‌سازی شده است.
 
 class DateConverterSheet extends StatefulWidget {
-  const DateConverterSheet({super.key});
+  /// اگر از تقویم باز شود، می‌تواند روز را در تقویم انتخاب کند
+  final ValueChanged<DateTime>? onGoToDate;
+
+  const DateConverterSheet({super.key, this.onGoToDate});
 
   @override
   State<DateConverterSheet> createState() => _DateConverterSheetState();
@@ -10464,6 +10467,9 @@ class _DateConverterSheetState extends State<DateConverterSheet> {
   final _m = TextEditingController();
   final _d = TextEditingController();
   String _result = '';
+  String _weekday = '';
+  DateTime? _resolved;
+  String? _error;
 
   static const _gMonths = [
     'ژانویه', 'فوریه', 'مارس', 'آوریل', 'مه', 'ژوئن',
@@ -10488,72 +10494,179 @@ class _DateConverterSheetState extends State<DateConverterSheet> {
     super.dispose();
   }
 
+  InputDecoration _numDeco(String label) => InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
+        border: const OutlineInputBorder(),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      );
+
+  static const _numStyle = TextStyle(
+    fontFamily: 'Vazirmatn',
+    fontSize: 16,
+    fontWeight: FontWeight.w600,
+  );
+
   void _convert() {
-    final y = int.tryParse(_y.text) ?? 0;
-    final m = int.tryParse(_m.text) ?? 1;
-    final d = int.tryParse(_d.text) ?? 1;
+    final y = int.tryParse(_y.text.trim());
+    final m = int.tryParse(_m.text.trim());
+    final d = int.tryParse(_d.text.trim());
+    if (y == null || m == null || d == null) {
+      setState(() {
+        _error = 'سال، ماه و روز را عددی وارد کنید';
+        _result = '';
+        _weekday = '';
+        _resolved = null;
+      });
+      return;
+    }
+    if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1) {
+      setState(() {
+        _error = 'مقادیر خارج از محدوده مجاز است';
+        _result = '';
+        _weekday = '';
+        _resolved = null;
+      });
+      return;
+    }
+
     try {
       DateTime g;
       if (_from == 'jalali') {
-        g = Jalali(y, m.clamp(1, 12), d.clamp(1, 31)).toDateTime();
+        final maxD = Jalali(y, m, 1).monthLength;
+        if (d > maxD) {
+          setState(() {
+            _error = 'این ماه شمسی فقط $maxD روز دارد';
+            _result = '';
+            _weekday = '';
+            _resolved = null;
+          });
+          return;
+        }
+        g = Jalali(y, m, d).toDateTime();
       } else if (_from == 'gregorian') {
-        g = DateTime(y, m.clamp(1, 12), d.clamp(1, 31));
+        final maxD = DateTime(y, m + 1, 0).day;
+        if (d > maxD) {
+          setState(() {
+            _error = 'این ماه میلادی فقط $maxD روز دارد';
+            _result = '';
+            _weekday = '';
+            _resolved = null;
+          });
+          return;
+        }
+        g = DateTime(y, m, d);
       } else {
-        // تقریبی: جستجوی روز قمری
-        g = DateTime.now();
-        for (var delta = -800; delta < 800; delta++) {
-          final cand = DateTime.now().add(Duration(days: delta));
+        // قمری تقریبی با جستجو
+        DateTime? found;
+        final base = DateTime.now();
+        for (var delta = -1200; delta < 1200; delta++) {
+          final cand = base.add(Duration(days: delta));
           final h = HijriDate.fromGregorian(cand);
           if (h.year == y && h.month == m && h.day == d) {
-            g = cand;
+            found = DateTime(cand.year, cand.month, cand.day);
             break;
           }
         }
+        if (found == null) {
+          setState(() {
+            _error = 'تاریخ قمری پیدا نشد (محدوده جستجو)';
+            _result = '';
+            _weekday = '';
+            _resolved = null;
+          });
+          return;
+        }
+        g = found;
       }
+
       final j = Jalali.fromDateTime(g);
       final h = HijriDate.fromGregorian(g);
+      final wd = Jalali.weekDays[j.weekdayIndex];
       setState(() {
+        _error = null;
+        _resolved = g;
+        _weekday = wd;
         _result =
             'شمسی: ${j.day} ${j.monthName} ${j.year}\n'
             'قمری: ${h.day} ${HijriDate.monthNames[h.month - 1]} ${h.year}\n'
             'میلادی: ${g.day} ${_gMonths[g.month - 1]} ${g.year}';
       });
     } catch (_) {
-      setState(() => _result = 'تاریخ نامعتبر');
+      setState(() {
+        _error = 'تاریخ نامعتبر';
+        _result = '';
+        _weekday = '';
+        _resolved = null;
+      });
     }
   }
 
+  Future<void> _pickJalali() async {
+    Jalali initial;
+    try {
+      final y = int.tryParse(_y.text) ?? _todayJYear();
+      final m = (int.tryParse(_m.text) ?? 1).clamp(1, 12);
+      final d = (int.tryParse(_d.text) ?? 1).clamp(1, 31);
+      initial = Jalali(y, m, d);
+    } catch (_) {
+      initial = Jalali.fromDateTime(DateTime.now());
+    }
+    final picked = await showJalaliDatePicker(
+      context: context,
+      initial: initial,
+    );
+    if (picked == null) return;
+    setState(() {
+      _from = 'jalali';
+      _y.text = '${picked.year}';
+      _m.text = '${picked.month}';
+      _d.text = '${picked.day}';
+    });
+    _convert();
+  }
+
+  int _todayJYear() => Jalali.fromDateTime(DateTime.now()).year;
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottom),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottom),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('تبدیل تاریخ',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold)),
+            const Text(
+              'تبدیل تاریخ',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
             const SizedBox(height: 12),
             SegmentedButton<String>(
               segments: const [
                 ButtonSegment(
-                    value: 'jalali',
-                    label: Text('شمسی',
-                        style: TextStyle(fontFamily: 'Vazirmatn'))),
+                  value: 'jalali',
+                  label: Text('شمسی',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                ),
                 ButtonSegment(
-                    value: 'gregorian',
-                    label: Text('میلادی',
-                        style: TextStyle(fontFamily: 'Vazirmatn'))),
+                  value: 'gregorian',
+                  label: Text('میلادی',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                ),
                 ButtonSegment(
-                    value: 'hijri',
-                    label: Text('قمری',
-                        style: TextStyle(fontFamily: 'Vazirmatn'))),
+                  value: 'hijri',
+                  label: Text('قمری',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                ),
               ],
               selected: {_from},
               onSelectionChanged: (s) {
@@ -10561,16 +10674,16 @@ class _DateConverterSheetState extends State<DateConverterSheet> {
                 _convert();
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _y,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        labelText: 'سال',
-                        labelStyle: TextStyle(fontFamily: 'Vazirmatn')),
+                    textAlign: TextAlign.center,
+                    style: _numStyle,
+                    decoration: _numDeco('سال'),
                     onChanged: (_) => _convert(),
                   ),
                 ),
@@ -10579,9 +10692,9 @@ class _DateConverterSheetState extends State<DateConverterSheet> {
                   child: TextField(
                     controller: _m,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        labelText: 'ماه',
-                        labelStyle: TextStyle(fontFamily: 'Vazirmatn')),
+                    textAlign: TextAlign.center,
+                    style: _numStyle,
+                    decoration: _numDeco('ماه'),
                     onChanged: (_) => _convert(),
                   ),
                 ),
@@ -10590,32 +10703,113 @@ class _DateConverterSheetState extends State<DateConverterSheet> {
                   child: TextField(
                     controller: _d,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        labelText: 'روز',
-                        labelStyle: TextStyle(fontFamily: 'Vazirmatn')),
+                    textAlign: TextAlign.center,
+                    style: _numStyle,
+                    decoration: _numDeco('روز'),
                     onChanged: (_) => _convert(),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  _result,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontFamily: 'Vazirmatn', fontSize: 15, height: 1.7),
+            if (_from == 'jalali') ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _pickJalali,
+                  icon: const Icon(Icons.calendar_month_outlined, size: 18),
+                  label: const Text(
+                    'انتخاب از تقویم شمسی',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+                  ),
                 ),
               ),
-            ),
+            ],
+            const SizedBox(height: 12),
+            if (_error != null)
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  color: scheme.error,
+                  fontSize: 13,
+                ),
+              )
+            else ...[
+              if (_weekday.isNotEmpty)
+                Text(
+                  _weekday,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: scheme.primary,
+                  ),
+                ),
+              const SizedBox(height: 8),
+              Card(
+                child: InkWell(
+                  onLongPress: () async {
+                    if (_result.isEmpty) return;
+                    await Clipboard.setData(ClipboardData(text: _result));
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'نتیجه کپی شد',
+                          style: TextStyle(fontFamily: 'Vazirmatn'),
+                        ),
+                      ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _result,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 15,
+                        height: 1.7,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Text(
+                'نگه‌داشتن روی نتیجه = کپی',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 11,
+                  color: scheme.onSurface.withValues(alpha: 0.45),
+                ),
+              ),
+            ],
+            if (widget.onGoToDate != null && _resolved != null) ...[
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () {
+                  widget.onGoToDate!(_resolved!);
+                },
+                icon: const Icon(Icons.event_rounded),
+                label: const Text(
+                  'نمایش این روز در تقویم',
+                  style: TextStyle(fontFamily: 'Vazirmatn'),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 }
+
 
 class ThemeGalleryScreen extends StatefulWidget {
   const ThemeGalleryScreen({super.key});

@@ -1538,7 +1538,17 @@ class _CalendarScreenState extends State<CalendarScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => const DateConverterSheet(),
+      builder: (_) => DateConverterSheet(
+        onGoToDate: (g) {
+          Navigator.of(context).pop();
+          setState(() {
+            _selectedG = g;
+            final j = Jalali.fromDateTime(g);
+            _focused = Jalali(j.year, j.month, 1);
+            _view = 'month';
+          });
+        },
+      ),
     );
   }
 

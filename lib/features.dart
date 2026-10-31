@@ -8993,12 +8993,15 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                   changePercent: changePct,
                 );
                 if (!mounted) return;
+                final inDownloads = file.path.contains('/Download');
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text(
-                    'PDF ذخیره شد: ${file.path}',
+                    inDownloads
+                        ? 'PDF در پوشه دانلودها ذخیره شد:\n${file.path}'
+                        : 'دسترسی دانلود محدود بود؛ در حافظه اپ ذخیره شد:\n${file.path}',
                     style: const TextStyle(fontFamily: 'Vazirmatn'),
                   ),
-                  duration: const Duration(seconds: 4),
+                  duration: const Duration(seconds: 5),
                 ));
               } catch (e) {
                 if (!mounted) return;
@@ -11523,8 +11526,43 @@ class FinancialDataPort {
     final bytes = await doc.save();
     final name =
         'hesabgar_report_${DateTime.now().millisecondsSinceEpoch}.pdf';
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, name));
+    return writeToDownloads(name, bytes);
+  }
+
+  /// تلاش برای ذخیره در پوشه Downloads عمومی؛ در صورت خطا → حافظه اپ
+  static Future<File> writeToDownloads(String name, List<int> bytes) async {
+    final candidates = <Directory>[];
+    if (Platform.isAndroid) {
+      candidates.addAll([
+        Directory('/storage/emulated/0/Download'),
+        Directory('/storage/emulated/0/Downloads'),
+        Directory('/sdcard/Download'),
+      ]);
+    }
+    try {
+      final d = await getDownloadsDirectory();
+      if (d != null) candidates.add(d);
+    } catch (_) {}
+
+    for (final dir in candidates) {
+      try {
+        if (!await dir.exists()) {
+          await dir.create(recursive: true);
+        }
+        final file = File(p.join(dir.path, name));
+        await file.writeAsBytes(bytes, flush: true);
+        // اطمینان از قابل‌خواندن بودن
+        if (await file.exists() && await file.length() > 0) {
+          return file;
+        }
+      } catch (e) {
+        debugPrint('Downloads write failed for ${dir.path}: $e');
+      }
+    }
+
+    // پشتیبان: حافظه داخلی اپ
+    final fallback = await getApplicationDocumentsDirectory();
+    final file = File(p.join(fallback.path, name));
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }

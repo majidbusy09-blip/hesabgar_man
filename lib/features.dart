@@ -4242,15 +4242,12 @@ class _LoanTabState extends State<_LoanTab> {
                       ),
                     ),
                     subtitle: Text(
-                      'اصل: ${NumFmt.format(loan.principal.round())} · '
-                      'قسط ${NumFmt.format(loan.monthlyPayment.round())}
-'
-                      'پرداخت ${loan.paidCount}/${loan.months} · '
-                      'مانده ${NumFmt.format(loan.remainingToPay.round())}
-'
-                      'نرخ: ${_rateLabel(loan.ratePercent)}'
-                      '${loan.note != null && loan.note!.isNotEmpty ? '
-${loan.note}' : ''}',
+                      [
+                        'اصل: ${NumFmt.format(loan.principal.round())} · قسط ${NumFmt.format(loan.monthlyPayment.round())}',
+                        'پرداخت ${loan.paidCount}/${loan.months} · مانده ${NumFmt.format(loan.remainingToPay.round())}',
+                        'نرخ: ${_rateLabel(loan.ratePercent)}',
+                        if (loan.note != null && loan.note!.isNotEmpty) loan.note!,
+                      ].join('\n'),
                       style: const TextStyle(
                           fontFamily: 'Vazirmatn', fontSize: 12),
                     ),

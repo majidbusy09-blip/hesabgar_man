@@ -2014,6 +2014,47 @@ class FinanceLogic {
     return rows;
   }
 
+  /// نرخ سود سالانهٔ تقریبی از روی مبلغ وام، قسط ماهانه و تعداد اقساط
+  /// (حل عددی فرمول قسط ثابت). اگر قسط × ماه ≤ اصل وام → ۰٪.
+  static double? loanRateFromPayment({
+    required double principal,
+    required double monthlyPayment,
+    required int months,
+  }) {
+    if (principal <= 0 || monthlyPayment <= 0 || months <= 0) return null;
+    final total = monthlyPayment * months;
+    if (total <= principal + 1e-6) return 0;
+    // حد بالای منطقی: اگر قسط خیلی کم باشد ممکن است همگرا نشود
+    if (monthlyPayment * months < principal) return null;
+
+    double r = 0.01; // نرخ ماهانه اولیه ۱٪
+    for (var i = 0; i < 80; i++) {
+      final a = math.pow(1 + r, months).toDouble();
+      if ((a - 1).abs() < 1e-14) {
+        r = 1e-6;
+        continue;
+      }
+      final f = principal * r * a / (a - 1) - monthlyPayment;
+      final da = months * math.pow(1 + r, months - 1).toDouble();
+      final num = (a + r * da) * (a - 1) - r * a * da;
+      final den = (a - 1) * (a - 1);
+      final df = principal * num / den;
+      if (df.abs() < 1e-14) break;
+      final next = r - f / df;
+      if (!next.isFinite || next <= -0.99) {
+        r = 0.0001;
+        continue;
+      }
+      if ((next - r).abs() < 1e-12) {
+        r = next;
+        break;
+      }
+      r = next;
+    }
+    if (r < 0) r = 0;
+    return r * 12 * 100; // سالانه به درصد
+  }
+
   /// سود مرکب سپرده
   /// [principal] مبلغ اولیه
   /// [annualRatePercent] نرخ سالانه
@@ -2882,12 +2923,53 @@ class _LoanTab extends StatefulWidget {
 }
 
 class _LoanTabState extends State<_LoanTab> {
+  /// 0 محاسبه قسط | 1 کشف نرخ | 2 پیگیری وام من
+  int _mode = 0;
+
+  // --- محاسبه قسط ---
   final _principal = TextEditingController();
   final _rate = TextEditingController(text: '18');
   final _months = TextEditingController(text: '12');
   Map<String, double>? _result;
   List<Map<String, double>> _schedule = const [];
   String? _message;
+
+  // --- کشف نرخ ---
+  final _revPrincipal = TextEditingController();
+  final _revPayment = TextEditingController();
+  final _revMonths = TextEditingController(text: '60');
+  double? _discoveredRate;
+  String? _revMessage;
+
+  // --- پیگیری ---
+  final List<_TrackedLoan> _loans = [];
+  static const _loansKey = 'tracked_loans_v1';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLoans();
+  }
+
+  Future<void> _loadLoans() async {
+    try {
+      final s = await LocalStore.instance;
+      final raw = s.getString(_loansKey);
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw) as List;
+      setState(() {
+        _loans
+          ..clear()
+          ..addAll(list.map((e) => _TrackedLoan.fromJson(e as Map<String, dynamic>)));
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveLoans() async {
+    final s = await LocalStore.instance;
+    await s.setString(
+        _loansKey, jsonEncode(_loans.map((e) => e.toJson()).toList()));
+  }
 
   void _calc() {
     if (!mounted) return;
@@ -2935,7 +3017,41 @@ class _LoanTabState extends State<_LoanTab> {
     });
   }
 
-  /// با تغییر هر ورودی، نتیجهٔ قبلی دیگر معتبر نیست تا دوباره محاسبه شود.
+  void _calcRate() {
+    final p = NumFmt.parse(_revPrincipal.text);
+    final pay = NumFmt.parse(_revPayment.text);
+    final n = NumFmt.parse(_revMonths.text).round();
+    if (p <= 0 || pay <= 0 || n <= 0) {
+      setState(() {
+        _discoveredRate = null;
+        _revMessage = 'مبلغ وام، قسط ماهانه و تعداد اقساط را درست وارد کنید.';
+      });
+      return;
+    }
+    if (pay * n < p) {
+      setState(() {
+        _discoveredRate = null;
+        _revMessage =
+            'جمع اقساط از مبلغ وام کمتر است؛ با این اعداد نرخ معنادار نیست.';
+      });
+      return;
+    }
+    final rate = FinanceLogic.loanRateFromPayment(
+      principal: p,
+      monthlyPayment: pay,
+      months: n,
+    );
+    setState(() {
+      if (rate == null) {
+        _discoveredRate = null;
+        _revMessage = 'محاسبه ممکن نشد؛ اعداد را بررسی کنید.';
+      } else {
+        _discoveredRate = rate;
+        _revMessage = null;
+      }
+    });
+  }
+
   void _invalidateResult() {
     if (_result == null && _message == null && _schedule.isEmpty) return;
     if (!mounted) return;
@@ -2951,15 +3067,290 @@ class _LoanTabState extends State<_LoanTab> {
     _principal.dispose();
     _rate.dispose();
     _months.dispose();
+    _revPrincipal.dispose();
+    _revPayment.dispose();
+    _revMonths.dispose();
     super.dispose();
+  }
+
+  Future<void> _addTrackedLoan() async {
+    final titleC = TextEditingController();
+    final amountC = TextEditingController();
+    final payC = TextEditingController();
+    final monthsC = TextEditingController(text: '12');
+    final dayC = TextEditingController(text: '1');
+    var remindDay = true;
+    var remindBefore = true;
+    DateTime start = DateTime.now();
+
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setL) {
+          final j = Jalali.fromDateTime(start);
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+                16, 16, 16, 16 + MediaQuery.of(ctx).viewInsets.bottom),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'ثبت وام برای پیگیری',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: titleC,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                      labelText: 'عنوان (مثلاً وام بانک ملی)',
+                      labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: amountC,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [GroupedNumberFormatter()],
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                      labelText: 'مبلغ کل وام (تومان)',
+                      labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: payC,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [GroupedNumberFormatter()],
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                      labelText: 'قسط هر ماه (تومان)',
+                      labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: monthsC,
+                          textAlign: TextAlign.center,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontFamily: 'Vazirmatn'),
+                          decoration: const InputDecoration(
+                            labelText: 'تعداد اقساط',
+                            labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: dayC,
+                          textAlign: TextAlign.center,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontFamily: 'Vazirmatn'),
+                          decoration: const InputDecoration(
+                            labelText: 'روز پرداخت (۱–۳۱)',
+                            labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      'شروع از: ${j.day} ${j.monthName} ${j.year}',
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    ),
+                    trailing: TextButton(
+                      child: const Text('تاریخ',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                      onPressed: () async {
+                        final p = await showJalaliDatePicker(
+                            context: ctx, initial: j);
+                        if (p != null) setL(() => start = p.toDateTime());
+                      },
+                    ),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('یادآوری همان روز پرداخت',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                    value: remindDay,
+                    onChanged: (v) => setL(() => remindDay = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('یادآوری یک روز قبل',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                    value: remindBefore,
+                    onChanged: (v) => setL(() => remindBefore = v),
+                  ),
+                  Text(
+                    'یادآوری داخل تقویم و برنامه ثبت می‌شود (اعلان سیستم‌عامل جداگانه نیست).',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 11,
+                      color: Theme.of(ctx)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.5),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('ذخیره و افزودن به تقویم',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+        });
+      },
+    );
+
+    if (ok != true) {
+      titleC.dispose();
+      amountC.dispose();
+      payC.dispose();
+      monthsC.dispose();
+      dayC.dispose();
+      return;
+    }
+
+    final title = titleC.text.trim().isEmpty
+        ? 'قسط وام'
+        : titleC.text.trim();
+    final amount = NumFmt.parse(amountC.text);
+    final pay = NumFmt.parse(payC.text);
+    final months = NumFmt.parse(monthsC.text).round().clamp(1, 600);
+    final day = NumFmt.parse(dayC.text).round().clamp(1, 31);
+    titleC.dispose();
+    amountC.dispose();
+    payC.dispose();
+    monthsC.dispose();
+    dayC.dispose();
+
+    if (amount <= 0 || pay <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('مبلغ و قسط را درست وارد کنید',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+      ));
+      return;
+    }
+
+    final rate = FinanceLogic.loanRateFromPayment(
+          principal: amount,
+          monthlyPayment: pay,
+          months: months,
+        ) ??
+        0;
+
+    // روز پرداخت اول
+    var firstPay = DateTime(start.year, start.month, day.clamp(1, 28));
+    if (firstPay.isBefore(DateTime(start.year, start.month, start.day))) {
+      firstPay = DateTime(firstPay.year, firstPay.month + 1, firstPay.day);
+    }
+
+    final loan = _TrackedLoan(
+      id: 'loan_${DateTime.now().millisecondsSinceEpoch}',
+      title: title,
+      principal: amount,
+      monthlyPayment: pay,
+      months: months,
+      paymentDay: day,
+      start: start,
+      ratePercent: rate,
+      remindSameDay: remindDay,
+      remindDayBefore: remindBefore,
+    );
+
+    // رویداد تقویم
+    try {
+      final cal = CalendarStore();
+      await cal.load();
+      final remMin = remindBefore
+          ? 1440
+          : (remindDay ? 0 : 0);
+      final ev = CalEvent(
+        id: 'loan_ev_${loan.id}',
+        title: 'قسط: ${loan.title}',
+        note:
+            'مبلغ قسط: ${NumFmt.format(pay.round())} تومان\nوام: ${NumFmt.format(amount.round())}',
+        start: DateTime(firstPay.year, firstPay.month, firstPay.day, 9, 0),
+        allDay: true,
+        categoryId: 'c_finance',
+        colorValue: 0xFFFFA726,
+        recurrence: 'monthly',
+        recurrenceUntil:
+            DateTime(firstPay.year, firstPay.month + months, firstPay.day),
+        reminderMinutes: remMin,
+      );
+      await cal.upsertEvent(ev);
+      // اگر هر دو یادآوری خواسته شد، رویداد روز قبل هم
+      if (remindBefore && remindDay) {
+        final before = firstPay.subtract(const Duration(days: 1));
+        await cal.upsertEvent(CalEvent(
+          id: 'loan_ev_before_${loan.id}',
+          title: 'فردا قسط: ${loan.title}',
+          note: 'یادآوری یک روز قبل از پرداخت قسط',
+          start: DateTime(before.year, before.month, before.day, 9, 0),
+          allDay: true,
+          categoryId: 'c_finance',
+          colorValue: 0xFFFFA726,
+          recurrence: 'monthly',
+          recurrenceUntil:
+              DateTime(firstPay.year, firstPay.month + months, firstPay.day),
+          reminderMinutes: 0,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('وام ذخیره شد؛ تقویم: $e',
+              style: const TextStyle(fontFamily: 'Vazirmatn')),
+        ));
+      }
+    }
+
+    setState(() => _loans.add(loan));
+    await _saveLoans();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('وام ثبت و در تقویم زمان‌بندی شد',
+          style: TextStyle(fontFamily: 'Vazirmatn')),
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final hasResult = _result != null &&
-        NumFmt.parse(_principal.text) > 0 &&
-        NumFmt.parse(_months.text) > 0;
 
     Widget sectionTitle(String text) {
       return Padding(
@@ -2977,257 +3368,520 @@ class _LoanTabState extends State<_LoanTab> {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        Text(
-          'قسط ماهانه، مجموع بازپرداخت و سود وام را بر اساس مبلغ، نرخ و مدت محاسبه می‌کند.',
-          style: TextStyle(
-            fontFamily: 'Vazirmatn',
-            fontSize: 12.5,
-            height: 1.45,
-            color: scheme.onSurface.withValues(alpha: 0.55),
+        Center(
+          child: SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(
+                  value: 0,
+                  label: Text('محاسبه قسط',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 11))),
+              ButtonSegment(
+                  value: 1,
+                  label: Text('نرخ واقعی',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 11))),
+              ButtonSegment(
+                  value: 2,
+                  label: Text('وام‌های من',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 11))),
+            ],
+            selected: {_mode},
+            onSelectionChanged: (s) => setState(() => _mode = s.first),
           ),
         ),
         const SizedBox(height: 16),
-        sectionTitle('اطلاعات وام'),
-        _field(_principal, 'مبلغ وام (تومان)', Icons.payments_outlined,
-            onChanged: _invalidateResult),
-        const SizedBox(height: 12),
-        _field(_rate, 'نرخ سود سالانه (%)', Icons.percent,
-            onChanged: _invalidateResult),
-        const SizedBox(height: 12),
-        _field(_months, 'مدت بازپرداخت (ماه)', Icons.calendar_today_outlined,
-            integer: true, onChanged: _invalidateResult),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: _calc,
-          icon: const Icon(Icons.calculate_outlined),
-          label: const Text('محاسبه', style: TextStyle(fontFamily: 'Vazirmatn')),
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(50),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
+        if (_mode == 0) ..._buildInstallment(scheme, sectionTitle),
+        if (_mode == 1) ..._buildDiscoverRate(scheme, sectionTitle),
+        if (_mode == 2) ..._buildMyLoans(scheme, sectionTitle),
+      ],
+    );
+  }
+
+  List<Widget> _buildInstallment(
+      ColorScheme scheme, Widget Function(String) sectionTitle) {
+    final hasResult = _result != null &&
+        NumFmt.parse(_principal.text) > 0 &&
+        NumFmt.parse(_months.text) > 0;
+    return [
+      Text(
+        'با دانستن مبلغ وام، نرخ سود و مدت، قسط ماهانه و جدول بازپرداخت را ببینید.',
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 12.5,
+          height: 1.45,
+          color: scheme.onSurface.withValues(alpha: 0.55),
+        ),
+      ),
+      const SizedBox(height: 16),
+      sectionTitle('اطلاعات وام'),
+      _field(_principal, 'مبلغ وام (تومان)', Icons.payments_outlined,
+          onChanged: _invalidateResult),
+      const SizedBox(height: 12),
+      _field(_rate, 'نرخ سود سالانه (%)', Icons.percent,
+          onChanged: _invalidateResult),
+      const SizedBox(height: 12),
+      _field(_months, 'مدت بازپرداخت (ماه)', Icons.calendar_today_outlined,
+          integer: true, onChanged: _invalidateResult),
+      const SizedBox(height: 20),
+      FilledButton.icon(
+        onPressed: _calc,
+        icon: const Icon(Icons.calculate_outlined),
+        label: const Text('محاسبه قسط',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(50),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
           ),
         ),
-        if (_message != null) ...[
-          const SizedBox(height: 12),
-          Text(
-            _message!,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Vazirmatn',
-              fontSize: 13,
-              color: scheme.error,
-            ),
+      ),
+      if (_message != null) ...[
+        const SizedBox(height: 12),
+        Text(
+          _message!,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 13,
+            color: scheme.error,
           ),
-        ],
-        if (hasResult) ...[
-          const SizedBox(height: 22),
-          Card(
-            elevation: 1,
-            margin: EdgeInsets.zero,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: scheme.primary.withValues(alpha: 0.22),
-              ),
-            ),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-              child: Column(
-                children: [
-                  Text(
-                    'قسط ماهانه',
+        ),
+      ],
+      if (hasResult) ...[
+        const SizedBox(height: 20),
+        sectionTitle('نتیجه'),
+        Card(
+          elevation: 0,
+          color: scheme.primaryContainer.withValues(alpha: 0.35),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Text('قسط ماهانه',
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 13,
-                      color: scheme.onSurface.withValues(alpha: 0.65),
-                    ),
+                      color: scheme.onSurface.withValues(alpha: 0.6),
+                    )),
+                const SizedBox(height: 6),
+                Text(
+                  NumFmt.format(_result!['installment']!.round()),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    color: scheme.primary,
                   ),
-                  const SizedBox(height: 8),
-                  _copyableMoney(
-                    context,
-                    _result!['installment']!,
-                    textAlign: TextAlign.center,
+                ),
+                Text('تومان',
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: scheme.primary,
-                      height: 1.2,
-                    ),
-                  ),
-                ],
-              ),
+                      fontSize: 12,
+                      color: scheme.onSurface.withValues(alpha: 0.5),
+                    )),
+              ],
             ),
           ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      Text('مجموع پرداختی',
+                          style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 11,
+                              color: scheme.onSurface.withValues(alpha: 0.55))),
+                      const SizedBox(height: 4),
+                      Text(NumFmt.format(_result!['total']!.round()),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      Text('کل سود',
+                          style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 11,
+                              color: scheme.onSurface.withValues(alpha: 0.55))),
+                      const SizedBox(height: 4),
+                      Text(NumFmt.format(_result!['interest']!.round()),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_schedule.isNotEmpty) ...[
           const SizedBox(height: 16),
-          sectionTitle('جزئیات وام'),
+          sectionTitle('جدول اقساط'),
           Card(
             margin: EdgeInsets.zero,
             child: Column(
               children: [
-                ListTile(
-                  dense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  title: const Text(
-                    'مجموع بازپرداخت',
-                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
-                  ),
-                  trailing: _copyableMoney(
-                    context,
-                    _result!['total']!,
-                    style: const TextStyle(
-                      fontFamily: 'Vazirmatn',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(
+                    children: [
+                      _schedHead(context, 'ماه', flex: 1),
+                      _schedHead(context, 'قسط', flex: 3),
+                      _schedHead(context, 'سود', flex: 3),
+                      _schedHead(context, 'اصل', flex: 3),
+                      _schedHead(context, 'مانده', flex: 3),
+                    ],
                   ),
                 ),
                 const Divider(height: 1),
-                ListTile(
-                  dense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  title: const Text(
-                    'مجموع سود وام',
-                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
-                  ),
-                  trailing: _copyableMoney(
-                    context,
-                    _result!['interest']!,
-                    style: const TextStyle(
-                      fontFamily: 'Vazirmatn',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                for (var i = 0; i < _schedule.length; i++)
+                  ColoredBox(
+                    color: i.isEven
+                        ? scheme.surfaceContainerHighest.withValues(alpha: 0.35)
+                        : scheme.surface.withValues(alpha: 0.0),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      child: Row(
+                        children: [
+                          _schedCell(
+                            context,
+                            _schedule[i]['month']!.round().toString(),
+                            flex: 1,
+                            bold: true,
+                          ),
+                          _schedCell(
+                            context,
+                            NumFmt.format(_schedule[i]['payment']!.round()),
+                            flex: 3,
+                          ),
+                          _schedCell(
+                            context,
+                            NumFmt.format(_schedule[i]['interest']!.round()),
+                            flex: 3,
+                          ),
+                          _schedCell(
+                            context,
+                            NumFmt.format(_schedule[i]['principal']!.round()),
+                            flex: 3,
+                          ),
+                          _schedCell(
+                            context,
+                            NumFmt.format(_schedule[i]['balance']!.round()),
+                            flex: 3,
+                          ),
+                        ],
+                      ),
                     ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    ];
+  }
+
+  List<Widget> _buildDiscoverRate(
+      ColorScheme scheme, Widget Function(String) sectionTitle) {
+    return [
+      Text(
+        'اگر مبلغ وام، قسط ماهانه و تعداد اقساط را می‌دانید، نرخ سود تقریبی سالانه را پیدا کنید.',
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 12.5,
+          height: 1.45,
+          color: scheme.onSurface.withValues(alpha: 0.55),
+        ),
+      ),
+      const SizedBox(height: 16),
+      sectionTitle('اعدادی که دارید'),
+      _field(_revPrincipal, 'مبلغ وام دریافتی (تومان)', Icons.payments_outlined),
+      const SizedBox(height: 12),
+      _field(_revPayment, 'قسط هر ماه (تومان)', Icons.price_change_outlined),
+      const SizedBox(height: 12),
+      _field(_revMonths, 'تعداد ماه‌های بازپرداخت', Icons.calendar_month_outlined,
+          integer: true),
+      const SizedBox(height: 20),
+      FilledButton.icon(
+        onPressed: _calcRate,
+        icon: const Icon(Icons.search_rounded),
+        label: const Text('محاسبه نرخ سود',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(50),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+      if (_revMessage != null) ...[
+        const SizedBox(height: 12),
+        Text(_revMessage!,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontFamily: 'Vazirmatn', fontSize: 13, color: scheme.error)),
+      ],
+      if (_discoveredRate != null) ...[
+        const SizedBox(height: 20),
+        Card(
+          elevation: 0,
+          color: scheme.tertiaryContainer.withValues(alpha: 0.4),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Text('نرخ سود تقریبی سالانه',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 13,
+                      color: scheme.onSurface.withValues(alpha: 0.6),
+                    )),
+                const SizedBox(height: 8),
+                Text(
+                  '${_discoveredRate!.toStringAsFixed(2)}٪',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 32,
+                    fontWeight: FontWeight.w900,
+                    color: scheme.tertiary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'بر اساس قسط ثابت ماهانه؛ ممکن است با نرخ اعلامی بانک کمی فرق داشته باشد.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 11.5,
+                    height: 1.4,
+                    color: scheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
               ],
             ),
           ),
-          if (_schedule.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            sectionTitle('جدول اقساط'),
-            Text(
-              'برای هر ماه: قسط، سهم سود، سهم اصل و مانده وام',
-              style: TextStyle(
-                fontFamily: 'Vazirmatn',
-                fontSize: 11.5,
-                color: scheme.onSurface.withValues(alpha: 0.45),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Card(
-              margin: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    child: Row(
-                      children: [
-                        _schedHead(context, 'ماه', flex: 1),
-                        _schedHead(context, 'قسط', flex: 3),
-                        _schedHead(context, 'سود', flex: 3),
-                        _schedHead(context, 'اصل', flex: 3),
-                        _schedHead(context, 'مانده', flex: 3),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  for (var i = 0; i < _schedule.length; i++) ...[
-                    ColoredBox(
-                      color: i.isEven
-                          ? scheme.surfaceContainerHighest
-                              .withValues(alpha: 0.35)
-                          : scheme.surface.withValues(alpha: 0.0),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        child: Row(
-                          children: [
-                            _schedCell(
-                              context,
-                              _schedule[i]['month']!.round().toString(),
-                              flex: 1,
-                              bold: true,
-                            ),
-                            _schedCell(
-                              context,
-                              NumFmt.format(
-                                  _schedule[i]['payment']!.round()),
-                              flex: 3,
-                            ),
-                            _schedCell(
-                              context,
-                              NumFmt.format(
-                                  _schedule[i]['interest']!.round()),
-                              flex: 3,
-                            ),
-                            _schedCell(
-                              context,
-                              NumFmt.format(
-                                  _schedule[i]['principal']!.round()),
-                              flex: 3,
-                            ),
-                            _schedCell(
-                              context,
-                              NumFmt.format(
-                                  _schedule[i]['balance']!.round()),
-                              flex: 3,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ],
+        ),
       ],
+    ];
+  }
+
+  List<Widget> _buildMyLoans(
+      ColorScheme scheme, Widget Function(String) sectionTitle) {
+    return [
+      Text(
+        'وام خود را ثبت کنید تا موعد اقساط در تقویم دیده شود و یادآوری همان‌روز یا یک‌روزقبل داشته باشید.',
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 12.5,
+          height: 1.45,
+          color: scheme.onSurface.withValues(alpha: 0.55),
+        ),
+      ),
+      const SizedBox(height: 14),
+      FilledButton.icon(
+        onPressed: _addTrackedLoan,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('ثبت وام جدید',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(50),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+      const SizedBox(height: 16),
+      if (_loans.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Column(
+            children: [
+              Icon(Icons.account_balance_outlined,
+                  size: 40,
+                  color: scheme.onSurface.withValues(alpha: 0.28)),
+              const SizedBox(height: 8),
+              Text(
+                'هنوز وامی ثبت نشده',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  color: scheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        )
+      else
+        for (final loan in _loans)
+          Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: ListTile(
+              title: Text(loan.title,
+                  style: const TextStyle(
+                      fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700)),
+              subtitle: Text(
+                'قسط ${NumFmt.format(loan.monthlyPayment.round())} تومان · '
+                '${loan.months} ماه · روز ${loan.paymentDay}\n'
+                'نرخ تقریبی: ${loan.ratePercent.toStringAsFixed(1)}٪ · '
+                'یادآوری: ${loan.remindSameDay ? 'همان‌روز ' : ''}${loan.remindDayBefore ? 'روز قبل' : ''}',
+                style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
+              ),
+              isThreeLine: true,
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () async {
+                  setState(() => _loans.removeWhere((e) => e.id == loan.id));
+                  await _saveLoans();
+                },
+              ),
+            ),
+          ),
+    ];
+  }
+
+  Widget _field(
+    TextEditingController c,
+    String label,
+    IconData icon, {
+    bool integer = false,
+    void Function(String)? onChanged,
+  }) {
+    return TextField(
+      controller: c,
+      textAlign: TextAlign.center,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        if (!integer) GroupedNumberFormatter(),
+      ],
+      style: const TextStyle(
+        fontFamily: 'Vazirmatn',
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
+        prefixIcon: Icon(icon),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _schedHead(BuildContext context, String t, {int flex = 1}) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        t,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+        ),
+      ),
+    );
+  }
+
+  Widget _schedCell(BuildContext context, String t,
+      {int flex = 1, bool bold = false}) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        t,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 11,
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
     );
   }
 }
 
-Widget _schedHead(BuildContext context, String t, {int flex = 1}) {
-  return Expanded(
-    flex: flex,
-    child: Text(
-      t,
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        fontFamily: 'Vazirmatn',
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
-      ),
-    ),
-  );
+class _TrackedLoan {
+  final String id;
+  final String title;
+  final double principal;
+  final double monthlyPayment;
+  final int months;
+  final int paymentDay;
+  final DateTime start;
+  final double ratePercent;
+  final bool remindSameDay;
+  final bool remindDayBefore;
+
+  _TrackedLoan({
+    required this.id,
+    required this.title,
+    required this.principal,
+    required this.monthlyPayment,
+    required this.months,
+    required this.paymentDay,
+    required this.start,
+    required this.ratePercent,
+    required this.remindSameDay,
+    required this.remindDayBefore,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'principal': principal,
+        'monthlyPayment': monthlyPayment,
+        'months': months,
+        'paymentDay': paymentDay,
+        'start': start.toIso8601String(),
+        'ratePercent': ratePercent,
+        'remindSameDay': remindSameDay,
+        'remindDayBefore': remindDayBefore,
+      };
+
+  factory _TrackedLoan.fromJson(Map<String, dynamic> j) => _TrackedLoan(
+        id: j['id'] as String,
+        title: j['title'] as String,
+        principal: (j['principal'] as num).toDouble(),
+        monthlyPayment: (j['monthlyPayment'] as num).toDouble(),
+        months: (j['months'] as num).toInt(),
+        paymentDay: (j['paymentDay'] as num).toInt(),
+        start: DateTime.tryParse(j['start'] as String? ?? '') ?? DateTime.now(),
+        ratePercent: (j['ratePercent'] as num?)?.toDouble() ?? 0,
+        remindSameDay: j['remindSameDay'] as bool? ?? true,
+        remindDayBefore: j['remindDayBefore'] as bool? ?? true,
+      );
 }
 
-Widget _schedCell(BuildContext context, String t,
-    {int flex = 1, bool bold = false}) {
-  return Expanded(
-    flex: flex,
-    child: Text(
-      t,
-      textAlign: TextAlign.center,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontFamily: 'Vazirmatn',
-        fontSize: 11,
-        fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-      ),
-    ),
-  );
-}
 
 // ---------- سود و زیان فروش ----------
 class _ProfitLossTab extends StatefulWidget {

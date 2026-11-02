@@ -2924,7 +2924,7 @@ class _LoanTab extends StatefulWidget {
 
 class _LoanTabState extends State<_LoanTab> {
   /// 0 محاسبه قسط | 1 کشف نرخ | 2 پیگیری وام من
-  int _mode = 0;
+  int _mode = 2;
 
   // --- محاسبه قسط ---
   final _principal = TextEditingController();
@@ -2971,20 +2971,32 @@ class _LoanTabState extends State<_LoanTab> {
         _loansKey, jsonEncode(_loans.map((e) => e.toJson()).toList()));
   }
 
-  DateTime _addMonthsClamped(DateTime d, int months) {
-    final total = d.month - 1 + months;
-    final y = d.year + total ~/ 12;
-    final m = total % 12 + 1;
-    final lastDay = DateTime(y, m + 1, 0).day;
-    return DateTime(y, m, d.day.clamp(1, lastDay));
+  /// تاریخ پرداخت قسط بر اساس تقویم شمسی (روز پرداخت = روز شمسی ماه)
+  DateTime _jalaliPaymentDateTime(Jalali baseMonth, int paymentDay, int monthOffset) {
+    var y = baseMonth.year;
+    var m = baseMonth.month + monthOffset;
+    while (m > 12) {
+      m -= 12;
+      y++;
+    }
+    while (m < 1) {
+      m += 12;
+      y--;
+    }
+    final len = Jalali(y, m, 1).monthLength;
+    final d = paymentDay.clamp(1, len);
+    return Jalali(y, m, d).toDateTime();
   }
 
-  DateTime _paymentDateOnOrAfter(DateTime start, int paymentDay) {
-    final day = paymentDay.clamp(1, 28);
-    var d = DateTime(start.year, start.month, day);
-    final startDay = DateTime(start.year, start.month, start.day);
-    if (d.isBefore(startDay)) d = _addMonthsClamped(d, 1);
-    return d;
+  /// اولین قسط شمسی: روز [paymentDay] در ماه شروع یا ماه بعد اگر از تاریخ شروع گذشته باشد
+  DateTime _firstJalaliPayment(DateTime start, int paymentDay) {
+    final startJ = Jalali.fromDateTime(start);
+    final len = startJ.monthLength;
+    final day = paymentDay.clamp(1, len);
+    if (startJ.day <= day) {
+      return Jalali(startJ.year, startJ.month, day).toDateTime();
+    }
+    return _jalaliPaymentDateTime(startJ, paymentDay, 1);
   }
 
   Future<void> _removeLoanCalendarEvents(String loanId) async {
@@ -3007,15 +3019,23 @@ class _LoanTabState extends State<_LoanTab> {
     await _removeLoanCalendarEvents(loan.id);
     final cal = CalendarStore();
     await cal.load();
-    final first = _paymentDateOnOrAfter(loan.start, loan.paymentDay);
+    final startJ = Jalali.fromDateTime(loan.start);
+    final firstDt = _firstJalaliPayment(loan.start, loan.paymentDay);
+    final firstJ = Jalali.fromDateTime(firstDt);
+    final baseOffset =
+        (firstJ.year - startJ.year) * 12 + (firstJ.month - startJ.month);
     var count = 0;
     for (var i = 0; i < loan.months; i++) {
-      final payDay = _addMonthsClamped(first, i);
+      final payDay =
+          _jalaliPaymentDateTime(startJ, loan.paymentDay, baseOffset + i);
+      final jPay = Jalali.fromDateTime(payDay);
       await cal.upsertEvent(CalEvent(
         id: 'loan_ev_${loan.id}_$i',
         title: 'قسط: ${loan.title}',
         note:
-            'قسط ${i + 1} از ${loan.months}\nمبلغ: ${NumFmt.format(loan.monthlyPayment.round())} تومان',
+            'قسط ${i + 1} از ${loan.months}\n'
+            'مبلغ: ${NumFmt.format(loan.monthlyPayment.round())} تومان\n'
+            'روز پرداخت شمسی: ${jPay.day} ${jPay.monthName} ${jPay.year}',
         start: DateTime(payDay.year, payDay.month, payDay.day, 9, 0),
         allDay: true,
         categoryId: 'c_finance',
@@ -3029,7 +3049,7 @@ class _LoanTabState extends State<_LoanTab> {
         await cal.upsertEvent(CalEvent(
           id: 'loan_ev_before_${loan.id}_$i',
           title: 'فردا قسط: ${loan.title}',
-          note: 'یادآوری یک روز قبل از قسط ${i + 1}',
+          note: 'یادآوری یک روز قبل از قسط ${i + 1} (شمسی)',
           start: DateTime(before.year, before.month, before.day, 9, 0),
           allDay: true,
           categoryId: 'c_finance',
@@ -3042,6 +3062,7 @@ class _LoanTabState extends State<_LoanTab> {
     }
     return count;
   }
+
 
   double _rateFor(double principal, double pay, int months) {
     final r = FinanceLogic.loanRateFromPayment(
@@ -3070,7 +3091,7 @@ class _LoanTabState extends State<_LoanTab> {
     return sum;
   }
 
-  Future<void> _togglePaid(_TrackedLoan loan, int index) async {
+  Future<void> _togglePaid(_TrackedLoan loan, int index, {bool quiet = false}) async {
     final wasPaid = loan.isPaid(index);
     final next = Set<int>.from(loan.paidIndices);
     if (wasPaid) {
@@ -3084,61 +3105,45 @@ class _LoanTabState extends State<_LoanTab> {
     setState(() => _loans[i] = updated);
     await _saveLoans();
 
-    // هنگام علامت پرداخت‌شده: پیشنهاد ثبت در هزینه‌ها
-    if (!wasPaid && mounted) {
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('ثبت در هزینه‌ها؟',
-              style: TextStyle(fontFamily: 'Vazirmatn')),
-          content: Text(
-            'قسط ${index + 1} از «${loan.title}» '
-            '(${NumFmt.format(loan.monthlyPayment.round())} تومان) '
-            'به بخش هزینه‌ها اضافه شود؟\n\n'
-            'فقط با تأیید شما ثبت می‌شود.',
-            style: const TextStyle(fontFamily: 'Vazirmatn', height: 1.4),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('فعلاً نه',
-                  style: TextStyle(fontFamily: 'Vazirmatn')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('ثبت هزینه',
-                  style: TextStyle(fontFamily: 'Vazirmatn')),
-            ),
-          ],
-        ),
-      );
-      if (go == true) {
-        try {
-          final store = ExpenseStore();
-          await store.load();
+    // ثبت خودکار در هزینه فقط اگر هنگام تعریف تسهیلات فعال شده باشد
+    if (!wasPaid && loan.autoAddExpenses && mounted) {
+      try {
+        final store = ExpenseStore();
+        await store.load();
+        final exists = store.items.any((e) => e.id == 'loan_pay_${loan.id}_$index');
+        if (!exists) {
           await store.add(Expense(
             id: 'loan_pay_${loan.id}_$index',
             title: 'قسط ${index + 1}: ${loan.title}',
             amount: loan.monthlyPayment,
             category: 'مسکن',
             date: DateTime.now(),
-            note: 'از بخش تسهیلات',
+            note: 'از بخش تسهیلات (خودکار)',
             isIncome: false,
           ));
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('قسط در هزینه‌ها ثبت شد',
-                style: TextStyle(fontFamily: 'Vazirmatn')),
-          ));
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('خطا در ثبت هزینه: $e',
-                style: const TextStyle(fontFamily: 'Vazirmatn')),
-          ));
+          if (!quiet && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('قسط در هزینه‌ها ثبت شد',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+            ));
+          }
         }
-      }
+      } catch (_) {}
     }
+  }
+
+  Future<void> _toggleThisMonthPaid(_TrackedLoan loan) async {
+    final jNow = Jalali.fromDateTime(DateTime.now());
+    final idx = loan.installmentIndexForJalaliMonth(jNow);
+    if (idx == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('این ماه در بازه اقساط این تسهیلات نیست',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+      ));
+      return;
+    }
+    await _togglePaid(loan, idx);
   }
 
   List<_TrackedLoan> get _upcomingDues {
@@ -3355,8 +3360,10 @@ class _LoanTabState extends State<_LoanTab> {
     final monthsC = TextEditingController(text: '12');
     final dayC = TextEditingController(text: '1');
     final noteC = TextEditingController();
+    final paidAlreadyC = TextEditingController(text: '0');
     var remindDay = true;
     var remindBefore = true;
+    var autoExpense = false;
     DateTime start = DateTime.now();
 
     final ok = await showModalBottomSheet<bool>(
@@ -3481,6 +3488,31 @@ class _LoanTabState extends State<_LoanTab> {
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: paidAlreadyC,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                      labelText: 'چند قسط قبلاً پرداخت شده؟',
+                      helperText: 'اگر از قبل وام گرفته‌اید، تعداد اقساط پرداخت‌شده را بنویسید',
+                      helperStyle: TextStyle(fontFamily: 'Vazirmatn', fontSize: 11),
+                      labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('ثبت خودکار اقساط در هزینه‌ها',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                    subtitle: const Text(
+                      'با علامت «پرداخت شد»، هزینه هم ثبت شود',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 11),
+                    ),
+                    value: autoExpense,
+                    onChanged: (v) => setL(() => autoExpense = v),
+                  ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('یادآوری همان روز پرداخت',
@@ -3528,6 +3560,7 @@ class _LoanTabState extends State<_LoanTab> {
       monthsC.dispose();
       dayC.dispose();
       noteC.dispose();
+      paidAlreadyC.dispose();
       return;
     }
 
@@ -3539,12 +3572,15 @@ class _LoanTabState extends State<_LoanTab> {
     final months = NumFmt.parse(monthsC.text).round().clamp(1, 600);
     final day = NumFmt.parse(dayC.text).round().clamp(1, 31);
     final note = noteC.text.trim().isEmpty ? null : noteC.text.trim();
+    final paidAlready =
+        NumFmt.parse(paidAlreadyC.text).round().clamp(0, 600);
     titleC.dispose();
     amountC.dispose();
     payC.dispose();
     monthsC.dispose();
     dayC.dispose();
     noteC.dispose();
+    paidAlreadyC.dispose();
 
     if (amount <= 0 || pay <= 0) {
       if (!mounted) return;
@@ -3557,6 +3593,9 @@ class _LoanTabState extends State<_LoanTab> {
 
     final rate = _rateFor(amount, pay, months);
 
+    final paidSet = <int>{
+      for (var i = 0; i < paidAlready.clamp(0, months); i++) i,
+    };
     final loan = _TrackedLoan(
       id: 'loan_${DateTime.now().millisecondsSinceEpoch}',
       title: title,
@@ -3569,6 +3608,8 @@ class _LoanTabState extends State<_LoanTab> {
       remindSameDay: remindDay,
       remindDayBefore: remindBefore,
       note: note,
+      paidIndices: paidSet,
+      autoAddExpenses: autoExpense,
     );
 
     var calCount = 0;
@@ -4106,6 +4147,8 @@ class _LoanTabState extends State<_LoanTab> {
   List<Widget> _buildMyLoans(
       ColorScheme scheme, Widget Function(String) sectionTitle) {
     final monthTotal = _thisMonthInstallmentsTotal;
+    final sortedLoans = [..._loans]
+      ..sort((a, b) => a.paymentDay.compareTo(b.paymentDay));
     return [
       Text(
         'تسهیلات را ثبت کنید تا اقساط در تقویم بیاید و جمع این ماه را ببینید.',
@@ -4225,7 +4268,7 @@ class _LoanTabState extends State<_LoanTab> {
           ),
         )
       else
-        for (final loan in _loans)
+        for (final loan in sortedLoans)
           Card(
             margin: const EdgeInsets.only(bottom: 10),
             child: Padding(
@@ -4244,6 +4287,7 @@ class _LoanTabState extends State<_LoanTab> {
                     subtitle: Text(
                       [
                         'اصل: ${NumFmt.format(loan.principal.round())} · قسط ${NumFmt.format(loan.monthlyPayment.round())}',
+                        'روز پرداخت: ${loan.paymentDay} شمسی · ${loan.months} قسط',
                         'پرداخت ${loan.paidCount}/${loan.months} · مانده ${NumFmt.format(loan.remainingToPay.round())}',
                         'نرخ: ${_rateLabel(loan.ratePercent)}',
                         if (loan.note != null && loan.note!.isNotEmpty) loan.note!,
@@ -4260,6 +4304,41 @@ class _LoanTabState extends State<_LoanTab> {
                       child: LinearProgressIndicator(
                         value: loan.progress,
                         minHeight: 6,
+                      ),
+                    ),
+                  ),
+                  Builder(builder: (ctx) {
+                    final jNow = Jalali.fromDateTime(DateTime.now());
+                    final idx = loan.installmentIndexForJalaliMonth(jNow);
+                    if (idx == null) return const SizedBox.shrink();
+                    final paid = loan.isPaid(idx);
+                    return CheckboxListTile(
+                      dense: true,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 8),
+                      value: paid,
+                      onChanged: (_) => _toggleThisMonthPaid(loan),
+                      title: Text(
+                        paid
+                            ? 'قسط این ماه پرداخت شد'
+                            : 'پرداخت کردم این ماه',
+                        style: const TextStyle(
+                            fontFamily: 'Vazirmatn', fontSize: 13),
+                      ),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    );
+                  }),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'روز پرداخت شمسی: ${loan.paymentDay} هر ماه',
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.55),
                       ),
                     ),
                   ),
@@ -4374,6 +4453,7 @@ class _TrackedLoan {
   final bool remindDayBefore;
   final Set<int> paidIndices;
   final String? note;
+  final bool autoAddExpenses;
 
   _TrackedLoan({
     required this.id,
@@ -4388,6 +4468,7 @@ class _TrackedLoan {
     required this.remindDayBefore,
     Set<int>? paidIndices,
     this.note,
+    this.autoAddExpenses = false,
   }) : paidIndices = paidIndices ?? {};
 
   int get paidCount => paidIndices.length;
@@ -4419,6 +4500,7 @@ class _TrackedLoan {
     Set<int>? paidIndices,
     String? note,
     bool clearNote = false,
+    bool? autoAddExpenses,
   }) =>
       _TrackedLoan(
         id: id,
@@ -4433,6 +4515,7 @@ class _TrackedLoan {
         remindDayBefore: remindDayBefore ?? this.remindDayBefore,
         paidIndices: paidIndices ?? this.paidIndices,
         note: clearNote ? null : (note ?? this.note),
+        autoAddExpenses: autoAddExpenses ?? this.autoAddExpenses,
       );
 
   Map<String, dynamic> toJson() => {
@@ -4448,6 +4531,7 @@ class _TrackedLoan {
         'remindDayBefore': remindDayBefore,
         'paidIndices': paidIndices.toList()..sort(),
         'note': note,
+        'autoAddExpenses': autoAddExpenses,
       };
 
   factory _TrackedLoan.fromJson(Map<String, dynamic> j) {
@@ -4471,6 +4555,7 @@ class _TrackedLoan {
       remindDayBefore: j['remindDayBefore'] as bool? ?? true,
       paidIndices: paid,
       note: j['note'] as String?,
+      autoAddExpenses: j['autoAddExpenses'] as bool? ?? false,
     );
   }
 }

@@ -3062,14 +3062,187 @@ class _LoanTabState extends State<_LoanTab> {
     final jNow = Jalali.fromDateTime(DateTime.now());
     double sum = 0;
     for (final loan in _loans) {
-      final startJ = Jalali.fromDateTime(loan.start);
-      final monthsPassed =
-          (jNow.year - startJ.year) * 12 + (jNow.month - startJ.month);
-      if (monthsPassed >= 0 && monthsPassed < loan.months) {
-        sum += loan.monthlyPayment;
-      }
+      final idx = loan.installmentIndexForJalaliMonth(jNow);
+      if (idx == null) continue;
+      if (loan.isPaid(idx)) continue;
+      sum += loan.monthlyPayment;
     }
     return sum;
+  }
+
+  Future<void> _togglePaid(_TrackedLoan loan, int index) async {
+    final wasPaid = loan.isPaid(index);
+    final next = Set<int>.from(loan.paidIndices);
+    if (wasPaid) {
+      next.remove(index);
+    } else {
+      next.add(index);
+    }
+    final updated = loan.copyWith(paidIndices: next);
+    final i = _loans.indexWhere((e) => e.id == loan.id);
+    if (i < 0) return;
+    setState(() => _loans[i] = updated);
+    await _saveLoans();
+
+    // هنگام علامت پرداخت‌شده: پیشنهاد ثبت در هزینه‌ها
+    if (!wasPaid && mounted) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('ثبت در هزینه‌ها؟',
+              style: TextStyle(fontFamily: 'Vazirmatn')),
+          content: Text(
+            'قسط ${index + 1} از «${loan.title}» '
+            '(${NumFmt.format(loan.monthlyPayment.round())} تومان) '
+            'به بخش هزینه‌ها اضافه شود؟\n\n'
+            'فقط با تأیید شما ثبت می‌شود.',
+            style: const TextStyle(fontFamily: 'Vazirmatn', height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('فعلاً نه',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('ثبت هزینه',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+            ),
+          ],
+        ),
+      );
+      if (go == true) {
+        try {
+          final store = ExpenseStore();
+          await store.load();
+          await store.add(Expense(
+            id: 'loan_pay_${loan.id}_$index',
+            title: 'قسط ${index + 1}: ${loan.title}',
+            amount: loan.monthlyPayment,
+            category: 'مسکن',
+            date: DateTime.now(),
+            note: 'از بخش تسهیلات',
+            isIncome: false,
+          ));
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('قسط در هزینه‌ها ثبت شد',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ));
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('خطا در ثبت هزینه: $e',
+                style: const TextStyle(fontFamily: 'Vazirmatn')),
+          ));
+        }
+      }
+    }
+  }
+
+  List<_TrackedLoan> get _upcomingDues {
+    final now = DateTime.now();
+    final out = <_TrackedLoan>[];
+    for (final loan in _loans) {
+      final idx = loan.installmentIndexForJalaliMonth(Jalali.fromDateTime(now));
+      if (idx == null || loan.isPaid(idx)) continue;
+      out.add(loan);
+    }
+    return out;
+  }
+
+  void _showInstallmentSheet(_TrackedLoan loan) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setL) {
+          final current = _loans.firstWhere(
+            (e) => e.id == loan.id,
+            orElse: () => loan,
+          );
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.65,
+            minChildSize: 0.4,
+            maxChildSize: 0.92,
+            builder: (_, sc) {
+              return ListView(
+                controller: sc,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  Text(
+                    'اقساط: ${current.title}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'پرداخت‌شده ${current.paidCount} از ${current.months} · '
+                    'مانده ${NumFmt.format(current.remainingToPay.round())} تومان',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 12.5,
+                      color: Theme.of(ctx)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.55),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: current.progress,
+                      minHeight: 8,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  for (var i = 0; i < current.months; i++)
+                    CheckboxListTile(
+                      value: current.isPaid(i),
+                      onChanged: (_) async {
+                        await _togglePaid(current, i);
+                        setL(() {});
+                        setState(() {});
+                      },
+                      title: Text(
+                        'قسط ${i + 1}',
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          decoration: current.isPaid(i)
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                      ),
+                      subtitle: Text(
+                        NumFmt.format(current.monthlyPayment.round()),
+                        style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      ),
+                      secondary: Text(
+                        '${i + 1}',
+                        style: const TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          );
+        });
+      },
+    );
   }
 
 
@@ -3181,6 +3354,7 @@ class _LoanTabState extends State<_LoanTab> {
     final payC = TextEditingController();
     final monthsC = TextEditingController(text: '12');
     final dayC = TextEditingController(text: '1');
+    final noteC = TextEditingController();
     var remindDay = true;
     var remindBefore = true;
     DateTime start = DateTime.now();
@@ -3203,7 +3377,7 @@ class _LoanTabState extends State<_LoanTab> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'ثبت وام برای پیگیری',
+                    'ثبت تسهیلات برای پیگیری',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
@@ -3296,6 +3470,17 @@ class _LoanTabState extends State<_LoanTab> {
                       },
                     ),
                   ),
+                  TextField(
+                    controller: noteC,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                      labelText: 'یادداشت (اختیاری)',
+                      labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('یادآوری همان روز پرداخت',
@@ -3342,6 +3527,7 @@ class _LoanTabState extends State<_LoanTab> {
       payC.dispose();
       monthsC.dispose();
       dayC.dispose();
+      noteC.dispose();
       return;
     }
 
@@ -3352,11 +3538,13 @@ class _LoanTabState extends State<_LoanTab> {
     final pay = NumFmt.parse(payC.text);
     final months = NumFmt.parse(monthsC.text).round().clamp(1, 600);
     final day = NumFmt.parse(dayC.text).round().clamp(1, 31);
+    final note = noteC.text.trim().isEmpty ? null : noteC.text.trim();
     titleC.dispose();
     amountC.dispose();
     payC.dispose();
     monthsC.dispose();
     dayC.dispose();
+    noteC.dispose();
 
     if (amount <= 0 || pay <= 0) {
       if (!mounted) return;
@@ -3380,6 +3568,7 @@ class _LoanTabState extends State<_LoanTab> {
       ratePercent: rate,
       remindSameDay: remindDay,
       remindDayBefore: remindBefore,
+      note: note,
     );
 
     var calCount = 0;
@@ -3967,6 +4156,41 @@ class _LoanTabState extends State<_LoanTab> {
           ),
         ),
       ),
+      if (_upcomingDues.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        Card(
+          elevation: 0,
+          color: scheme.tertiaryContainer.withValues(alpha: 0.35),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'سررسید این ماه (پرداخت‌نشده)',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface.withValues(alpha: 0.75),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                for (final u in _upcomingDues)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '• ${u.title}: ${NumFmt.format(u.monthlyPayment.round())} تومان (روز ${u.paymentDay})',
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn', fontSize: 13),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
       const SizedBox(height: 14),
       FilledButton.icon(
         onPressed: _addTrackedLoan,
@@ -4007,6 +4231,7 @@ class _LoanTabState extends State<_LoanTab> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ListTile(
                     title: Text(
@@ -4018,19 +4243,38 @@ class _LoanTabState extends State<_LoanTab> {
                     ),
                     subtitle: Text(
                       'اصل: ${NumFmt.format(loan.principal.round())} · '
-                      'قسط ${NumFmt.format(loan.monthlyPayment.round())}\n'
-                      '${loan.months} ماه · روز پرداخت ${loan.paymentDay}\n'
-                      'نرخ: ${_rateLabel(loan.ratePercent)} · '
-                      'یادآوری: ${loan.remindSameDay ? 'همان‌روز ' : ''}'
-                      '${loan.remindDayBefore ? 'روز قبل' : '—'}',
+                      'قسط ${NumFmt.format(loan.monthlyPayment.round())}
+'
+                      'پرداخت ${loan.paidCount}/${loan.months} · '
+                      'مانده ${NumFmt.format(loan.remainingToPay.round())}
+'
+                      'نرخ: ${_rateLabel(loan.ratePercent)}'
+                      '${loan.note != null && loan.note!.isNotEmpty ? '
+${loan.note}' : ''}',
                       style: const TextStyle(
                           fontFamily: 'Vazirmatn', fontSize: 12),
                     ),
                     isThreeLine: true,
                   ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: loan.progress,
+                        minHeight: 6,
+                      ),
+                    ),
+                  ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
+                      TextButton.icon(
+                        onPressed: () => _showInstallmentSheet(loan),
+                        icon: const Icon(Icons.checklist_rtl, size: 18),
+                        label: const Text('اقساط',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
                       TextButton.icon(
                         onPressed: () => _editTrackedLoan(loan),
                         icon: const Icon(Icons.edit_outlined, size: 18),
@@ -4131,6 +4375,8 @@ class _TrackedLoan {
   final double ratePercent;
   final bool remindSameDay;
   final bool remindDayBefore;
+  final Set<int> paidIndices;
+  final String? note;
 
   _TrackedLoan({
     required this.id,
@@ -4143,7 +4389,54 @@ class _TrackedLoan {
     required this.ratePercent,
     required this.remindSameDay,
     required this.remindDayBefore,
-  });
+    Set<int>? paidIndices,
+    this.note,
+  }) : paidIndices = paidIndices ?? {};
+
+  int get paidCount => paidIndices.length;
+  int get remainingCount => (months - paidCount).clamp(0, months);
+  double get remainingToPay => remainingCount * monthlyPayment;
+  double get progress => months <= 0 ? 0 : (paidCount / months).clamp(0.0, 1.0);
+
+  bool isPaid(int index) => paidIndices.contains(index);
+
+  /// ایندکس قسط برای ماه جلالی داده‌شده؛ null اگر خارج از بازه وام
+  int? installmentIndexForJalaliMonth(Jalali month) {
+    final startJ = Jalali.fromDateTime(start);
+    final monthsPassed =
+        (month.year - startJ.year) * 12 + (month.month - startJ.month);
+    if (monthsPassed < 0 || monthsPassed >= months) return null;
+    return monthsPassed;
+  }
+
+  _TrackedLoan copyWith({
+    String? title,
+    double? principal,
+    double? monthlyPayment,
+    int? months,
+    int? paymentDay,
+    DateTime? start,
+    double? ratePercent,
+    bool? remindSameDay,
+    bool? remindDayBefore,
+    Set<int>? paidIndices,
+    String? note,
+    bool clearNote = false,
+  }) =>
+      _TrackedLoan(
+        id: id,
+        title: title ?? this.title,
+        principal: principal ?? this.principal,
+        monthlyPayment: monthlyPayment ?? this.monthlyPayment,
+        months: months ?? this.months,
+        paymentDay: paymentDay ?? this.paymentDay,
+        start: start ?? this.start,
+        ratePercent: ratePercent ?? this.ratePercent,
+        remindSameDay: remindSameDay ?? this.remindSameDay,
+        remindDayBefore: remindDayBefore ?? this.remindDayBefore,
+        paidIndices: paidIndices ?? this.paidIndices,
+        note: clearNote ? null : (note ?? this.note),
+      );
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -4156,20 +4449,33 @@ class _TrackedLoan {
         'ratePercent': ratePercent,
         'remindSameDay': remindSameDay,
         'remindDayBefore': remindDayBefore,
+        'paidIndices': paidIndices.toList()..sort(),
+        'note': note,
       };
 
-  factory _TrackedLoan.fromJson(Map<String, dynamic> j) => _TrackedLoan(
-        id: j['id'] as String,
-        title: j['title'] as String,
-        principal: (j['principal'] as num).toDouble(),
-        monthlyPayment: (j['monthlyPayment'] as num).toDouble(),
-        months: (j['months'] as num).toInt(),
-        paymentDay: (j['paymentDay'] as num).toInt(),
-        start: DateTime.tryParse(j['start'] as String? ?? '') ?? DateTime.now(),
-        ratePercent: (j['ratePercent'] as num?)?.toDouble() ?? 0,
-        remindSameDay: j['remindSameDay'] as bool? ?? true,
-        remindDayBefore: j['remindDayBefore'] as bool? ?? true,
-      );
+  factory _TrackedLoan.fromJson(Map<String, dynamic> j) {
+    final rawPaid = j['paidIndices'];
+    final paid = <int>{};
+    if (rawPaid is List) {
+      for (final e in rawPaid) {
+        if (e is num) paid.add(e.toInt());
+      }
+    }
+    return _TrackedLoan(
+      id: j['id'] as String,
+      title: j['title'] as String,
+      principal: (j['principal'] as num).toDouble(),
+      monthlyPayment: (j['monthlyPayment'] as num).toDouble(),
+      months: (j['months'] as num).toInt(),
+      paymentDay: (j['paymentDay'] as num).toInt(),
+      start: DateTime.tryParse(j['start'] as String? ?? '') ?? DateTime.now(),
+      ratePercent: (j['ratePercent'] as num?)?.toDouble() ?? 0,
+      remindSameDay: j['remindSameDay'] as bool? ?? true,
+      remindDayBefore: j['remindDayBefore'] as bool? ?? true,
+      paidIndices: paid,
+      note: j['note'] as String?,
+    );
+  }
 }
 
 

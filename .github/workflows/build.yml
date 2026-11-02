@@ -50,6 +50,28 @@ jobs:
           if [ -f /tmp/backup/pubspec.lock ]; then cp /tmp/backup/pubspec.lock .; fi
 
       # NDK 28.x گاهی با خطای ZipFile خراب دانلود می‌شود؛ نسخه پایدارتر را پین می‌کنیم
+
+      - name: Patch Android notifications
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            # Permissions
+            if ! grep -q 'POST_NOTIFICATIONS' "$MANIFEST"; then
+              sed -i 's|<manifest |<manifest |' "$MANIFEST"
+              # insert before <application
+              sed -i '/<application/i\    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n    <uses-permission android:name="android.permission.VIBRATE"/>\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>\n    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>' "$MANIFEST"
+            fi
+            # Receivers for scheduled notifications (flutter_local_notifications)
+            if ! grep -q 'ScheduledNotificationReceiver' "$MANIFEST"; then
+              sed -i '/<\/application>/i\        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>\n        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">\n            <intent-filter>\n                <action android:name="android.intent.action.BOOT_COMPLETED"/>\n                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>\n                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>\n                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>\n            </intent-filter>\n        </receiver>' "$MANIFEST"
+            fi
+            echo "=== AndroidManifest (notifications) ==="
+            head -40 "$MANIFEST" || true
+          else
+            echo "Manifest not found"
+            exit 1
+          fi
+
       - name: Setup Android NDK (pinned)
         uses: nttld/setup-ndk@v1
         id: setup-ndk

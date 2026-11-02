@@ -4,9 +4,11 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'core.dart';
 import 'features.dart';
+import 'notifications.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppNotifications.instance.init();
   runApp(const HesabgarManApp());
 }
 

@@ -1,6 +1,7 @@
 // ===== features.dart — screens & logic =====
 import 'core.dart';
 import 'calendar_v2.dart';
+import 'notifications.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -2955,13 +2956,17 @@ class _LoanTabState extends State<_LoanTab> {
     try {
       final s = await LocalStore.instance;
       final raw = s.getString(_loansKey);
-      if (raw == null || raw.isEmpty) return;
+      if (raw == null || raw.isEmpty) {
+        await AppNotifications.instance.requestPermission();
+        return;
+      }
       final list = jsonDecode(raw) as List;
       setState(() {
         _loans
           ..clear()
           ..addAll(list.map((e) => _TrackedLoan.fromJson(e as Map<String, dynamic>)));
       });
+      await AppNotifications.instance.requestPermission();
     } catch (_) {}
   }
 
@@ -3071,6 +3076,45 @@ class _LoanTabState extends State<_LoanTab> {
       jsonEncode(cal.events.map((e) => e.toJson()).toList()),
     );
     cal.revision.value++;
+
+    // اعلان سیستم‌عامل برای اقساط آینده (پرداخت‌نشده)
+    try {
+      final allDates = <DateTime>[
+        for (var i = 0; i < loan.months; i++)
+          _jalaliPaymentDateTime(startJ, loan.paymentDay, baseOffset + i),
+      ];
+      // لغو و زمان‌بندی با ایندکس واقعی قسط
+      for (var i = 0; i < allDates.length; i++) {
+        await AppNotifications.instance.cancel(
+            AppNotifications.loanNotifId(loan.id, i));
+        await AppNotifications.instance.cancel(
+            AppNotifications.loanNotifId(loan.id, i, dayBefore: true));
+      }
+      for (var i = 0; i < allDates.length; i++) {
+        if (loan.isPaid(i)) continue;
+        final day = allDates[i];
+        final payMorning = DateTime(day.year, day.month, day.day, 9, 0);
+        if (loan.remindSameDay) {
+          await AppNotifications.instance.schedule(
+            id: AppNotifications.loanNotifId(loan.id, i),
+            title: 'قسط: ${loan.title}',
+            body: 'امروز موعد قسط ${i + 1} است.',
+            when: payMorning,
+          );
+        }
+        if (loan.remindDayBefore) {
+          await AppNotifications.instance.schedule(
+            id: AppNotifications.loanNotifId(loan.id, i, dayBefore: true),
+            title: 'فردا قسط: ${loan.title}',
+            body: 'فردا موعد پرداخت قسط ${i + 1} است.',
+            when: payMorning.subtract(const Duration(days: 1)),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('loan notif: $e');
+    }
+
     return created.length;
   }
 
@@ -3166,6 +3210,39 @@ class _LoanTabState extends State<_LoanTab> {
       out.add(loan);
     }
     return out;
+  }
+
+  /// اقساط پرداخت‌نشده تا ۷ روز آینده (بر اساس روز پرداخت شمسی)
+  List<Map<String, dynamic>> get _duesNext7Days {
+    final now = DateTime.now();
+    final list = <Map<String, dynamic>>[];
+    for (final loan in _loans) {
+      final startJ = Jalali.fromDateTime(loan.start);
+      final firstDt = _firstJalaliPayment(loan.start, loan.paymentDay);
+      final firstJ = Jalali.fromDateTime(firstDt);
+      final baseOffset =
+          (firstJ.year - startJ.year) * 12 + (firstJ.month - startJ.month);
+      for (var i = 0; i < loan.months; i++) {
+        if (loan.isPaid(i)) continue;
+        final payDt =
+            _jalaliPaymentDateTime(startJ, loan.paymentDay, baseOffset + i);
+        final diff = DateTime(payDt.year, payDt.month, payDt.day)
+            .difference(DateTime(now.year, now.month, now.day))
+            .inDays;
+        if (diff < 0 || diff > 7) continue;
+        final j = Jalali.fromDateTime(payDt);
+        list.add({
+          'loan': loan,
+          'index': i,
+          'date': payDt,
+          'label':
+              '${loan.title} · قسط ${i + 1} · ${j.day} ${j.monthName} (${diff == 0 ? 'امروز' : diff == 1 ? 'فردا' : '$diff روز دیگر'})',
+          'amount': loan.monthlyPayment,
+        });
+      }
+    }
+    list.sort((a, b) => (a['date'] as DateTime).compareTo(b['date'] as DateTime));
+    return list;
   }
 
   void _showInstallmentSheet(_TrackedLoan loan) {
@@ -4256,6 +4333,48 @@ class _LoanTabState extends State<_LoanTab> {
           ),
         ),
       ),
+      if (_duesNext7Days.isNotEmpty) ...[
+        Card(
+          elevation: 0,
+          color: scheme.errorContainer.withValues(alpha: 0.35),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.notification_important_outlined,
+                        color: scheme.error, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'یادآوری ۷ روز آینده',
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontWeight: FontWeight.w800,
+                        color: scheme.error,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                for (final d in _duesNext7Days.take(6))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '• ${d['label']} — ${NumFmt.format((d['amount'] as double).round())}',
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn', fontSize: 12.5),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+      ],
       if (_upcomingDues.isNotEmpty) ...[
         const SizedBox(height: 10),
         Card(

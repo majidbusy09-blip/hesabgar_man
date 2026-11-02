@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core.dart';
+import 'notifications.dart';
 import 'features.dart'
     show Jalali, HijriDate, OccasionData, showJalaliDatePicker, FinanceScreen,
         DateConverterSheet;
@@ -1256,6 +1257,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     final title = TextEditingController(text: existing?.title ?? '');
     final note = TextEditingController(text: existing?.note ?? '');
     var start = existing?.start ?? _selectedG ?? DateTime.now();
+    var end = existing?.end ?? start.add(const Duration(hours: 1));
     var allDay = existing?.allDay ?? true;
     var recurrence = existing?.recurrence ?? 'none';
     var cat = existing?.categoryId ?? 'c_personal';
@@ -1296,6 +1298,55 @@ class _CalendarScreenState extends State<CalendarScreen>
                     value: allDay,
                     onChanged: (v) => setL(() => allDay = v),
                   ),
+                  if (!allDay) ...[
+                    ListTile(
+                      title: Text(
+                        'ساعت شروع: ${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}',
+                        style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      ),
+                      trailing: TextButton(
+                        child: const Text('تغییر',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                        onPressed: () async {
+                          final t = await showTimePicker(
+                            context: ctx,
+                            initialTime: TimeOfDay.fromDateTime(start),
+                          );
+                          if (t != null) {
+                            setL(() {
+                              start = DateTime(start.year, start.month,
+                                  start.day, t.hour, t.minute);
+                              if (!end.isAfter(start)) {
+                                end = start.add(const Duration(hours: 1));
+                              }
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                    ListTile(
+                      title: Text(
+                        'ساعت پایان: ${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
+                        style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      ),
+                      trailing: TextButton(
+                        child: const Text('تغییر',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                        onPressed: () async {
+                          final t = await showTimePicker(
+                            context: ctx,
+                            initialTime: TimeOfDay.fromDateTime(end),
+                          );
+                          if (t != null) {
+                            setL(() {
+                              end = DateTime(end.year, end.month, end.day,
+                                  t.hour, t.minute);
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                   ListTile(
                     title: Text(
                         '${j.day} ${j.monthName} ${j.year}',
@@ -1383,17 +1434,28 @@ class _CalendarScreenState extends State<CalendarScreen>
       },
     );
     if (ok == true && title.text.trim().isNotEmpty) {
+      final evId =
+          existing?.id ?? 'ev_${DateTime.now().millisecondsSinceEpoch}';
       await _store.upsertEvent(CalEvent(
-        id: existing?.id ?? 'ev_${DateTime.now().millisecondsSinceEpoch}',
+        id: evId,
         title: title.text.trim(),
         note: note.text.trim().isEmpty ? null : note.text.trim(),
         start: start,
+        end: allDay ? null : end,
         allDay: allDay,
         categoryId: cat,
         recurrence: recurrence,
         reminderMinutes: reminder,
         colorValue: existing?.colorValue ?? 0xFF42A5F5,
       ));
+      try {
+        await AppNotifications.instance.scheduleEventReminder(
+          eventId: evId,
+          title: title.text.trim(),
+          start: start,
+          reminderMinutes: reminder,
+        );
+      } catch (_) {}
       setState(() {});
     }
     title.dispose();
@@ -1556,6 +1618,88 @@ class _CalendarScreenState extends State<CalendarScreen>
   }
 
 
+
+  void _openReminders() {
+    final now = DateTime.now();
+    final items = <Map<String, String>>[];
+    for (final e in _store.events) {
+      if (e.reminderMinutes <= 0) continue;
+      if (e.start.isBefore(now.subtract(const Duration(days: 1)))) continue;
+      if (e.start.isAfter(now.add(const Duration(days: 14)))) continue;
+      final j = Jalali.fromDateTime(e.start);
+      final rem = e.reminderMinutes == 1440
+          ? '۱ روز قبل'
+          : e.reminderMinutes == 60
+              ? '۱ ساعت قبل'
+              : '${e.reminderMinutes} دقیقه قبل';
+      items.add({
+        'title': e.title,
+        'when': '${j.day} ${j.monthName} ${j.year} · $rem',
+      });
+    }
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'یادآورها',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 28, horizontal: 12),
+                child: Text(
+                  'یادآوری فعالی در دو هفته آینده نیست.\nروی رویدادها یادآوری بگذارید.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Vazirmatn'),
+                ),
+              )
+            else
+              SizedBox(
+                height: MediaQuery.of(ctx).size.height * 0.4,
+                child: ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (_, i) => ListTile(
+                    leading: const Icon(Icons.alarm),
+                    title: Text(items[i]['title']!,
+                        style: const TextStyle(fontFamily: 'Vazirmatn')),
+                    subtitle: Text(items[i]['when']!,
+                        style: const TextStyle(
+                            fontFamily: 'Vazirmatn', fontSize: 12)),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              'اعلان سیستم‌عامل فعال است؛ اجازه اعلان را در تنظیمات گوشی بررسی کنید.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 11,
+                color: Theme.of(ctx)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _openDateConverter() {
     showModalBottomSheet(
       context: context,
@@ -1597,6 +1741,8 @@ class _CalendarScreenState extends State<CalendarScreen>
             const Divider(),
             _toolTile(Icons.compare_arrows_rounded, 'مبدل تاریخ',
                 _openDateConverter),
+            _toolTile(Icons.notifications_active_outlined, 'یادآورها',
+                _openReminders),
             _toolTile(Icons.mosque, 'اوقات شرعی (تقریبی)', _showPrayer),
             _toolTile(Icons.explore, 'زاویه قبله', _showQibla),
             _toolTile(Icons.fingerprint, 'ذکرشمار', _showDhikr),
@@ -1609,7 +1755,7 @@ class _CalendarScreenState extends State<CalendarScreen>
             }),
             const SizedBox(height: 8),
             Text(
-              'اعلان سیستم‌عامل در این نسخه فعال نیست؛ یادآوری‌ها داخل تقویم و هنگام باز کردن برنامه قابل مشاهده‌اند. اوقات شرعی تقریبی‌اند و مرجع رسمی نیستند.',
+              'اعلان سیستم‌عامل برای رویدادها و اقساط فعال است (در تنظیمات گوشی اجازه اعلان بدهید). اوقات شرعی تقریبی‌اند و مرجع رسمی نیستند.',
               style: TextStyle(
                   fontFamily: 'Vazirmatn',
                   fontSize: 11,

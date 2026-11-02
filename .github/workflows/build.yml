@@ -72,6 +72,54 @@ jobs:
             exit 1
           fi
 
+
+      - name: Enable core library desugaring (notifications)
+        run: |
+          # لازم برای flutter_local_notifications
+          DESUGAR='com.android.tools:desugar_jdk_libs:2.1.4'
+          if [ -f android/app/build.gradle.kts ]; then
+            FILE=android/app/build.gradle.kts
+            if ! grep -q 'coreLibraryDesugaringEnabled' "$FILE"; then
+              # compileOptions block
+              if grep -q 'compileOptions' "$FILE"; then
+                sed -i '/compileOptions {/a\        isCoreLibraryDesugaringEnabled = true' "$FILE"
+              else
+                sed -i '/android {/a\    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }' "$FILE"
+              fi
+            fi
+            if ! grep -q 'desugar_jdk_libs' "$FILE"; then
+              if grep -q '^dependencies {' "$FILE"; then
+                sed -i '/^dependencies {/a\    coreLibraryDesugaring("'"$DESUGAR"'")' "$FILE"
+              else
+                printf '\ndependencies {\n    coreLibraryDesugaring("%s")\n}\n' "$DESUGAR" >> "$FILE"
+              fi
+            fi
+            echo "=== app/build.gradle.kts (desugar) ==="
+            grep -n -E 'desugar|coreLibrary|compileOptions' "$FILE" || true
+          elif [ -f android/app/build.gradle ]; then
+            FILE=android/app/build.gradle
+            if ! grep -q 'coreLibraryDesugaringEnabled' "$FILE"; then
+              if grep -q 'compileOptions' "$FILE"; then
+                sed -i '/compileOptions {/a\        coreLibraryDesugaringEnabled true' "$FILE"
+              else
+                sed -i '/android {/a\    compileOptions {\n        coreLibraryDesugaringEnabled true\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }' "$FILE"
+              fi
+            fi
+            if ! grep -q 'desugar_jdk_libs' "$FILE"; then
+              if grep -q 'dependencies {' "$FILE"; then
+                sed -i '/dependencies {/a\    coreLibraryDesugaring "'"$DESUGAR"'"' "$FILE"
+              else
+                printf '\ndependencies {\n    coreLibraryDesugaring "%s"\n}\n' "$DESUGAR" >> "$FILE"
+              fi
+            fi
+            echo "=== app/build.gradle (desugar) ==="
+            grep -n -E 'desugar|coreLibrary|compileOptions' "$FILE" || true
+          else
+            echo "No app build.gradle found"
+            ls -la android/app || true
+            exit 1
+          fi
+
       - name: Setup Android NDK (pinned)
         uses: nttld/setup-ndk@v1
         id: setup-ndk

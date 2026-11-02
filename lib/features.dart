@@ -2426,10 +2426,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
               Expanded(
                 child: _FinanceMainTile(
                   icon: Icons.handshake_outlined,
-                  title: 'سود وام',
+                  title: 'تسهیلات',
                   onTap: () => _openTool(
                     context,
-                    'سود وام',
+                    'تسهیلات',
                     const _LoanTab(),
                   ),
                 ),
@@ -2914,7 +2914,7 @@ class _DepositTabState extends State<_DepositTab> {
   }
 }
 
-// ---------- سود وام ----------
+// ---------- تسهیلات ----------
 class _LoanTab extends StatefulWidget {
   const _LoanTab();
 
@@ -2970,6 +2970,108 @@ class _LoanTabState extends State<_LoanTab> {
     await s.setString(
         _loansKey, jsonEncode(_loans.map((e) => e.toJson()).toList()));
   }
+
+  DateTime _addMonthsClamped(DateTime d, int months) {
+    final total = d.month - 1 + months;
+    final y = d.year + total ~/ 12;
+    final m = total % 12 + 1;
+    final lastDay = DateTime(y, m + 1, 0).day;
+    return DateTime(y, m, d.day.clamp(1, lastDay));
+  }
+
+  DateTime _paymentDateOnOrAfter(DateTime start, int paymentDay) {
+    final day = paymentDay.clamp(1, 28);
+    var d = DateTime(start.year, start.month, day);
+    final startDay = DateTime(start.year, start.month, start.day);
+    if (d.isBefore(startDay)) d = _addMonthsClamped(d, 1);
+    return d;
+  }
+
+  Future<void> _removeLoanCalendarEvents(String loanId) async {
+    try {
+      final cal = CalendarStore();
+      await cal.load();
+      final ids = cal.events
+          .where((e) =>
+              e.id.contains('loan_ev_${loanId}') ||
+              e.id.contains('loan_ev_before_${loanId}'))
+          .map((e) => e.id)
+          .toList();
+      for (final id in ids) {
+        await cal.removeEvent(id);
+      }
+    } catch (_) {}
+  }
+
+  Future<int> _syncLoanToCalendar(_TrackedLoan loan) async {
+    await _removeLoanCalendarEvents(loan.id);
+    final cal = CalendarStore();
+    await cal.load();
+    final first = _paymentDateOnOrAfter(loan.start, loan.paymentDay);
+    var count = 0;
+    for (var i = 0; i < loan.months; i++) {
+      final payDay = _addMonthsClamped(first, i);
+      await cal.upsertEvent(CalEvent(
+        id: 'loan_ev_${loan.id}_$i',
+        title: 'قسط: ${loan.title}',
+        note:
+            'قسط ${i + 1} از ${loan.months}\nمبلغ: ${NumFmt.format(loan.monthlyPayment.round())} تومان',
+        start: DateTime(payDay.year, payDay.month, payDay.day, 9, 0),
+        allDay: true,
+        categoryId: 'c_finance',
+        colorValue: 0xFFFFA726,
+        recurrence: 'none',
+        reminderMinutes: 0,
+      ));
+      count++;
+      if (loan.remindDayBefore) {
+        final before = payDay.subtract(const Duration(days: 1));
+        await cal.upsertEvent(CalEvent(
+          id: 'loan_ev_before_${loan.id}_$i',
+          title: 'فردا قسط: ${loan.title}',
+          note: 'یادآوری یک روز قبل از قسط ${i + 1}',
+          start: DateTime(before.year, before.month, before.day, 9, 0),
+          allDay: true,
+          categoryId: 'c_finance',
+          colorValue: 0xFFFFB74D,
+          recurrence: 'none',
+          reminderMinutes: 0,
+        ));
+        count++;
+      }
+    }
+    return count;
+  }
+
+  double _rateFor(double principal, double pay, int months) {
+    final r = FinanceLogic.loanRateFromPayment(
+      principal: principal,
+      monthlyPayment: pay,
+      months: months,
+    );
+    return r ?? -1;
+  }
+
+  String _rateLabel(double r) {
+    if (r < 0) return 'نامشخص';
+    if (r < 0.05) return '۰٪ (جمع اقساط ≤ اصل وام)';
+    return '${r.toStringAsFixed(1)}٪';
+  }
+
+  double get _thisMonthInstallmentsTotal {
+    final jNow = Jalali.fromDateTime(DateTime.now());
+    double sum = 0;
+    for (final loan in _loans) {
+      final startJ = Jalali.fromDateTime(loan.start);
+      final monthsPassed =
+          (jNow.year - startJ.year) * 12 + (jNow.month - startJ.month);
+      if (monthsPassed >= 0 && monthsPassed < loan.months) {
+        sum += loan.monthlyPayment;
+      }
+    }
+    return sum;
+  }
+
 
   void _calc() {
     if (!mounted) return;
@@ -3265,18 +3367,7 @@ class _LoanTabState extends State<_LoanTab> {
       return;
     }
 
-    final rate = FinanceLogic.loanRateFromPayment(
-          principal: amount,
-          monthlyPayment: pay,
-          months: months,
-        ) ??
-        0;
-
-    // روز پرداخت اول
-    var firstPay = DateTime(start.year, start.month, day.clamp(1, 28));
-    if (firstPay.isBefore(DateTime(start.year, start.month, start.day))) {
-      firstPay = DateTime(firstPay.year, firstPay.month + 1, firstPay.day);
-    }
+    final rate = _rateFor(amount, pay, months);
 
     final loan = _TrackedLoan(
       id: 'loan_${DateTime.now().millisecondsSinceEpoch}',
@@ -3291,60 +3382,188 @@ class _LoanTabState extends State<_LoanTab> {
       remindDayBefore: remindBefore,
     );
 
-    // رویداد تقویم
+    var calCount = 0;
+    String? calErr;
     try {
-      final cal = CalendarStore();
-      await cal.load();
-      final remMin = remindBefore
-          ? 1440
-          : (remindDay ? 0 : 0);
-      final ev = CalEvent(
-        id: 'loan_ev_${loan.id}',
-        title: 'قسط: ${loan.title}',
-        note:
-            'مبلغ قسط: ${NumFmt.format(pay.round())} تومان\nوام: ${NumFmt.format(amount.round())}',
-        start: DateTime(firstPay.year, firstPay.month, firstPay.day, 9, 0),
-        allDay: true,
-        categoryId: 'c_finance',
-        colorValue: 0xFFFFA726,
-        recurrence: 'monthly',
-        recurrenceUntil:
-            DateTime(firstPay.year, firstPay.month + months, firstPay.day),
-        reminderMinutes: remMin,
-      );
-      await cal.upsertEvent(ev);
-      // اگر هر دو یادآوری خواسته شد، رویداد روز قبل هم
-      if (remindBefore && remindDay) {
-        final before = firstPay.subtract(const Duration(days: 1));
-        await cal.upsertEvent(CalEvent(
-          id: 'loan_ev_before_${loan.id}',
-          title: 'فردا قسط: ${loan.title}',
-          note: 'یادآوری یک روز قبل از پرداخت قسط',
-          start: DateTime(before.year, before.month, before.day, 9, 0),
-          allDay: true,
-          categoryId: 'c_finance',
-          colorValue: 0xFFFFA726,
-          recurrence: 'monthly',
-          recurrenceUntil:
-              DateTime(firstPay.year, firstPay.month + months, firstPay.day),
-          reminderMinutes: 0,
-        ));
-      }
+      calCount = await _syncLoanToCalendar(loan);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('وام ذخیره شد؛ تقویم: $e',
-              style: const TextStyle(fontFamily: 'Vazirmatn')),
-        ));
-      }
+      calErr = '$e';
     }
 
     setState(() => _loans.add(loan));
     await _saveLoans();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('وام ثبت و در تقویم زمان‌بندی شد',
-          style: TextStyle(fontFamily: 'Vazirmatn')),
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        calErr == null
+            ? 'ثبت شد · $calCount رویداد به تقویم اضافه شد'
+            : 'وام ذخیره شد؛ خطای تقویم: $calErr',
+        style: const TextStyle(fontFamily: 'Vazirmatn'),
+      ),
+      duration: const Duration(seconds: 4),
+    ));
+  }
+
+  Future<void> _editTrackedLoan(_TrackedLoan existing) async {
+    final titleC = TextEditingController(text: existing.title);
+    final amountC = TextEditingController(
+        text: NumFmt.format(existing.principal.round()));
+    final payC = TextEditingController(
+        text: NumFmt.format(existing.monthlyPayment.round()));
+    final monthsC = TextEditingController(text: '${existing.months}');
+    final dayC = TextEditingController(text: '${existing.paymentDay}');
+    var remindDay = existing.remindSameDay;
+    var remindBefore = existing.remindDayBefore;
+    final start = existing.start;
+
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setL) {
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+                16, 16, 16, 16 + MediaQuery.of(ctx).viewInsets.bottom),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('ویرایش تسهیلات',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: titleC,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                        labelText: 'عنوان', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: amountC,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [GroupedNumberFormatter()],
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                        labelText: 'مبلغ کل وام (تومان)',
+                        border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: payC,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [GroupedNumberFormatter()],
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                        labelText: 'قسط هر ماه (تومان)',
+                        border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    Expanded(
+                        child: TextField(
+                      controller: monthsC,
+                      textAlign: TextAlign.center,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      decoration: const InputDecoration(
+                          labelText: 'تعداد اقساط',
+                          border: OutlineInputBorder()),
+                    )),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: TextField(
+                      controller: dayC,
+                      textAlign: TextAlign.center,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontFamily: 'Vazirmatn'),
+                      decoration: const InputDecoration(
+                          labelText: 'روز پرداخت',
+                          border: OutlineInputBorder()),
+                    )),
+                  ]),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('یادآوری همان روز',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                    value: remindDay,
+                    onChanged: (v) => setL(() => remindDay = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('یادآوری یک روز قبل',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                    value: remindBefore,
+                    onChanged: (v) => setL(() => remindBefore = v),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('ذخیره تغییرات',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                  ),
+                ],
+              ),
+            ),
+          );
+        });
+      },
+    );
+
+    if (ok != true) {
+      titleC.dispose();
+      amountC.dispose();
+      payC.dispose();
+      monthsC.dispose();
+      dayC.dispose();
+      return;
+    }
+    final amount = NumFmt.parse(amountC.text);
+    final pay = NumFmt.parse(payC.text);
+    final months = NumFmt.parse(monthsC.text).round().clamp(1, 600);
+    final day = NumFmt.parse(dayC.text).round().clamp(1, 31);
+    final title =
+        titleC.text.trim().isEmpty ? existing.title : titleC.text.trim();
+    titleC.dispose();
+    amountC.dispose();
+    payC.dispose();
+    monthsC.dispose();
+    dayC.dispose();
+
+    final p = amount > 0 ? amount : existing.principal;
+    final pm = pay > 0 ? pay : existing.monthlyPayment;
+    final updated = _TrackedLoan(
+      id: existing.id,
+      title: title,
+      principal: p,
+      monthlyPayment: pm,
+      months: months,
+      paymentDay: day,
+      start: start,
+      ratePercent: _rateFor(p, pm, months),
+      remindSameDay: remindDay,
+      remindDayBefore: remindBefore,
+    );
+    var calCount = 0;
+    try {
+      calCount = await _syncLoanToCalendar(updated);
+    } catch (_) {}
+    final idx = _loans.indexWhere((e) => e.id == existing.id);
+    if (idx >= 0) setState(() => _loans[idx] = updated);
+    await _saveLoans();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('به‌روز شد · $calCount رویداد تقویم',
+          style: const TextStyle(fontFamily: 'Vazirmatn')),
     ));
   }
 
@@ -3697,9 +3916,10 @@ class _LoanTabState extends State<_LoanTab> {
 
   List<Widget> _buildMyLoans(
       ColorScheme scheme, Widget Function(String) sectionTitle) {
+    final monthTotal = _thisMonthInstallmentsTotal;
     return [
       Text(
-        'وام خود را ثبت کنید تا موعد اقساط در تقویم دیده شود و یادآوری همان‌روز یا یک‌روزقبل داشته باشید.',
+        'تسهیلات را ثبت کنید تا اقساط در تقویم بیاید و جمع این ماه را ببینید.',
         style: TextStyle(
           fontFamily: 'Vazirmatn',
           fontSize: 12.5,
@@ -3707,11 +3927,51 @@ class _LoanTabState extends State<_LoanTab> {
           color: scheme.onSurface.withValues(alpha: 0.55),
         ),
       ),
+      const SizedBox(height: 12),
+      Card(
+        elevation: 0,
+        color: scheme.primaryContainer.withValues(alpha: 0.4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Text(
+                'مجموع اقساط این ماه',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 13,
+                  color: scheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                NumFmt.format(monthTotal.round()),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: scheme.primary,
+                ),
+              ),
+              Text(
+                'تومان',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 12,
+                  color: scheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
       const SizedBox(height: 14),
       FilledButton.icon(
         onPressed: _addTrackedLoan,
         icon: const Icon(Icons.add_rounded),
-        label: const Text('ثبت وام جدید',
+        label: const Text('ثبت تسهیلات جدید',
             style: TextStyle(fontFamily: 'Vazirmatn')),
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(50),
@@ -3731,7 +3991,7 @@ class _LoanTabState extends State<_LoanTab> {
                   color: scheme.onSurface.withValues(alpha: 0.28)),
               const SizedBox(height: 8),
               Text(
-                'هنوز وامی ثبت نشده',
+                'هنوز تسهیلاتی ثبت نشده',
                 style: TextStyle(
                   fontFamily: 'Vazirmatn',
                   color: scheme.onSurface.withValues(alpha: 0.5),
@@ -3744,24 +4004,54 @@ class _LoanTabState extends State<_LoanTab> {
         for (final loan in _loans)
           Card(
             margin: const EdgeInsets.only(bottom: 10),
-            child: ListTile(
-              title: Text(loan.title,
-                  style: const TextStyle(
-                      fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700)),
-              subtitle: Text(
-                'قسط ${NumFmt.format(loan.monthlyPayment.round())} تومان · '
-                '${loan.months} ماه · روز ${loan.paymentDay}\n'
-                'نرخ تقریبی: ${loan.ratePercent.toStringAsFixed(1)}٪ · '
-                'یادآوری: ${loan.remindSameDay ? 'همان‌روز ' : ''}${loan.remindDayBefore ? 'روز قبل' : ''}',
-                style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
-              ),
-              isThreeLine: true,
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () async {
-                  setState(() => _loans.removeWhere((e) => e.id == loan.id));
-                  await _saveLoans();
-                },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+              child: Column(
+                children: [
+                  ListTile(
+                    title: Text(
+                      loan.title,
+                      style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'اصل: ${NumFmt.format(loan.principal.round())} · '
+                      'قسط ${NumFmt.format(loan.monthlyPayment.round())}\n'
+                      '${loan.months} ماه · روز پرداخت ${loan.paymentDay}\n'
+                      'نرخ: ${_rateLabel(loan.ratePercent)} · '
+                      'یادآوری: ${loan.remindSameDay ? 'همان‌روز ' : ''}'
+                      '${loan.remindDayBefore ? 'روز قبل' : '—'}',
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn', fontSize: 12),
+                    ),
+                    isThreeLine: true,
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () => _editTrackedLoan(loan),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('ویرایش',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
+                      TextButton.icon(
+                        onPressed: () async {
+                          await _removeLoanCalendarEvents(loan.id);
+                          setState(() =>
+                              _loans.removeWhere((e) => e.id == loan.id));
+                          await _saveLoans();
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('حذف',
+                            style: TextStyle(
+                                fontFamily: 'Vazirmatn', color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),

@@ -299,6 +299,11 @@ class CalendarStore {
   static const _kSettings = 'cal_settings_v1';
   static const _kDhikr = 'cal_dhikr_v1';
 
+  /// نمونهٔ مشترک تا تسهیلات و صفحهٔ تقویم یک داده ببینند
+  static final CalendarStore instance = CalendarStore._();
+  factory CalendarStore() => instance;
+  CalendarStore._();
+
   List<CalEvent> events = [];
   List<CalNote> notes = [];
   List<CalTask> tasks = [];
@@ -307,6 +312,10 @@ class CalendarStore {
   CalSettings settings = CalSettings();
   DhikrState dhikr = DhikrState();
   String? lastError;
+
+  /// برای نوسازی UI تقویم بعد از تغییر از بخش‌های دیگر
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+  void _bump() => revision.value++;
 
   Future<void> load() async {
     lastError = null;
@@ -374,11 +383,21 @@ class CalendarStore {
       events.add(e);
     }
     await _save(_kEvents, events);
+    _bump();
   }
 
   Future<void> removeEvent(String id) async {
     events.removeWhere((e) => e.id == id);
     await _save(_kEvents, events);
+    _bump();
+  }
+
+  /// حذف چند رویداد و افزودن دسته‌ای با یک بار ذخیره (برای اقساط وام)
+  Future<void> replaceEventsByIdPrefix(String prefix, List<CalEvent> next) async {
+    events.removeWhere((e) => e.id.startsWith(prefix) || e.id.contains(prefix));
+    events.addAll(next);
+    await _save(_kEvents, events);
+    _bump();
   }
 
   Future<void> upsertNote(CalNote n) async {
@@ -601,11 +620,17 @@ class _CalendarScreenState extends State<CalendarScreen>
     _selectedG = DateTime.now();
     _view = 'month';
     _toolsTab = TabController(length: 1, vsync: this);
+    _store.revision.addListener(_onStoreRevision);
     _load();
+  }
+
+  void _onStoreRevision() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _store.revision.removeListener(_onStoreRevision);
     _toolsTab.dispose();
     super.dispose();
   }

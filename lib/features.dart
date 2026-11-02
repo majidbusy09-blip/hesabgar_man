@@ -3016,7 +3016,6 @@ class _LoanTabState extends State<_LoanTab> {
   }
 
   Future<int> _syncLoanToCalendar(_TrackedLoan loan) async {
-    await _removeLoanCalendarEvents(loan.id);
     final cal = CalendarStore();
     await cal.load();
     final startJ = Jalali.fromDateTime(loan.start);
@@ -3024,18 +3023,22 @@ class _LoanTabState extends State<_LoanTab> {
     final firstJ = Jalali.fromDateTime(firstDt);
     final baseOffset =
         (firstJ.year - startJ.year) * 12 + (firstJ.month - startJ.month);
-    var count = 0;
+
+    final prefix = 'loan_ev_${loan.id}';
+    final beforePrefix = 'loan_ev_before_${loan.id}';
+    final created = <CalEvent>[];
+
     for (var i = 0; i < loan.months; i++) {
       final payDay =
           _jalaliPaymentDateTime(startJ, loan.paymentDay, baseOffset + i);
       final jPay = Jalali.fromDateTime(payDay);
-      await cal.upsertEvent(CalEvent(
-        id: 'loan_ev_${loan.id}_$i',
+      created.add(CalEvent(
+        id: '${prefix}_$i',
         title: 'قسط: ${loan.title}',
         note:
             'قسط ${i + 1} از ${loan.months}\n'
             'مبلغ: ${NumFmt.format(loan.monthlyPayment.round())} تومان\n'
-            'روز پرداخت شمسی: ${jPay.day} ${jPay.monthName} ${jPay.year}',
+            'تاریخ: ${jPay.day} ${jPay.monthName} ${jPay.year}',
         start: DateTime(payDay.year, payDay.month, payDay.day, 9, 0),
         allDay: true,
         categoryId: 'c_finance',
@@ -3043,13 +3046,12 @@ class _LoanTabState extends State<_LoanTab> {
         recurrence: 'none',
         reminderMinutes: 0,
       ));
-      count++;
       if (loan.remindDayBefore) {
         final before = payDay.subtract(const Duration(days: 1));
-        await cal.upsertEvent(CalEvent(
-          id: 'loan_ev_before_${loan.id}_$i',
+        created.add(CalEvent(
+          id: '${beforePrefix}_$i',
           title: 'فردا قسط: ${loan.title}',
-          note: 'یادآوری یک روز قبل از قسط ${i + 1} (شمسی)',
+          note: 'یادآوری یک روز قبل از قسط ${i + 1}',
           start: DateTime(before.year, before.month, before.day, 9, 0),
           allDay: true,
           categoryId: 'c_finance',
@@ -3057,10 +3059,19 @@ class _LoanTabState extends State<_LoanTab> {
           recurrence: 'none',
           reminderMinutes: 0,
         ));
-        count++;
       }
     }
-    return count;
+
+    cal.events.removeWhere((e) =>
+        e.id.startsWith('$prefix') || e.id.startsWith('$beforePrefix'));
+    cal.events.addAll(created);
+    final s = await LocalStore.instance;
+    await s.setString(
+      'cal_events_v1',
+      jsonEncode(cal.events.map((e) => e.toJson()).toList()),
+    );
+    cal.revision.value++;
+    return created.length;
   }
 
 
@@ -3212,35 +3223,50 @@ class _LoanTabState extends State<_LoanTab> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  for (var i = 0; i < current.months; i++)
-                    CheckboxListTile(
-                      value: current.isPaid(i),
-                      onChanged: (_) async {
-                        await _togglePaid(current, i);
-                        setL(() {});
-                        setState(() {});
-                      },
-                      title: Text(
-                        'قسط ${i + 1}',
-                        style: TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          decoration: current.isPaid(i)
-                              ? TextDecoration.lineThrough
-                              : null,
+                  for (var i = 0; i < current.months; i++) ...[
+                    Builder(builder: (_) {
+                      final startJ = Jalali.fromDateTime(current.start);
+                      final firstDt =
+                          _firstJalaliPayment(current.start, current.paymentDay);
+                      final firstJ = Jalali.fromDateTime(firstDt);
+                      final baseOffset = (firstJ.year - startJ.year) * 12 +
+                          (firstJ.month - startJ.month);
+                      final payDt = _jalaliPaymentDateTime(
+                          startJ, current.paymentDay, baseOffset + i);
+                      final j = Jalali.fromDateTime(payDt);
+                      final dateLabel =
+                          '${j.day} ${j.monthName} ${j.year}';
+                      return CheckboxListTile(
+                        value: current.isPaid(i),
+                        onChanged: (_) async {
+                          await _togglePaid(current, i);
+                          setL(() {});
+                          setState(() {});
+                        },
+                        title: Text(
+                          'قسط ${i + 1}',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            decoration: current.isPaid(i)
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
                         ),
-                      ),
-                      subtitle: Text(
-                        NumFmt.format(current.monthlyPayment.round()),
-                        style: const TextStyle(fontFamily: 'Vazirmatn'),
-                      ),
-                      secondary: Text(
-                        '${i + 1}',
-                        style: const TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          fontWeight: FontWeight.w700,
+                        subtitle: Text(
+                          '${NumFmt.format(current.monthlyPayment.round())} تومان · $dateLabel',
+                          style: const TextStyle(
+                              fontFamily: 'Vazirmatn', fontSize: 12),
                         ),
-                      ),
-                    ),
+                        secondary: Text(
+                          '${i + 1}',
+                          style: const TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
                 ],
               );
             },
@@ -3357,10 +3383,10 @@ class _LoanTabState extends State<_LoanTab> {
     final titleC = TextEditingController();
     final amountC = TextEditingController();
     final payC = TextEditingController();
-    final monthsC = TextEditingController(text: '12');
-    final dayC = TextEditingController(text: '1');
+    final monthsC = TextEditingController();
+    final dayC = TextEditingController();
     final noteC = TextEditingController();
-    final paidAlreadyC = TextEditingController(text: '0');
+    final paidAlreadyC = TextEditingController();
     var remindDay = true;
     var remindBefore = true;
     var autoExpense = false;
@@ -3569,8 +3595,10 @@ class _LoanTabState extends State<_LoanTab> {
         : titleC.text.trim();
     final amount = NumFmt.parse(amountC.text);
     final pay = NumFmt.parse(payC.text);
-    final months = NumFmt.parse(monthsC.text).round().clamp(1, 600);
-    final day = NumFmt.parse(dayC.text).round().clamp(1, 31);
+    final monthsRaw = NumFmt.parse(monthsC.text).round();
+    final dayRaw = NumFmt.parse(dayC.text).round();
+    final months = (monthsRaw <= 0 ? 12 : monthsRaw).clamp(1, 600);
+    final day = (dayRaw <= 0 ? 1 : dayRaw).clamp(1, 31);
     final note = noteC.text.trim().isEmpty ? null : noteC.text.trim();
     final paidAlready =
         NumFmt.parse(paidAlreadyC.text).round().clamp(0, 600);
@@ -3642,8 +3670,11 @@ class _LoanTabState extends State<_LoanTab> {
         text: NumFmt.format(existing.monthlyPayment.round()));
     final monthsC = TextEditingController(text: '${existing.months}');
     final dayC = TextEditingController(text: '${existing.paymentDay}');
+    final paidAlreadyC =
+        TextEditingController(text: '${existing.paidCount}');
     var remindDay = existing.remindSameDay;
     var remindBefore = existing.remindDayBefore;
+    var autoExpense = existing.autoAddExpenses;
     final start = existing.start;
 
     final ok = await showModalBottomSheet<bool>(
@@ -3722,6 +3753,24 @@ class _LoanTabState extends State<_LoanTab> {
                           border: OutlineInputBorder()),
                     )),
                   ]),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: paidAlreadyC,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                      labelText: 'تعداد اقساط پرداخت‌شده',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('ثبت خودکار در هزینه‌ها',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                    value: autoExpense,
+                    onChanged: (v) => setL(() => autoExpense = v),
+                  ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('یادآوری همان روز',
@@ -3755,12 +3804,15 @@ class _LoanTabState extends State<_LoanTab> {
       payC.dispose();
       monthsC.dispose();
       dayC.dispose();
+      paidAlreadyC.dispose();
       return;
     }
     final amount = NumFmt.parse(amountC.text);
     final pay = NumFmt.parse(payC.text);
     final months = NumFmt.parse(monthsC.text).round().clamp(1, 600);
     final day = NumFmt.parse(dayC.text).round().clamp(1, 31);
+    final paidN =
+        NumFmt.parse(paidAlreadyC.text).round().clamp(0, months);
     final title =
         titleC.text.trim().isEmpty ? existing.title : titleC.text.trim();
     titleC.dispose();
@@ -3768,9 +3820,11 @@ class _LoanTabState extends State<_LoanTab> {
     payC.dispose();
     monthsC.dispose();
     dayC.dispose();
+    paidAlreadyC.dispose();
 
     final p = amount > 0 ? amount : existing.principal;
     final pm = pay > 0 ? pay : existing.monthlyPayment;
+    final paidSet = <int>{for (var i = 0; i < paidN; i++) i};
     final updated = _TrackedLoan(
       id: existing.id,
       title: title,
@@ -3782,6 +3836,9 @@ class _LoanTabState extends State<_LoanTab> {
       ratePercent: _rateFor(p, pm, months),
       remindSameDay: remindDay,
       remindDayBefore: remindBefore,
+      paidIndices: paidSet,
+      note: existing.note,
+      autoAddExpenses: autoExpense,
     );
     var calCount = 0;
     try {
@@ -4287,7 +4344,7 @@ class _LoanTabState extends State<_LoanTab> {
                     subtitle: Text(
                       [
                         'اصل: ${NumFmt.format(loan.principal.round())} · قسط ${NumFmt.format(loan.monthlyPayment.round())}',
-                        'روز پرداخت: ${loan.paymentDay} شمسی · ${loan.months} قسط',
+                        'روز پرداخت: ${loan.paymentDay} · ${loan.months} قسط',
                         'پرداخت ${loan.paidCount}/${loan.months} · مانده ${NumFmt.format(loan.remainingToPay.round())}',
                         'نرخ: ${_rateLabel(loan.ratePercent)}',
                         if (loan.note != null && loan.note!.isNotEmpty) loan.note!,
@@ -4331,7 +4388,7 @@ class _LoanTabState extends State<_LoanTab> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'روز پرداخت شمسی: ${loan.paymentDay} هر ماه',
+                      'روز پرداخت: ${loan.paymentDay} هر ماه',
                       style: TextStyle(
                         fontFamily: 'Vazirmatn',
                         fontSize: 12,

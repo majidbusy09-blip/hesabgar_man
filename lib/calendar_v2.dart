@@ -1,6 +1,7 @@
 // تقویم ۲.۰ — رویداد، یادداشت، تسک، ابزارها (متصل به Jalali موجود)
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter/services.dart';
@@ -373,33 +374,60 @@ class CalendarStore {
 
   Future<void> _save(String key, List list) async {
     final s = await LocalStore.instance;
-    await s.setString(
-        key, jsonEncode(list.map((e) => (e as dynamic).toJson()).toList()));
+    final raw =
+        jsonEncode(list.map((e) => (e as dynamic).toJson()).toList());
+    await s.setString(key, raw); // LocalStore در شکست، مقدار قبلی را برمی‌گرداند
   }
 
   Future<void> upsertEvent(CalEvent e) async {
+    final snapshot = List<CalEvent>.from(events);
     final i = events.indexWhere((x) => x.id == e.id);
     if (i >= 0) {
       events[i] = e;
     } else {
       events.add(e);
     }
-    await _save(_kEvents, events);
-    _bump();
+    try {
+      await _save(_kEvents, events);
+      _bump();
+    } catch (err) {
+      events
+        ..clear()
+        ..addAll(snapshot);
+      lastError = err.toString();
+      rethrow;
+    }
   }
 
   Future<void> removeEvent(String id) async {
+    final snapshot = List<CalEvent>.from(events);
     events.removeWhere((e) => e.id == id);
-    await _save(_kEvents, events);
-    _bump();
+    try {
+      await _save(_kEvents, events);
+      _bump();
+    } catch (err) {
+      events
+        ..clear()
+        ..addAll(snapshot);
+      lastError = err.toString();
+      rethrow;
+    }
   }
 
-  /// حذف چند رویداد و افزودن دسته‌ای با یک بار ذخیره (برای اقساط وام)
   Future<void> replaceEventsByIdPrefix(String prefix, List<CalEvent> next) async {
+    final snapshot = List<CalEvent>.from(events);
     events.removeWhere((e) => e.id.startsWith(prefix) || e.id.contains(prefix));
     events.addAll(next);
-    await _save(_kEvents, events);
-    _bump();
+    try {
+      await _save(_kEvents, events);
+      _bump();
+    } catch (err) {
+      events
+        ..clear()
+        ..addAll(snapshot);
+      lastError = err.toString();
+      rethrow;
+    }
   }
 
   Future<void> upsertNote(CalNote n) async {
@@ -464,51 +492,76 @@ class CalendarStore {
     final d0 = _d(day);
     final out = <CalEvent>[];
     for (final e in events) {
-      if (e.recurrence == null || e.recurrence == 'none') {
-        if (_d(e.start) == d0) out.add(e);
+      final startDay = _d(e.start);
+      final until = e.recurrenceUntil != null ? _d(e.recurrenceUntil!) : null;
+      final rule = e.recurrence ?? 'none';
+
+      if (rule == 'none' || rule.isEmpty) {
+        if (startDay == d0) out.add(e);
         continue;
       }
-      var cursor = _d(e.start);
-      final until = e.recurrenceUntil != null
-          ? _d(e.recurrenceUntil!)
-          : d0.add(const Duration(days: 1));
-      var guard = 0;
-      while (!cursor.isAfter(d0) && guard < 400) {
-        guard++;
-        if (cursor == d0 && !cursor.isAfter(until)) {
-          out.add(e.copyWith(start: DateTime(
-            d0.year,
-            d0.month,
-            d0.day,
-            e.start.hour,
-            e.start.minute,
-          )));
-          break;
-        }
-        if (cursor.isAfter(until)) break;
-        switch (e.recurrence) {
-          case 'daily':
-            cursor = cursor.add(const Duration(days: 1));
-            break;
-          case 'weekly':
-            cursor = cursor.add(const Duration(days: 7));
-            break;
-          case 'monthly':
-            final m = cursor.month + 1;
-            final y = cursor.year + (m > 12 ? 1 : 0);
-            final mm = m > 12 ? 1 : m;
-            final last = DateTime(y, mm + 1, 0).day;
-            cursor = DateTime(y, mm, cursor.day.clamp(1, last));
-            break;
-          case 'yearly':
-            cursor = DateTime(cursor.year + 1, cursor.month, cursor.day);
-            break;
-          default:
-            guard = 999;
-        }
+      if (d0.isBefore(startDay)) continue;
+      if (until != null && d0.isAfter(until)) continue;
+
+      final matches = _recurrenceMatches(
+        rule: rule,
+        start: startDay,
+        day: d0,
+      );
+      if (!matches) continue;
+
+      // حفظ ساعت شروع/پایان و تمام‌روز
+      final start = DateTime(
+        d0.year,
+        d0.month,
+        d0.day,
+        e.start.hour,
+        e.start.minute,
+        e.start.second,
+      );
+      DateTime? end;
+      if (e.end != null) {
+        final dur = e.end!.difference(e.start);
+        end = start.add(dur);
       }
+      out.add(e.copyWith(start: start, end: end));
     }
     return out;
+  }
+
+  /// آیا [day] یک وقوع معتبر برای قانون تکرار است؟ (بدون حلقه روی روزها)
+  static bool _recurrenceMatches({
+    required String rule,
+    required DateTime start,
+    required DateTime day,
+  }) {
+    switch (rule) {
+      case 'daily':
+        return !day.isBefore(start);
+      case 'weekly':
+        final diff = day.difference(start).inDays;
+        return diff >= 0 && diff % 7 == 0;
+      case 'monthly':
+        // ماهانه بر اساس تقویم شمسی (مناسب اپ فارسی)
+        final js = Jalali.fromDateTime(start);
+        final jd = Jalali.fromDateTime(day);
+        final months =
+            (jd.year - js.year) * 12 + (jd.month - js.month);
+        if (months < 0) return false;
+        final len = Jalali(jd.year, jd.month, 1).monthLength;
+        final target = js.day > len ? len : js.day;
+        return jd.day == target;
+      case 'yearly':
+        final js = Jalali.fromDateTime(start);
+        final jd = Jalali.fromDateTime(day);
+        if (jd.year < js.year) return false;
+        if (jd.month != js.month) return false;
+        final len = Jalali(jd.year, jd.month, 1).monthLength;
+        final target = js.day > len ? len : js.day; // ۲۹ اسفند → ۲۸ در غیرکبیسه
+        return jd.day == target;
+      default:
+        return false;
+    }
   }
 
   List<CalNote> notesOn(DateTime day) {
@@ -1878,9 +1931,20 @@ class _CalendarScreenState extends State<CalendarScreen>
                   if (existing != null)
                     TextButton(
                       onPressed: () async {
-                        await _store.removeEvent(existing.id);
-                        if (ctx.mounted) Navigator.pop(ctx, false);
-                        setState(() {});
+                        try {
+                          await AppNotifications.instance.cancel(
+                              AppNotifications.eventNotifId(existing.id));
+                          await _store.removeEvent(existing.id);
+                          if (ctx.mounted) Navigator.pop(ctx, false);
+                          setState(() {});
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('حذف نشد: $e',
+                                  style: const TextStyle(fontFamily: 'Vazirmatn')),
+                            ));
+                          }
+                        }
                       },
                       child: const Text('حذف',
                           style: TextStyle(
@@ -1909,13 +1973,32 @@ class _CalendarScreenState extends State<CalendarScreen>
         colorValue: existing?.colorValue ?? 0xFF42A5F5,
       ));
       try {
-        await AppNotifications.instance.scheduleEventReminder(
-          eventId: evId,
-          title: title.text.trim(),
-          start: start,
-          reminderMinutes: reminder,
-        );
-      } catch (_) {}
+        // همیشه اعلان قبلی را لغو کن؛ سپس در صورت نیاز جدید بساز
+        await AppNotifications.instance.cancel(
+            AppNotifications.eventNotifId(evId));
+        if (reminder > 0) {
+          final okPerm =
+              await AppNotifications.instance.ensurePermissionForReminders(
+            context: context,
+          );
+          if (okPerm) {
+            await AppNotifications.instance.scheduleEventReminder(
+              eventId: evId,
+              title: title.text.trim(),
+              start: start,
+              reminderMinutes: reminder,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('event notif: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('رویداد ذخیره شد؛ اعلان ثبت نشد.',
+                style: const TextStyle(fontFamily: 'Vazirmatn')),
+          ));
+        }
+      }
       setState(() {});
     }
     title.dispose();

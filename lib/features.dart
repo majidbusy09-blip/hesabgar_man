@@ -2956,17 +2956,13 @@ class _LoanTabState extends State<_LoanTab> {
     try {
       final s = await LocalStore.instance;
       final raw = s.getString(_loansKey);
-      if (raw == null || raw.isEmpty) {
-        await AppNotifications.instance.requestPermission();
-        return;
-      }
+      if (raw == null || raw.isEmpty) return;
       final list = jsonDecode(raw) as List;
       setState(() {
         _loans
           ..clear()
           ..addAll(list.map((e) => _TrackedLoan.fromJson(e as Map<String, dynamic>)));
       });
-      await AppNotifications.instance.requestPermission();
     } catch (_) {}
   }
 
@@ -3079,6 +3075,7 @@ class _LoanTabState extends State<_LoanTab> {
 
     // اعلان سیستم‌عامل برای اقساط آینده (پرداخت‌نشده)
     try {
+      await AppNotifications.instance.ensurePermissionForReminders();
       final allDates = <DateTime>[
         for (var i = 0; i < loan.months; i++)
           _jalaliPaymentDateTime(startJ, loan.paymentDay, baseOffset + i),

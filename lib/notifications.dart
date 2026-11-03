@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -47,12 +48,7 @@ class AppNotifications {
           importance: Importance.high,
         ),
       );
-      // Android 13+
-      await android?.requestNotificationsPermission();
-      // Exact alarms when available
-      try {
-        await android?.requestExactAlarmsPermission();
-      } catch (_) {}
+      // مجوز اینجا درخواست نمی‌شود؛ فقط هنگام فعال‌کردن یادآوری
 
       _ready = true;
     } catch (e) {
@@ -63,11 +59,31 @@ class AppNotifications {
 
   Future<bool> requestPermission() async {
     if (!_ready) await init();
-    if (!Platform.isAndroid) return false;
+    if (!Platform.isAndroid) return true;
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     final ok = await android?.requestNotificationsPermission();
     return ok ?? false;
+  }
+
+  /// فقط هنگام نیاز به یادآوری فراخوانی شود (نه در استارت اپ)
+  Future<bool> ensurePermissionForReminders({BuildContext? context}) async {
+    if (!_ready) await init();
+    if (!_ready) return false;
+    if (!Platform.isAndroid) return true;
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final granted = await android?.requestNotificationsPermission() ?? false;
+    if (!granted && context != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+          'برای یادآوری، اجازه اعلان را در تنظیمات برنامه فعال کنید.',
+          style: TextStyle(fontFamily: 'Vazirmatn'),
+        ),
+        duration: Duration(seconds: 4),
+      ));
+    }
+    return granted;
   }
 
   NotificationDetails get _details => const NotificationDetails(

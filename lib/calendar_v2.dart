@@ -2771,3 +2771,63 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 }
+
+
+/// نقاش قطب‌نمای قبله (سطح بالا — خارج از State)
+class _QiblaCompassPainter extends CustomPainter {
+  final double bearing;
+  final Color color;
+  final Color soft;
+  _QiblaCompassPainter({
+    required this.bearing,
+    required this.color,
+    required this.soft,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2 - 8;
+    final bg = Paint()..color = soft.withValues(alpha: 0.7);
+    canvas.drawCircle(c, r, bg);
+    final ring = Paint()
+      ..color = color.withValues(alpha: 0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    canvas.drawCircle(c, r, ring);
+
+    final textPainter = TextPainter(textDirection: TextDirection.rtl);
+    void label(String s, Offset o) {
+      textPainter.text = TextSpan(
+        text: s,
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      );
+      textPainter.layout();
+      textPainter.paint(
+          canvas, o - Offset(textPainter.width / 2, textPainter.height / 2));
+    }
+
+    label('ش', c + Offset(0, -r + 14));
+    label('ج', c + Offset(0, r - 14));
+    label('ق', c + Offset(-r + 14, 0));
+    label('ش‌ر', c + Offset(r - 18, 0));
+
+    final rad = (bearing - 90) * math.pi / 180;
+    final tip = c + Offset(math.cos(rad) * (r - 24), math.sin(rad) * (r - 24));
+    final needle = Paint()
+      ..color = color
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(c, tip, needle);
+    canvas.drawCircle(c, 6, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _QiblaCompassPainter old) =>
+      old.bearing != bearing || old.color != color;
+}

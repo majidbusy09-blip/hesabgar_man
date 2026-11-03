@@ -789,15 +789,39 @@ class _CalendarScreenState extends State<CalendarScreen>
   late String _view; // month week day agenda
   late TabController _toolsTab; // unused placeholder
 
+  /// مراکز استان‌های ایران + چند شهر بزرگ (عرض، طول)
   static const _cities = <String, List<double>>{
     'تهران': [35.6892, 51.3890],
     'مشهد': [36.2972, 59.6067],
     'اصفهان': [32.6546, 51.6680],
     'شیراز': [29.5918, 52.5837],
     'تبریز': [38.0962, 46.2738],
+    'کرج': [35.8400, 50.9391],
     'قم': [34.6416, 50.8746],
     'اهواز': [31.3183, 48.6706],
-    'کرج': [35.8400, 50.9391],
+    'کرمانشاه': [34.3142, 47.0650],
+    'ارومیه': [37.5527, 45.0761],
+    'رشت': [37.2808, 49.5832],
+    'زاهدان': [29.4963, 60.8629],
+    'همدان': [34.7983, 48.5148],
+    'کرمان': [30.2832, 57.0788],
+    'یزد': [31.8974, 54.3569],
+    'اردبیل': [38.2498, 48.2933],
+    'بندرعباس': [27.1832, 56.2666],
+    'اراک': [34.0917, 49.6892],
+    'زنجان': [36.6736, 48.4787],
+    'سنندج': [35.3219, 46.9862],
+    'خرم‌آباد': [33.4878, 48.3558],
+    'گرگان': [36.8456, 54.4393],
+    'ساری': [36.5633, 53.0601],
+    'بجنورد': [37.4750, 57.3333],
+    'بوشهر': [28.9234, 50.8203],
+    'شهرکرد': [32.3256, 50.8644],
+    'ایلام': [33.6374, 46.4227],
+    'یاسوج': [30.6684, 51.5876],
+    'بیرجند': [32.8663, 59.2211],
+    'سمنان': [35.5769, 53.3920],
+    'قزوین': [36.2797, 50.0049],
   };
 
   @override
@@ -2253,6 +2277,77 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 
+  Future<void> _pickPrayerCity() async {
+    final names = _cities.keys.toList()..sort((a, b) => a.compareTo(b));
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        var q = '';
+        return StatefulBuilder(builder: (ctx, setL) {
+          final filtered = names
+              .where((n) => q.isEmpty || n.contains(q))
+              .toList();
+          return SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.7,
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                const Text('انتخاب شهر',
+                    style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16)),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: TextField(
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    decoration: const InputDecoration(
+                      hintText: 'جستجوی شهر...',
+                      hintStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => setL(() => q = v.trim()),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: filtered.length,
+                    itemBuilder: (_, i) {
+                      final name = filtered[i];
+                      final isSel = name == _store.settings.prayerCity;
+                      return ListTile(
+                        title: Text(name,
+                            style: const TextStyle(fontFamily: 'Vazirmatn')),
+                        trailing: isSel
+                            ? const Icon(Icons.check_circle, color: Colors.green)
+                            : null,
+                        onTap: () => Navigator.pop(ctx, name),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+    );
+    if (selected == null) return;
+    final ll = _cities[selected]!;
+    setState(() {
+      _store.settings.prayerCity = selected;
+      _store.settings.cityLat = ll[0];
+      _store.settings.cityLng = ll[1];
+    });
+    await _store.saveSettings();
+  }
+
   void _showPrayer() {
     showModalBottomSheet(
       context: context,
@@ -2371,28 +2466,38 @@ class _CalendarScreenState extends State<CalendarScreen>
                         const SizedBox(height: 14),
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.25),
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.28),
+                            borderRadius: BorderRadius.circular(20),
+                            child: InkWell(
                               borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.location_on,
-                                    size: 16, color: Colors.white),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _store.settings.prayerCity,
-                                  style: const TextStyle(
-                                    fontFamily: 'Vazirmatn',
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                              onTap: () async {
+                                await _pickPrayerCity();
+                                setL(() {}); // refresh times for new city
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 8),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.location_on,
+                                        size: 16, color: Colors.white),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _store.settings.prayerCity,
+                                      style: const TextStyle(
+                                        fontFamily: 'Vazirmatn',
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.expand_more,
+                                        size: 18, color: Colors.white70),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -2861,17 +2966,21 @@ class _CalendarScreenState extends State<CalendarScreen>
 
 
 
-/// صفحه قبله با حسگر واقعی قطب‌نما
+
+/// صفحه قبله با حسگر واقعی — الگوی قطب‌نمای حرفه‌ای
 class _LiveQiblaSheet extends StatefulWidget {
   final double qiblaBearing;
   final String cityName;
   final Color primary;
   final Color soft;
+  final VoidCallback? onChangeCity;
+
   const _LiveQiblaSheet({
     required this.qiblaBearing,
     required this.cityName,
     required this.primary,
     required this.soft,
+    this.onChangeCity,
   });
 
   @override
@@ -2879,29 +2988,31 @@ class _LiveQiblaSheet extends StatefulWidget {
 }
 
 class _LiveQiblaSheetState extends State<_LiveQiblaSheet> {
-  double? _heading; // جهت گوشی نسبت به شمال (۰–۳۶۰)
-  bool _hasError = false;
-  String? _errorMsg;
-  var _sub;
+  double? _heading;
+  bool _sensorMissing = false;
+  String? _hint;
+  dynamic _sub;
 
   @override
   void initState() {
     super.initState();
-    _listen();
+    _startCompass();
   }
 
   @override
   void dispose() {
-    _sub?.cancel();
+    try {
+      _sub?.cancel();
+    } catch (_) {}
     super.dispose();
   }
 
-  void _listen() {
+  void _startCompass() {
     final stream = FlutterCompass.events;
     if (stream == null) {
       setState(() {
-        _hasError = true;
-        _errorMsg = 'حسگر قطب‌نما در این دستگاه در دسترس نیست.';
+        _sensorMissing = true;
+        _hint = 'حسگر قطب‌نما در این دستگاه نیست.';
       });
       return;
     }
@@ -2909,150 +3020,161 @@ class _LiveQiblaSheetState extends State<_LiveQiblaSheet> {
       (event) {
         if (!mounted) return;
         final h = event.heading;
-        if (h == null) {
+        if (h == null || h.isNaN) {
           setState(() {
-            _hasError = true;
-            _errorMsg =
-                'قطب‌نما داده نمی‌دهد. گوشی را از فلز دور کنید و به شکل ∞ حرکت دهید.';
+            _hint =
+                'کالیبره کنید: گوشی را به شکل ∞ در هوا بچرخانید و از فلز دور کنید.';
           });
           return;
         }
+        // نرم‌سازی ساده برای لرزش کمتر
+        final next = (h + 360) % 360;
         setState(() {
-          _heading = (h + 360) % 360;
-          _hasError = false;
-          _errorMsg = null;
+          if (_heading == null) {
+            _heading = next;
+          } else {
+            var d = next - _heading!;
+            if (d > 180) d -= 360;
+            if (d < -180) d += 360;
+            _heading = (_heading! + d * 0.35 + 360) % 360;
+          }
+          _hint = null;
+          _sensorMissing = false;
         });
       },
       onError: (_) {
         if (!mounted) return;
         setState(() {
-          _hasError = true;
-          _errorMsg = 'خطا در خواندن حسگر قطب‌نما.';
+          _sensorMissing = true;
+          _hint = 'خطا در حسگر. مجوز حسگر/موقعیت را در تنظیمات گوشی بررسی کنید.';
         });
       },
     );
   }
 
-  /// زاویه‌ای که باید بچرخیم تا نشانگر قبله بالای صفحه باشد وقتی رو به قبله‌ایم
-  double get _qiblaRelative {
-    if (_heading == null) return widget.qiblaBearing;
-    return (widget.qiblaBearing - _heading! + 360) % 360;
+  /// اختلاف جهت نگاه (بالای گوشی) با قبله — نزدیک ۰ یعنی رو به قبله
+  double get _delta {
+    if (_heading == null) return 999;
+    return ((_heading! - widget.qiblaBearing + 540) % 360) - 180;
   }
 
-  bool get _facingQibla {
-    final r = _qiblaRelative;
-    return r < 8 || r > 352;
-  }
+  bool get _aligned => _delta.abs() < 10;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final heading = _heading;
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
+      height: MediaQuery.of(context).size.height * 0.9,
       decoration: BoxDecoration(
         color: scheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
       child: Column(
         children: [
           Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: scheme.outlineVariant,
-              borderRadius: BorderRadius.circular(4),
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 14),
+            decoration: const BoxDecoration(
+              color: Color(0xFF2E7D32),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'قبله‌نما',
-            style: TextStyle(
-              fontFamily: 'Vazirmatn',
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            widget.cityName,
-            style: TextStyle(
-              fontFamily: 'Vazirmatn',
-              color: scheme.onSurface.withValues(alpha: 0.55),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (_facingQibla && _heading != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(20),
+            child: SafeArea(
+              bottom: false,
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_forward, color: Colors.white),
+                  ),
+                  Expanded(
+                    child: Text(
+                      'قبله ${widget.cityName}: ${widget.qiblaBearing.round()} درجه',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 48),
+                ],
               ),
-              child: const Text(
-                'رو به قبله هستید',
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text(
+              heading == null
+                  ? 'در حال دریافت جهت از حسگر…'
+                  : (_aligned
+                      ? 'رو به قبله هستید'
+                      : 'گوشی را بچرخانید تا نشانگر قبله به بالا برسد'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: _aligned ? const Color(0xFF2E7D32) : scheme.onSurface,
+              ),
+            ),
+          ),
+          if (_hint != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                _hint!,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'Vazirmatn',
-                  fontWeight: FontWeight.w800,
-                  color: Colors.green,
+                  fontSize: 12,
+                  color: scheme.error,
                 ),
               ),
             ),
-          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () {
+              try {
+                _sub?.cancel();
+              } catch (_) {}
+              _heading = null;
+              _startCompass();
+              setState(() {});
+            },
+            child: const Text('تلاش مجدد',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
           Expanded(
             child: Center(
               child: SizedBox(
-                height: 280,
-                width: 280,
-                child: _hasError
-                    ? Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          _errorMsg ?? 'خطا',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontFamily: 'Vazirmatn'),
-                        ),
-                      )
+                width: 300,
+                height: 300,
+                child: _sensorMissing
+                    ? const Icon(Icons.explore_off, size: 64)
                     : CustomPaint(
+                        size: const Size(300, 300),
                         painter: _QiblaCompassPainter(
-                          heading: _heading ?? 0,
+                          heading: heading ?? 0,
                           qiblaBearing: widget.qiblaBearing,
-                          color: widget.primary,
-                          soft: widget.soft,
-                          ready: _heading != null,
+                          ready: heading != null,
+                          aligned: _aligned,
                         ),
                       ),
               ),
             ),
           ),
-          Text(
-            'زاویه قبله از شمال: ${widget.qiblaBearing.toStringAsFixed(1)}°',
-            style: TextStyle(
-              fontFamily: 'Vazirmatn',
-              fontWeight: FontWeight.w800,
-              fontSize: 16,
-              color: widget.primary,
-            ),
-          ),
-          if (_heading != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              'جهت گوشی: ${_heading!.toStringAsFixed(0)}°',
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: Text(
+              'جهت قبله بر اساس شهر ${widget.cityName} محاسبه شده. گوشی را افقی بگیرید؛ از فلز و آهنربا دور شوید.',
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Vazirmatn',
-                fontSize: 13,
+                fontSize: 12,
                 color: scheme.onSurface.withValues(alpha: 0.55),
               ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Text(
-            'گوشی را افقی نگه دارید و بچرخانید تا فلش سبز/رنگی به بالا برسد؛ آن‌وقت رو به قبله هستید. از میدان‌های مغناطیسی و فلز دور شوید.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Vazirmatn',
-              fontSize: 12,
-              color: scheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
         ],
@@ -3061,106 +3183,144 @@ class _LiveQiblaSheetState extends State<_LiveQiblaSheet> {
   }
 }
 
-/// نقاش قطب‌نما: صفحه نسبت به شمال می‌چرخد؛ نشانگر قبله ثابت نسبت به جغرافیا
+/// صفحهٔ قطب‌نما: جهات با heading می‌چرخند؛ نشانگر قبله روی همان صفحه است.
+/// مثلث ثابت بالا = جهت نگاه کاربر.
 class _QiblaCompassPainter extends CustomPainter {
   final double heading;
   final double qiblaBearing;
-  final Color color;
-  final Color soft;
   final bool ready;
+  final bool aligned;
 
   _QiblaCompassPainter({
     required this.heading,
     required this.qiblaBearing,
-    required this.color,
-    required this.soft,
     required this.ready,
+    required this.aligned,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2 - 10;
+    final r = size.width / 2 - 8;
 
-    // پس‌زمینه
-    canvas.drawCircle(c, r, Paint()..color = soft.withValues(alpha: 0.55));
-    canvas.drawCircle(
-      c,
-      r,
-      Paint()
-        ..color = color.withValues(alpha: 0.3)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
-    );
+    // حلقه بیرونی
+    final ring = Paint()
+      ..color = const Color(0xFFF9A825)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8;
+    canvas.drawCircle(c, r, Paint()..color = const Color(0xFF212121));
+    canvas.drawCircle(c, r, ring);
 
-    // چرخش صفحهٔ جهات با منفی heading تا «شمال» همیشه به شمال واقعی باشد
+    // نقاط مقیاس
+    final tick = Paint()
+      ..color = Colors.white54
+      ..strokeWidth = 1.5;
+    for (var i = 0; i < 60; i++) {
+      final a = i * 6 * math.pi / 180;
+      final outer = r - 6;
+      final inner = i % 5 == 0 ? r - 16 : r - 11;
+      canvas.drawLine(
+        c + Offset(math.cos(a) * inner, math.sin(a) * inner),
+        c + Offset(math.cos(a) * outer, math.sin(a) * outer),
+        tick,
+      );
+    }
+
+    // چرخش صفحه نسبت به حسگر: -heading تا شمال واقعی بالا باشد وقتی گوشی به شمال است
     canvas.save();
     canvas.translate(c.dx, c.dy);
     if (ready) {
-      canvas.rotate(-heading * math.pi / 180);
+      canvas.rotate(-heading * math.pi / 180.0);
     }
 
-    final textPainter = TextPainter(textDirection: TextDirection.rtl);
-    void label(String s, Offset o, {Color? col}) {
-      textPainter.text = TextSpan(
+    final tp = TextPainter(textDirection: TextDirection.rtl);
+    void lab(String s, double deg, {Color col = Colors.white70}) {
+      final rad = (deg - 90) * math.pi / 180;
+      final o = Offset(math.cos(rad) * (r - 34), math.sin(rad) * (r - 34));
+      tp.text = TextSpan(
         text: s,
         style: TextStyle(
           fontFamily: 'Vazirmatn',
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: FontWeight.w800,
-          color: col ?? color,
+          color: col,
         ),
       );
-      textPainter.layout();
-      textPainter.paint(
-          canvas, o - Offset(textPainter.width / 2, textPainter.height / 2));
+      tp.layout();
+      tp.paint(canvas, o - Offset(tp.width / 2, tp.height / 2));
     }
 
-    // علائم اصلی (در مختصات چرخانده‌شده: بالا = شمال)
-    label('ش', Offset(0, -r + 18));
-    label('ج', Offset(0, r - 18));
-    label('ق', Offset(-r + 18, 0));
-    label('خ', Offset(r - 18, 0)); // شرق
+    lab('شمال', 0, col: const Color(0xFFF9A825));
+    lab('شرق', 90);
+    lab('جنوب', 180);
+    lab('غرب', 270);
 
-    // عقربه قبله روی دایرهٔ جغرافیایی
+    // نشانگر قبله روی صفحهٔ جغرافیایی (زاویه از شمال)
     final qRad = (qiblaBearing - 90) * math.pi / 180;
-    final tip = Offset(math.cos(qRad) * (r - 36), math.sin(qRad) * (r - 36));
-    final needle = Paint()
-      ..color = ready ? color : color.withValues(alpha: 0.4)
-      ..strokeWidth = 5
+    final qTip = Offset(math.cos(qRad) * (r - 48), math.sin(qRad) * (r - 48));
+    final qPaint = Paint()
+      ..color = aligned ? const Color(0xFF66BB6A) : const Color(0xFFF9A825)
+      ..strokeWidth = 4
+      ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset.zero, tip, needle);
-    // نوک
-    canvas.drawCircle(tip, 10, Paint()..color = color);
-    // کعبه کوچک
-    textPainter.text = TextSpan(
-      text: 'کعبه',
-      style: TextStyle(
-        fontFamily: 'Vazirmatn',
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
-        color: color,
-      ),
+    // کمان/پیکان به سمت قبله از مرکز
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(qTip.dx, qTip.dy);
+    canvas.drawPath(path, qPaint..style = PaintingStyle.stroke);
+
+    // پین قبله (شبیه مارکر الگو)
+    final pin = Path();
+    final pinR = 28.0;
+    pin.moveTo(qTip.dx, qTip.dy - pinR);
+    pin.arcToPoint(
+      Offset(qTip.dx, qTip.dy + pinR * 0.2),
+      radius: Radius.circular(pinR),
+      clockwise: false,
     );
-    textPainter.layout();
-    textPainter.paint(canvas, tip + Offset(-textPainter.width / 2, 12));
+    pin.arcToPoint(
+      Offset(qTip.dx, qTip.dy - pinR),
+      radius: Radius.circular(pinR),
+      clockwise: false,
+    );
+    canvas.drawCircle(qTip, 22, Paint()..color = const Color(0xFFF9A825));
+    canvas.drawCircle(qTip, 16, Paint()..color = const Color(0xFF212121));
+    // نماد ساده کعبه
+    final k = qTip;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: k, width: 14, height: 14),
+        const Radius.circular(2),
+      ),
+      Paint()..color = Colors.white,
+    );
+    canvas.drawRect(
+      Rect.fromCenter(center: k + const Offset(0, -2), width: 14, height: 4),
+      Paint()..color = const Color(0xFFF9A825),
+    );
 
     canvas.restore();
 
-    // مثلث ثابت «بالای گوشی» — جهتی که کاربر می‌نگرد
-    final path = Path()
-      ..moveTo(c.dx, c.dy - r + 4)
-      ..lineTo(c.dx - 10, c.dy - r + 22)
-      ..lineTo(c.dx + 10, c.dy - r + 22)
+    // مثلث ثابت جهت نگاه (بالای صفحه)
+    final look = Path()
+      ..moveTo(c.dx, c.dy - r + 2)
+      ..lineTo(c.dx - 12, c.dy - r + 22)
+      ..lineTo(c.dx + 12, c.dy - r + 22)
       ..close();
-    canvas.drawPath(path, Paint()..color = Colors.redAccent);
+    canvas.drawPath(
+      look,
+      Paint()..color = aligned ? const Color(0xFF66BB6A) : Colors.redAccent,
+    );
 
-    canvas.drawCircle(c, 7, Paint()..color = color);
+    // مرکز
+    canvas.drawCircle(c, 8, Paint()..color = const Color(0xFFF9A825));
+    canvas.drawCircle(c, 4, Paint()..color = const Color(0xFF212121));
   }
 
   @override
   bool shouldRepaint(covariant _QiblaCompassPainter old) =>
       old.heading != heading ||
       old.qiblaBearing != qiblaBearing ||
-      old.ready != ready;
+      old.ready != ready ||
+      old.aligned != aligned;
 }

@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter/services.dart';
 import 'core.dart';
 import 'notifications.dart';
@@ -620,14 +621,16 @@ class PrayerTimesApprox {
 
   /// زاویه قبله از شمال جغرافیایی (درجه، ۰–۳۶۰)
   static double qiblaBearing(double lat, double lng) {
-    const kLat = 21.422487 * math.pi / 180;
-    const kLng = 39.826206 * math.pi / 180;
-    final latR = lat * math.pi / 180;
-    final dLng = kLng - lng * math.pi / 180;
-    final x = math.sin(dLng);
-    final y =
-        math.cos(latR) * math.tan(kLat) - math.sin(latR) * math.cos(dLng);
-    var br = math.atan2(x, y) * 180 / math.pi;
+    // کعبه — زاویه از شمال جغرافیایی (۰–۳۶۰، ساعت‌گرد)
+    const kLat = 21.422487;
+    const kLng = 39.826206;
+    final phi1 = lat * math.pi / 180;
+    final phi2 = kLat * math.pi / 180;
+    final dLambda = (kLng - lng) * math.pi / 180;
+    final y = math.sin(dLambda) * math.cos(phi2);
+    final x = math.cos(phi1) * math.sin(phi2) -
+        math.sin(phi1) * math.cos(phi2) * math.cos(dLambda);
+    var br = math.atan2(y, x) * 180 / math.pi;
     br = (br + 360) % 360;
     return br;
   }
@@ -2517,86 +2520,21 @@ class _CalendarScreenState extends State<CalendarScreen>
   void _showQibla() {
     final lat = _store.settings.cityLat;
     final lng = _store.settings.cityLng;
-    final br = PrayerTimesApprox.qiblaBearing(lat, lng);
+    final qibla = PrayerTimesApprox.qiblaBearing(lat, lng);
     final season = SeasonTheme.ofJalali(_selectedJ);
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-        decoration: BoxDecoration(
-          color: Theme.of(ctx).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('جهت قبله',
-                style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18)),
-            const SizedBox(height: 6),
-            Text(
-              _store.settings.prayerCity,
-              style: TextStyle(
-                fontFamily: 'Vazirmatn',
-                color: Theme.of(ctx)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.55),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 200,
-              width: 200,
-              child: CustomPaint(
-                painter: _QiblaCompassPainter(
-                  bearing: br,
-                  color: season.primary,
-                  soft: season.soft,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '${br.toStringAsFixed(1)}°',
-              style: TextStyle(
-                fontFamily: 'Vazirmatn',
-                fontWeight: FontWeight.w900,
-                fontSize: 32,
-                color: season.primary,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'از شمال جغرافیایی به سمت قبله',
-              style: TextStyle(
-                fontFamily: 'Vazirmatn',
-                fontSize: 13,
-                color: Theme.of(ctx)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.55),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'قطب‌نما روی گوشی را با شمال واقعی هم‌راستا کنید؛ این عدد زاویه ثابت نسبت به شمال است.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Vazirmatn',
-                fontSize: 11.5,
-                color: Theme.of(ctx)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.5),
-              ),
-            ),
-          ],
-        ),
-      ),
+      builder: (ctx) {
+        return _LiveQiblaSheet(
+          qiblaBearing: qibla,
+          cityName: _store.settings.prayerCity,
+          primary: season.primary,
+          soft: season.soft,
+        );
+      },
     );
   }
 
@@ -2922,38 +2860,255 @@ class _CalendarScreenState extends State<CalendarScreen>
 }
 
 
-/// نقاش قطب‌نمای قبله (سطح بالا — خارج از State)
+
+/// صفحه قبله با حسگر واقعی قطب‌نما
+class _LiveQiblaSheet extends StatefulWidget {
+  final double qiblaBearing;
+  final String cityName;
+  final Color primary;
+  final Color soft;
+  const _LiveQiblaSheet({
+    required this.qiblaBearing,
+    required this.cityName,
+    required this.primary,
+    required this.soft,
+  });
+
+  @override
+  State<_LiveQiblaSheet> createState() => _LiveQiblaSheetState();
+}
+
+class _LiveQiblaSheetState extends State<_LiveQiblaSheet> {
+  double? _heading; // جهت گوشی نسبت به شمال (۰–۳۶۰)
+  bool _hasError = false;
+  String? _errorMsg;
+  var _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  void _listen() {
+    final stream = FlutterCompass.events;
+    if (stream == null) {
+      setState(() {
+        _hasError = true;
+        _errorMsg = 'حسگر قطب‌نما در این دستگاه در دسترس نیست.';
+      });
+      return;
+    }
+    _sub = stream.listen(
+      (event) {
+        if (!mounted) return;
+        final h = event.heading;
+        if (h == null) {
+          setState(() {
+            _hasError = true;
+            _errorMsg =
+                'قطب‌نما داده نمی‌دهد. گوشی را از فلز دور کنید و به شکل ∞ حرکت دهید.';
+          });
+          return;
+        }
+        setState(() {
+          _heading = (h + 360) % 360;
+          _hasError = false;
+          _errorMsg = null;
+        });
+      },
+      onError: (_) {
+        if (!mounted) return;
+        setState(() {
+          _hasError = true;
+          _errorMsg = 'خطا در خواندن حسگر قطب‌نما.';
+        });
+      },
+    );
+  }
+
+  /// زاویه‌ای که باید بچرخیم تا نشانگر قبله بالای صفحه باشد وقتی رو به قبله‌ایم
+  double get _qiblaRelative {
+    if (_heading == null) return widget.qiblaBearing;
+    return (widget.qiblaBearing - _heading! + 360) % 360;
+  }
+
+  bool get _facingQibla {
+    final r = _qiblaRelative;
+    return r < 8 || r > 352;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      child: Column(
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: scheme.outlineVariant,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'قبله‌نما',
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.cityName,
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              color: scheme.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_facingQibla && _heading != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'رو به قبله هستید',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontWeight: FontWeight.w800,
+                  color: Colors.green,
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: Center(
+              child: SizedBox(
+                height: 280,
+                width: 280,
+                child: _hasError
+                    ? Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          _errorMsg ?? 'خطا',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontFamily: 'Vazirmatn'),
+                        ),
+                      )
+                    : CustomPaint(
+                        painter: _QiblaCompassPainter(
+                          heading: _heading ?? 0,
+                          qiblaBearing: widget.qiblaBearing,
+                          color: widget.primary,
+                          soft: widget.soft,
+                          ready: _heading != null,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          Text(
+            'زاویه قبله از شمال: ${widget.qiblaBearing.toStringAsFixed(1)}°',
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              color: widget.primary,
+            ),
+          ),
+          if (_heading != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'جهت گوشی: ${_heading!.toStringAsFixed(0)}°',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 13,
+                color: scheme.onSurface.withValues(alpha: 0.55),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            'گوشی را افقی نگه دارید و بچرخانید تا فلش سبز/رنگی به بالا برسد؛ آن‌وقت رو به قبله هستید. از میدان‌های مغناطیسی و فلز دور شوید.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              fontSize: 12,
+              color: scheme.onSurface.withValues(alpha: 0.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// نقاش قطب‌نما: صفحه نسبت به شمال می‌چرخد؛ نشانگر قبله ثابت نسبت به جغرافیا
 class _QiblaCompassPainter extends CustomPainter {
-  final double bearing;
+  final double heading;
+  final double qiblaBearing;
   final Color color;
   final Color soft;
+  final bool ready;
+
   _QiblaCompassPainter({
-    required this.bearing,
+    required this.heading,
+    required this.qiblaBearing,
     required this.color,
     required this.soft,
+    required this.ready,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2 - 8;
-    final bg = Paint()..color = soft.withValues(alpha: 0.7);
-    canvas.drawCircle(c, r, bg);
-    final ring = Paint()
-      ..color = color.withValues(alpha: 0.35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-    canvas.drawCircle(c, r, ring);
+    final r = size.width / 2 - 10;
+
+    // پس‌زمینه
+    canvas.drawCircle(c, r, Paint()..color = soft.withValues(alpha: 0.55));
+    canvas.drawCircle(
+      c,
+      r,
+      Paint()
+        ..color = color.withValues(alpha: 0.3)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+
+    // چرخش صفحهٔ جهات با منفی heading تا «شمال» همیشه به شمال واقعی باشد
+    canvas.save();
+    canvas.translate(c.dx, c.dy);
+    if (ready) {
+      canvas.rotate(-heading * math.pi / 180);
+    }
 
     final textPainter = TextPainter(textDirection: TextDirection.rtl);
-    void label(String s, Offset o) {
+    void label(String s, Offset o, {Color? col}) {
       textPainter.text = TextSpan(
         text: s,
         style: TextStyle(
           fontFamily: 'Vazirmatn',
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: color,
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+          color: col ?? color,
         ),
       );
       textPainter.layout();
@@ -2961,22 +3116,51 @@ class _QiblaCompassPainter extends CustomPainter {
           canvas, o - Offset(textPainter.width / 2, textPainter.height / 2));
     }
 
-    label('ش', c + Offset(0, -r + 14));
-    label('ج', c + Offset(0, r - 14));
-    label('ق', c + Offset(-r + 14, 0));
-    label('ش‌ر', c + Offset(r - 18, 0));
+    // علائم اصلی (در مختصات چرخانده‌شده: بالا = شمال)
+    label('ش', Offset(0, -r + 18));
+    label('ج', Offset(0, r - 18));
+    label('ق', Offset(-r + 18, 0));
+    label('خ', Offset(r - 18, 0)); // شرق
 
-    final rad = (bearing - 90) * math.pi / 180;
-    final tip = c + Offset(math.cos(rad) * (r - 24), math.sin(rad) * (r - 24));
+    // عقربه قبله روی دایرهٔ جغرافیایی
+    final qRad = (qiblaBearing - 90) * math.pi / 180;
+    final tip = Offset(math.cos(qRad) * (r - 36), math.sin(qRad) * (r - 36));
     final needle = Paint()
-      ..color = color
-      ..strokeWidth = 4
+      ..color = ready ? color : color.withValues(alpha: 0.4)
+      ..strokeWidth = 5
       ..strokeCap = StrokeCap.round;
-    canvas.drawLine(c, tip, needle);
-    canvas.drawCircle(c, 6, Paint()..color = color);
+    canvas.drawLine(Offset.zero, tip, needle);
+    // نوک
+    canvas.drawCircle(tip, 10, Paint()..color = color);
+    // کعبه کوچک
+    textPainter.text = TextSpan(
+      text: 'کعبه',
+      style: TextStyle(
+        fontFamily: 'Vazirmatn',
+        fontSize: 11,
+        fontWeight: FontWeight.w800,
+        color: color,
+      ),
+    );
+    textPainter.layout();
+    textPainter.paint(canvas, tip + Offset(-textPainter.width / 2, 12));
+
+    canvas.restore();
+
+    // مثلث ثابت «بالای گوشی» — جهتی که کاربر می‌نگرد
+    final path = Path()
+      ..moveTo(c.dx, c.dy - r + 4)
+      ..lineTo(c.dx - 10, c.dy - r + 22)
+      ..lineTo(c.dx + 10, c.dy - r + 22)
+      ..close();
+    canvas.drawPath(path, Paint()..color = Colors.redAccent);
+
+    canvas.drawCircle(c, 7, Paint()..color = color);
   }
 
   @override
   bool shouldRepaint(covariant _QiblaCompassPainter old) =>
-      old.bearing != bearing || old.color != color;
+      old.heading != heading ||
+      old.qiblaBearing != qiblaBearing ||
+      old.ready != ready;
 }

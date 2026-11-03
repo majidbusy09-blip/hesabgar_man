@@ -226,11 +226,15 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+
       - name: Run unit tests
         run: |
           # تست پیش‌فرض flutter create (counter) با اپ واقعی سازگار نیست
           rm -f test/widget_test.dart
-          flutter test test/calculator_logic_test.dart test/finance_logic_test.dart test/expense_model_test.dart test/accounting_logic_test.dart test/report_logic_test.dart test/category_store_test.dart
+          flutter test --reporter expanded test/calculator_logic_test.dart test/finance_logic_test.dart test/expense_model_test.dart test/accounting_logic_test.dart test/report_logic_test.dart test/category_store_test.dart test/calendar_recurrence_test.dart
 
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons || true

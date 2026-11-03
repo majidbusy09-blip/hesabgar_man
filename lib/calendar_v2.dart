@@ -534,10 +534,15 @@ class CalendarStore {
 
 // ─── اوقات شرعی (تقریبی — مرجع رسمی نیست) ───
 class PrayerTimesApprox {
-  /// الگوریتم خورشیدی ساده‌شده با معادله زمان و زاویه عصر
-  static Map<String, TimeOfDay> compute(DateTime date, double lat, double lng) {
+  /// آفست ساعت ایران نسبت به UTC (ثابت؛ بدون تغییر ساعت تابستانی فعلی)
+  static const double iranOffsetHours = 3.5;
+
+  /// اوقات شرعی تقریبی بر اساس مختصات و روز — برای ایران با UTC+3:30
+  static Map<String, TimeOfDay> compute(DateTime date, double lat, double lng,
+      {double? utcOffsetHours}) {
+    final tz = utcOffsetHours ?? iranOffsetHours;
     final day = date.difference(DateTime(date.year, 1, 1)).inDays + 1.0;
-    final gamma = 2 * math.pi / 365 * (day - 1);
+    final gamma = 2 * math.pi / 365 * (day - 1 + 0.5);
     // معادله زمان (دقیقه)
     final eqTime = 229.18 *
         (0.000075 +
@@ -545,6 +550,7 @@ class PrayerTimesApprox {
             0.032077 * math.sin(gamma) -
             0.014615 * math.cos(2 * gamma) -
             0.040849 * math.sin(2 * gamma));
+    // میل خورشید (رادیان)
     final decl = 0.006918 -
         0.399912 * math.cos(gamma) +
         0.070257 * math.sin(gamma) -
@@ -558,38 +564,54 @@ class PrayerTimesApprox {
       final a = angleDeg * math.pi / 180;
       final cosH = (math.sin(a) - math.sin(latR) * math.sin(decl)) /
           (math.cos(latR) * math.cos(decl));
-      final c = cosH.clamp(-1.0, 1.0);
-      return math.acos(c) * 180 / math.pi / 15.0;
+      if (cosH.abs() > 1.0) {
+        // قطبی / غیرقابل‌محاسبه
+        return 6.0;
+      }
+      return math.acos(cosH.clamp(-1.0, 1.0)) * 180 / math.pi / 15.0;
     }
 
-    // ظهر خورشیدی (ساعت محلی تقریبی)
-    final solarNoon = 12.0 - lng / 15.0 - eqTime / 60.0;
+    // ظهر شرعی به وقت محلی: 12 + (منطقه زمانی − طول جغرافیایی/۱۵) − معادله زمان
+    final solarNoon = 12.0 + tz - lng / 15.0 - eqTime / 60.0;
+
+    // زوایا (درجه): صبح ۱۸−، طلوع ۰.۸۳۳−، عشا ۱۷− (تقریب رایج)
     final haRise = hourAngle(-0.833);
-    final haFajr = hourAngle(-18.0); // زاویه رایج تقریبی
-    final haIsha = hourAngle(-17.0);
-    // عصر (تقریب شافعی: سایه = طول + سایه ظهر)
-    final altAsr = math.atan(1.0 / (1 + math.tan((latR - decl).abs())));
+    final haFajr = hourAngle(-18.0);
+    final haIsha = hourAngle(-17.5);
+    // عصر (شافعی): سایه = طول شیء + سایه ظهر
+    final cosZenithAsr = math.sin(latR) * math.sin(decl) +
+        math.cos(latR) * math.cos(decl);
+    final zenithAsr = math.acos(cosZenithAsr.clamp(-1.0, 1.0));
+    final shadow = 1.0 + math.tan(zenithAsr.abs());
+    final altAsr = math.atan(1.0 / shadow);
     final haAsr = hourAngle(altAsr * 180 / math.pi);
 
     TimeOfDay td(double h) {
       var x = h % 24;
       if (x < 0) x += 24;
       final hh = x.floor();
-      final mm = ((x - hh) * 60).round().clamp(0, 59);
-      return TimeOfDay(hour: hh, minute: mm);
+      final mm = ((x - hh) * 60).round();
+      if (mm >= 60) return TimeOfDay(hour: (hh + 1) % 24, minute: 0);
+      return TimeOfDay(hour: hh, minute: mm.clamp(0, 59));
     }
 
     final sunrise = solarNoon - haRise;
     final sunset = solarNoon + haRise;
+    // مغرب: چند دقیقه بعد از غروب (تقریباً ۳–۴ دقیقه برای ایران)
+    final maghrib = sunset + 4 / 60.0;
+    // نیمه‌شب شرعی: وسط غروب تا طلوع فردا
+    final nightLen = (sunrise + 24) - sunset;
+    final midnight = (sunset + nightLen / 2) % 24;
+
     return {
       'اذان صبح': td(solarNoon - haFajr),
       'طلوع آفتاب': td(sunrise),
       'اذان ظهر': td(solarNoon),
       'اذان عصر': td(solarNoon + haAsr),
       'غروب آفتاب': td(sunset),
-      'اذان مغرب': td(sunset + 3 / 60.0), // چند دقیقه بعد از غروب
+      'اذان مغرب': td(maghrib),
       'اذان عشا': td(solarNoon + haIsha),
-      'نیمه‌شب شرعی': td((sunset + (sunrise + 24 - sunset) / 2) % 24),
+      'نیمه‌شب شرعی': td(midnight),
     };
   }
 
@@ -2229,139 +2251,266 @@ class _CalendarScreenState extends State<CalendarScreen>
   }
 
   void _showPrayer() {
-    final g = _selectedG ?? DateTime.now();
-    final j = Jalali.fromDateTime(g);
-    final map = PrayerTimesApprox.compute(
-        g, _store.settings.cityLat, _store.settings.cityLng);
-    final season = SeasonTheme.ofJalali(j);
-    final now = TimeOfDay.now();
-    String? nextName;
-    for (final e in map.entries) {
-      final t = e.value;
-      if (t.hour > now.hour ||
-          (t.hour == now.hour && t.minute >= now.minute)) {
-        nextName = e.key;
-        break;
-      }
-    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        margin: const EdgeInsets.only(top: 40),
-        decoration: BoxDecoration(
-          color: Theme.of(ctx).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(ctx).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
+      builder: (ctx) {
+        var day = _selectedG ?? DateTime.now();
+        return StatefulBuilder(builder: (ctx, setL) {
+          final j = Jalali.fromDateTime(day);
+          final h = HijriDate.fromGregorian(day);
+          final map = PrayerTimesApprox.compute(
+              day, _store.settings.cityLat, _store.settings.cityLng);
+          final now = DateTime.now();
+          final isToday = day.year == now.year &&
+              day.month == now.month &&
+              day.day == now.day;
+          final nowT = TimeOfDay.fromDateTime(now);
+          String? nextName;
+          TimeOfDay? nextTime;
+          if (isToday) {
+            for (final e in map.entries) {
+              final t = e.value;
+              final mins = t.hour * 60 + t.minute;
+              final nowM = nowT.hour * 60 + nowT.minute;
+              if (mins >= nowM) {
+                nextName = e.key;
+                nextTime = t;
+                break;
+              }
+            }
+          }
+
+          IconData iconFor(String name) {
+            if (name.contains('صبح')) return Icons.nights_stay_outlined;
+            if (name.contains('طلوع')) return Icons.wb_twilight_outlined;
+            if (name.contains('ظهر')) return Icons.wb_sunny_outlined;
+            if (name.contains('عصر')) return Icons.wb_cloudy_outlined;
+            if (name.contains('غروب')) return Icons.wb_twilight;
+            if (name.contains('مغرب')) return Icons.nightlight_round;
+            if (name.contains('عشا')) return Icons.dark_mode_outlined;
+            return Icons.schedule;
+          }
+
+          return Container(
+            height: MediaQuery.of(ctx).size.height * 0.92,
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).colorScheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(22)),
             ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    season.primary.withValues(alpha: 0.9),
-                    season.accent.withValues(alpha: 0.75),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Column(
-                children: [
-                  const Text('اوقات شرعی',
-                      style: TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                          color: Colors.white)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${_store.settings.prayerCity} · ${j.day} ${j.monthName} ${j.year}',
-                    style: const TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        color: Colors.white70,
-                        fontSize: 13),
+            child: Column(
+              children: [
+                // هدر تصویری
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFF5D4037), Color(0xFFBF360C), Color(0xFFFF8A65)],
+                    ),
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(22)),
                   ),
-                  if (nextName != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'بعدی: $nextName  ${PrayerTimesApprox.fmt(map[nextName]!)}',
-                      style: const TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            for (final e in map.entries)
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: e.key == nextName
-                      ? season.soft.withValues(alpha: 0.65)
-                      : Theme.of(ctx)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(14),
-                  border: e.key == nextName
-                      ? Border.all(color: season.primary.withValues(alpha: 0.4))
-                      : null,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(e.key,
-                          style: const TextStyle(
+                  child: SafeArea(
+                    bottom: false,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            IconButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              icon: const Icon(Icons.arrow_forward,
+                                  color: Colors.white),
+                            ),
+                            const Expanded(
+                              child: Text(
+                                'اوقات شرعی',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 18,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 48),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        if (nextName != null && nextTime != null)
+                          Text(
+                            '$nextName  ${PrayerTimesApprox.fmt(nextTime)}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
                               fontFamily: 'Vazirmatn',
-                              fontWeight: FontWeight.w700)),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 28,
+                              color: Colors.white,
+                            ),
+                          )
+                        else
+                          const Text(
+                            'اوقات امروز',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 22,
+                              color: Colors.white,
+                            ),
+                          ),
+                        const SizedBox(height: 14),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.location_on,
+                                    size: 16, color: Colors.white),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _store.settings.prayerCity,
+                                  style: const TextStyle(
+                                    fontFamily: 'Vazirmatn',
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      PrayerTimesApprox.fmt(e.value),
-                      style: TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                        color: season.primary,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            const SizedBox(height: 8),
-            Text(
-              'محاسبه تقریبی نجومی است و جایگزین اوقات رسمی اوقاف یا نرم‌افزارهای تخصصی نیست.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Vazirmatn',
-                fontSize: 11,
-                color: Theme.of(ctx)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.5),
-              ),
+                // ناوبری روز
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => setL(() {
+                          day = day.add(const Duration(days: 1));
+                        }),
+                        child: const Text('روز بعد',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Text(
+                              '${Jalali.weekDays[j.weekdayIndex]} ${j.day} ${j.monthName} ${j.year}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
+                            ),
+                            Text(
+                              '${h.day} ${HijriDate.monthNames[h.month - 1]} ${h.year}',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontSize: 12,
+                                color: Theme.of(ctx)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.55),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => setL(() {
+                          day = day.subtract(const Duration(days: 1));
+                        }),
+                        child: const Text('روز قبل',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    children: [
+                      for (final e in map.entries)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: e.key == nextName
+                                ? const Color(0xFFFFE0B2).withValues(alpha: 0.7)
+                                : Theme.of(ctx)
+                                    .colorScheme
+                                    .surfaceContainerHighest
+                                    .withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(iconFor(e.key),
+                                  color: const Color(0xFFBF360C), size: 22),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  e.key,
+                                  style: const TextStyle(
+                                    fontFamily: 'Vazirmatn',
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                PrayerTimesApprox.fmt(e.value),
+                                style: const TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 20,
+                                  color: Color(0xFFBF360C),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'محاسبه تقریبی نجومی است و جایگزین اوقات رسمی اوقاف نیست. برای دقت بیشتر شهر را از تنظیمات تقویم انتخاب کنید.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 11,
+                          color: Theme.of(ctx)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          );
+        });
+      },
     );
   }
 

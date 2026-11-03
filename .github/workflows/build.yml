@@ -226,8 +226,14 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Remove default Flutter counter test
+        run: rm -f test/widget_test.dart
+
       - name: Analyze
-        run: flutter analyze --no-fatal-infos
+        run: |
+          # قالب پیش‌فرض flutter create به MyApp اشاره می‌کند و analyze را می‌شکند
+          rm -f test/widget_test.dart
+          flutter analyze lib test --no-fatal-infos
 
 
       - name: Run unit tests

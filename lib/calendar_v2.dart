@@ -532,26 +532,45 @@ class CalendarStore {
   }
 }
 
-// ─── اوقات شرعی تقریبی (الگوریتم ساده — نه ادعای دقت رسمی) ───
+// ─── اوقات شرعی (تقریبی — مرجع رسمی نیست) ───
 class PrayerTimesApprox {
-  /// خروجی: نام → TimeOfDay تقریبی بر اساس عرض جغرافیایی و روز سال
+  /// الگوریتم خورشیدی ساده‌شده با معادله زمان و زاویه عصر
   static Map<String, TimeOfDay> compute(DateTime date, double lat, double lng) {
-    final day = date.difference(DateTime(date.year, 1, 1)).inDays + 1;
-    final decl = 23.45 * math.sin((360 / 365) * (day - 81) * math.pi / 180);
-    double hourAngle(double elev) {
-      final latR = lat * math.pi / 180;
-      final dR = decl * math.pi / 180;
-      final cosH = (math.sin(elev * math.pi / 180) -
-              math.sin(latR) * math.sin(dR)) /
-          (math.cos(latR) * math.cos(dR));
+    final day = date.difference(DateTime(date.year, 1, 1)).inDays + 1.0;
+    final gamma = 2 * math.pi / 365 * (day - 1);
+    // معادله زمان (دقیقه)
+    final eqTime = 229.18 *
+        (0.000075 +
+            0.001868 * math.cos(gamma) -
+            0.032077 * math.sin(gamma) -
+            0.014615 * math.cos(2 * gamma) -
+            0.040849 * math.sin(2 * gamma));
+    final decl = 0.006918 -
+        0.399912 * math.cos(gamma) +
+        0.070257 * math.sin(gamma) -
+        0.006758 * math.cos(2 * gamma) +
+        0.000907 * math.sin(2 * gamma) -
+        0.002697 * math.cos(3 * gamma) +
+        0.00148 * math.sin(3 * gamma);
+    final latR = lat * math.pi / 180;
+
+    double hourAngle(double angleDeg) {
+      final a = angleDeg * math.pi / 180;
+      final cosH = (math.sin(a) - math.sin(latR) * math.sin(decl)) /
+          (math.cos(latR) * math.cos(decl));
       final c = cosH.clamp(-1.0, 1.0);
-      return math.acos(c) * 180 / math.pi / 15;
+      return math.acos(c) * 180 / math.pi / 15.0;
     }
 
-    final noon = 12 - lng / 15; // تقریب
-    final haSunrise = hourAngle(-0.833);
-    final haFajr = hourAngle(-18); // زاویه تقریبی
-    final haIsha = hourAngle(-18);
+    // ظهر خورشیدی (ساعت محلی تقریبی)
+    final solarNoon = 12.0 - lng / 15.0 - eqTime / 60.0;
+    final haRise = hourAngle(-0.833);
+    final haFajr = hourAngle(-18.0); // زاویه رایج تقریبی
+    final haIsha = hourAngle(-17.0);
+    // عصر (تقریب شافعی: سایه = طول + سایه ظهر)
+    final altAsr = math.atan(1.0 / (1 + math.tan((latR - decl).abs())));
+    final haAsr = hourAngle(altAsr * 180 / math.pi);
+
     TimeOfDay td(double h) {
       var x = h % 24;
       if (x < 0) x += 24;
@@ -560,28 +579,171 @@ class PrayerTimesApprox {
       return TimeOfDay(hour: hh, minute: mm);
     }
 
+    final sunrise = solarNoon - haRise;
+    final sunset = solarNoon + haRise;
     return {
-      'اذان صبح': td(noon - haFajr),
-      'طلوع': td(noon - haSunrise),
-      'ظهر': td(noon),
-      'غروب': td(noon + haSunrise),
-      'مغرب': td(noon + haSunrise + 0.15),
-      'عشاء': td(noon + haIsha),
+      'اذان صبح': td(solarNoon - haFajr),
+      'طلوع آفتاب': td(sunrise),
+      'اذان ظهر': td(solarNoon),
+      'اذان عصر': td(solarNoon + haAsr),
+      'غروب آفتاب': td(sunset),
+      'اذان مغرب': td(sunset + 3 / 60.0), // چند دقیقه بعد از غروب
+      'اذان عشا': td(solarNoon + haIsha),
+      'نیمه‌شب شرعی': td((sunset + (sunrise + 24 - sunset) / 2) % 24),
     };
   }
 
+  static String fmt(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  /// زاویه قبله از شمال جغرافیایی (درجه، ۰–۳۶۰)
   static double qiblaBearing(double lat, double lng) {
-    // کعبه
-    const kLat = 21.4225 * math.pi / 180;
-    const kLng = 39.8262 * math.pi / 180;
+    const kLat = 21.422487 * math.pi / 180;
+    const kLng = 39.826206 * math.pi / 180;
     final latR = lat * math.pi / 180;
-    final dLng = (39.8262 - lng) * math.pi / 180;
+    final dLng = kLng - lng * math.pi / 180;
     final x = math.sin(dLng);
-    final y = math.cos(latR) * math.tan(kLat) - math.sin(latR) * math.cos(dLng);
+    final y =
+        math.cos(latR) * math.tan(kLat) - math.sin(latR) * math.cos(dLng);
     var br = math.atan2(x, y) * 180 / math.pi;
     br = (br + 360) % 360;
     return br;
   }
+}
+
+/// رنگ فصل شمسی برای تم تقویم
+class SeasonTheme {
+  final String name;
+  final Color primary;
+  final Color soft;
+  final Color accent;
+  const SeasonTheme(this.name, this.primary, this.soft, this.accent);
+
+  static SeasonTheme ofJalali(Jalali j) {
+    // بهار ۱–۳، تابستان ۴–۶، پاییز ۷–۹، زمستان ۱۰–۱۲
+    switch ((j.month - 1) ~/ 3) {
+      case 0:
+        return const SeasonTheme(
+          'بهار',
+          Color(0xFF2E7D32),
+          Color(0xFFC8E6C9),
+          Color(0xFF66BB6A),
+        );
+      case 1:
+        return const SeasonTheme(
+          'تابستان',
+          Color(0xFFEF6C00),
+          Color(0xFFFFE0B2),
+          Color(0xFFFFA726),
+        );
+      case 2:
+        return const SeasonTheme(
+          'پاییز',
+          Color(0xFFBF360C),
+          Color(0xFFFFCCBC),
+          Color(0xFFFF7043),
+        );
+      default:
+        return const SeasonTheme(
+          'زمستان',
+          Color(0xFF1565C0),
+          Color(0xFFBBDEFB),
+          Color(0xFF42A5F5),
+        );
+    }
+  }
+}
+
+/// ادعیه و اذکار آماده
+class DuaCatalog {
+  static const items = <Map<String, String>>[
+    {
+      'title': 'ذکر صبح',
+      'ar': 'أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ',
+      'fa': 'صبح کردیم و فرمانروایی از آنِ خداست.',
+    },
+    {
+      'title': 'ذکر شب',
+      'ar': 'أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ',
+      'fa': 'شب کردیم و فرمانروایی از آنِ خداست.',
+    },
+    {
+      'title': 'قبل از غذا',
+      'ar': 'بِسْمِ اللَّهِ',
+      'fa': 'به نام خداوند.',
+    },
+    {
+      'title': 'بعد از غذا',
+      'ar': 'الْحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنَا وَسَقَانَا',
+      'fa': 'ستایش خدایی را که به ما خوراک و نوشیدنی داد.',
+    },
+    {
+      'title': 'خروج از خانه',
+      'ar': 'بِسْمِ اللَّهِ تَوَكَّلْتُ عَلَى اللَّهِ',
+      'fa': 'به نام خدا، بر خدا توکل کردم.',
+    },
+    {
+      'title': 'ورود به خانه',
+      'ar': 'بِسْمِ اللَّهِ وَلَجْنَا، وَبِسْمِ اللَّهِ خَرَجْنَا',
+      'fa': 'به نام خدا وارد شدیم و به نام خدا بیرون آمدیم.',
+    },
+    {
+      'title': 'سفر',
+      'ar': 'سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا',
+      'fa': 'پاک است آن‌که این را برای ما رام کرد.',
+    },
+    {
+      'title': 'آیه الکرسی (آغاز)',
+      'ar': 'اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ',
+      'fa': 'خداوند یکتاست؛ زنده و پاینده است.',
+    },
+    {
+      'title': 'طلب آمرزش',
+      'ar': 'أَسْتَغْفِرُ اللَّهَ وَأَتُوبُ إِلَيْهِ',
+      'fa': 'از خدا آمرزش می‌خواهم و به سوی او بازمی‌گردم.',
+    },
+    {
+      'title': 'صلوات',
+      'ar': 'اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَآلِ مُحَمَّدٍ',
+      'fa': 'خدایا بر محمد و خاندان محمد درود فرست.',
+    },
+    {
+      'title': 'رفع غم',
+      'ar': 'لَا إِلَٰهَ إِلَّا أَنْتَ سُبْحَانَكَ إِنِّي كُنْتُ مِنَ الظَّالِمِينَ',
+      'fa': 'معبودی جز تو نیست؛ من از ستمکاران بودم. (ذکر یونس)',
+    },
+    {
+      'title': 'سلامتی',
+      'ar': 'اللَّهُمَّ عَافِنِي فِي بَدَنِي',
+      'fa': 'خدایا بدنم را عافیت ده.',
+    },
+    {
+      'title': 'رزق',
+      'ar': 'اللَّهُمَّ إِنِّي أَسْأَلُكَ رِزْقًا طَيِّبًا',
+      'fa': 'خدایا از تو روزی پاک می‌خواهم.',
+    },
+    {
+      'title': 'خواب',
+      'ar': 'بِاسْمِكَ اللَّهُمَّ أَمُوتُ وَأَحْيَا',
+      'fa': 'به نام تو می‌میرم و زنده می‌شوم.',
+    },
+    {
+      'title': 'بیداری',
+      'ar': 'الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا',
+      'fa': 'ستایش خدایی را که پس از خواب ما را زنده کرد.',
+    },
+  ];
+
+  static const dhikrPresets = <Map<String, dynamic>>[
+    {'name': 'سبحان‌الله', 'target': 33},
+    {'name': 'الحمدلله', 'target': 33},
+    {'name': 'الله‌اکبر', 'target': 34},
+    {'name': 'لا اله‌الا الله', 'target': 100},
+    {'name': 'صلوات', 'target': 100},
+    {'name': 'استغفرالله', 'target': 100},
+    {'name': 'یا لطیف', 'target': 129},
+    {'name': 'حسبی الله', 'target': 7},
+  ];
 }
 
 // ─── UI اصلی ───
@@ -666,6 +828,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final season = SeasonTheme.ofJalali(_focused);
     if (_loading) {
       return Scaffold(
         appBar: AppBar(title: const Text('تقویم')),
@@ -783,6 +946,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   }
 
   Widget _buildMonth(ColorScheme scheme) {
+    final season = SeasonTheme.ofJalali(_focused);
     final first = Jalali(_focused.year, _focused.month, 1);
     final len = first.monthLength;
     final g0 = first.toDateTime();
@@ -814,16 +978,17 @@ class _CalendarScreenState extends State<CalendarScreen>
                         fontFamily: 'Vazirmatn',
                         fontWeight: FontWeight.w900,
                         fontSize: 20,
-                        color: scheme.onSurface,
+                        color: season.primary,
                       ),
                     ),
                     Text(
-                      '${_focused.year}',
+                      '${_focused.year} · ${season.name}',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontFamily: 'Vazirmatn',
                         fontSize: 13,
-                        color: scheme.onSurface.withValues(alpha: 0.55),
+                        fontWeight: FontWeight.w600,
+                        color: season.accent,
                       ),
                     ),
                   ],
@@ -1143,38 +1308,183 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   Widget _buildWeek(ColorScheme scheme) {
     final base = _selectedG ?? DateTime.now();
-    // شنبه محور
-    final wd = base.weekday; // mon=1
+    // شروع هفته از شنبه
+    final wd = base.weekday; // mon=1 .. sun=7
     final back = wd == 6 ? 0 : (wd == 7 ? 1 : wd + 1);
     final start = DateTime(base.year, base.month, base.day)
         .subtract(Duration(days: back));
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
-      itemCount: 7,
-      itemBuilder: (_, i) {
-        final day = start.add(Duration(days: i));
-        final j = Jalali.fromDateTime(day);
-        final evs = _store.occurrencesOn(day);
-        return Card(
-          child: ListTile(
-            title: Text(
-              '${Jalali.weekDays[j.weekdayIndex]} ${j.day} ${j.monthName}',
-              style: const TextStyle(
-                  fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700),
-            ),
-            subtitle: Text(
-              evs.isEmpty
-                  ? '—'
-                  : evs.map((e) => e.title).take(3).join(' · '),
-              style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
-            ),
-            onTap: () => setState(() {
-              _selectedG = day;
-              _view = 'day';
-            }),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'هفته قبل',
+                onPressed: () => setState(() {
+                  _selectedG = base.subtract(const Duration(days: 7));
+                }),
+                icon: const Icon(Icons.chevron_right),
+              ),
+              Expanded(
+                child: Text(
+                  'هفته ${Jalali.fromDateTime(start).day} ${Jalali.fromDateTime(start).monthName}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'هفته بعد',
+                onPressed: () => setState(() {
+                  _selectedG = base.add(const Duration(days: 7));
+                }),
+                icon: const Icon(Icons.chevron_left),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
+            itemCount: 7,
+            itemBuilder: (_, i) {
+              final day = start.add(Duration(days: i));
+              final j = Jalali.fromDateTime(day);
+              final isToday = j.year == _todayJ.year &&
+                  j.month == _todayJ.month &&
+                  j.day == _todayJ.day;
+              final isSel = _selectedG != null &&
+                  day.year == _selectedG!.year &&
+                  day.month == _selectedG!.month &&
+                  day.day == _selectedG!.day;
+              final evs = _store.occurrencesOn(day);
+              final tks = _store.tasksOn(day);
+              final nts = _store.notesOn(day);
+              final personal = _store.personalOccasions
+                  .where((o) => o.month == j.month && o.day == j.day)
+                  .toList();
+              final occ = _store.settings.showOccasions
+                  ? OccasionData.forDay(
+                      system: 'jalali', month: j.month, day: j.day)
+                  : <dynamic>[];
+              final holiday = _store.settings.showHolidays &&
+                  (occ.any((o) => o.isHoliday) || j.weekdayIndex == 6);
+
+              return Card(
+                elevation: 0,
+                color: isSel
+                    ? scheme.primaryContainer.withValues(alpha: 0.45)
+                    : (isToday
+                        ? scheme.secondaryContainer.withValues(alpha: 0.3)
+                        : scheme.surfaceContainerHighest.withValues(alpha: 0.35)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: holiday
+                      ? BorderSide(color: scheme.error.withValues(alpha: 0.35))
+                      : BorderSide.none,
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => setState(() {
+                    _selectedG = day;
+                    _view = 'day';
+                  }),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              '${Jalali.weekDays[j.weekdayIndex]} ${j.day}',
+                              style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontWeight: FontWeight.w800,
+                                color: holiday ? scheme.error : null,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (evs.isNotEmpty)
+                              _miniBadge(scheme, '${evs.length} رویداد'),
+                            if (tks.isNotEmpty) ...[
+                              const SizedBox(width: 4),
+                              _miniBadge(scheme, '${tks.length} تسک'),
+                            ],
+                          ],
+                        ),
+                        if (evs.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            evs.map((e) => e.title).take(3).join(' · '),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 12.5,
+                              color: scheme.onSurface.withValues(alpha: 0.75),
+                            ),
+                          ),
+                        ],
+                        if (personal.isNotEmpty || occ.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              [
+                                ...personal.map((p) => p.title),
+                                ...occ.map((o) => o.title),
+                              ].take(2).join(' · '),
+                              style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontSize: 11.5,
+                                color: scheme.tertiary,
+                              ),
+                            ),
+                          ),
+                        if (evs.isEmpty &&
+                            tks.isEmpty &&
+                            nts.isEmpty &&
+                            personal.isEmpty &&
+                            occ.isEmpty)
+                          Text(
+                            'بدون برنامه',
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 12,
+                              color: scheme.onSurface.withValues(alpha: 0.4),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _miniBadge(ColorScheme scheme, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: scheme.primary,
+        ),
+      ),
     );
   }
 
@@ -1182,32 +1492,133 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   Widget _buildAgenda(ColorScheme scheme) {
     final now = DateTime.now();
-    final items = <Map<String, dynamic>>[];
-    for (var i = 0; i < 60; i++) {
-      final d = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+    final startDay = DateTime(now.year, now.month, now.day);
+    final groups = <String, List<Map<String, dynamic>>>{};
+
+    for (var i = 0; i < 90; i++) {
+      final d = startDay.add(Duration(days: i));
+      final j = Jalali.fromDateTime(d);
+      final key = '${j.year}-${j.month}-${j.day}';
+      final bucket = <Map<String, dynamic>>[];
       for (final e in _store.occurrencesOn(d)) {
-        items.add({'d': d, 'e': e});
+        bucket.add({'type': 'event', 'd': d, 'e': e});
       }
+      for (final t in _store.tasksOn(d).where((t) => !t.done)) {
+        bucket.add({'type': 'task', 'd': d, 't': t});
+      }
+      for (final o in _store.personalOccasions
+          .where((o) => o.month == j.month && o.day == j.day)) {
+        bucket.add({'type': 'personal', 'd': d, 'o': o});
+      }
+      if (_store.settings.showOccasions) {
+        for (final o in OccasionData.forDay(
+            system: 'jalali', month: j.month, day: j.day)) {
+          bucket.add({'type': 'occasion', 'd': d, 'occ': o});
+        }
+      }
+      if (bucket.isNotEmpty) groups[key] = bucket;
     }
-    if (items.isEmpty) {
-      return const Center(
-          child: Text('رویداد آینده‌ای نیست',
-              style: TextStyle(fontFamily: 'Vazirmatn')));
+
+    if (groups.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'در ۹۰ روز آینده رویدادی نیست.\nبا + رویداد، تسک یا مناسبت اضافه کنید.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Vazirmatn',
+              color: scheme.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+        ),
+      );
     }
+
+    final keys = groups.keys.toList();
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
-      itemCount: items.length,
-      itemBuilder: (_, i) {
-        final d = items[i]['d'] as DateTime;
-        final e = items[i]['e'] as CalEvent;
+      itemCount: keys.length,
+      itemBuilder: (_, gi) {
+        final items = groups[keys[gi]]!;
+        final d = items.first['d'] as DateTime;
         final j = Jalali.fromDateTime(d);
-        return ListTile(
-          title: Text(e.title, style: const TextStyle(fontFamily: 'Vazirmatn')),
-          subtitle: Text(
-            '${j.day} ${j.monthName} · ${e.allDay ? 'تمام‌روز' : '${e.start.hour}:${e.start.minute.toString().padLeft(2, '0')}'}',
-            style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
-          ),
-          onTap: () => _editEvent(e),
+        final isToday = j.year == _todayJ.year &&
+            j.month == _todayJ.month &&
+            j.day == _todayJ.day;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+              child: Text(
+                isToday
+                    ? 'امروز · ${j.day} ${j.monthName}'
+                    : '${Jalali.weekDays[j.weekdayIndex]} ${j.day} ${j.monthName} ${j.year}',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontWeight: FontWeight.w800,
+                  color: isToday ? scheme.primary : scheme.onSurface,
+                ),
+              ),
+            ),
+            for (final it in items)
+              Card(
+                elevation: 0,
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: ListTile(
+                  leading: Icon(
+                    it['type'] == 'event'
+                        ? Icons.event
+                        : it['type'] == 'task'
+                            ? Icons.check_circle_outline
+                            : it['type'] == 'personal'
+                                ? Icons.cake_outlined
+                                : Icons.flag_outlined,
+                    color: it['type'] == 'occasion'
+                        ? scheme.error
+                        : scheme.primary,
+                  ),
+                  title: Text(
+                    it['type'] == 'event'
+                        ? (it['e'] as CalEvent).title
+                        : it['type'] == 'task'
+                            ? (it['t'] as CalTask).title
+                            : it['type'] == 'personal'
+                                ? (it['o'] as PersonalOccasion).title
+                                : (it['occ'] as dynamic).title as String,
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                  ),
+                  subtitle: Text(
+                    it['type'] == 'event'
+                        ? ((it['e'] as CalEvent).allDay
+                            ? 'تمام‌روز'
+                            : '${(it['e'] as CalEvent).start.hour.toString().padLeft(2, '0')}:${(it['e'] as CalEvent).start.minute.toString().padLeft(2, '0')}')
+                        : it['type'] == 'task'
+                            ? 'تسک'
+                            : it['type'] == 'personal'
+                                ? 'مناسبت شخصی'
+                                : 'مناسبت',
+                    style: const TextStyle(
+                        fontFamily: 'Vazirmatn', fontSize: 12),
+                  ),
+                  onTap: () {
+                    if (it['type'] == 'event') {
+                      _editEvent(it['e'] as CalEvent);
+                    } else if (it['type'] == 'task') {
+                      _editTask(it['t'] as CalTask);
+                    } else {
+                      setState(() {
+                        _selectedG = d;
+                        _view = 'day';
+                      });
+                    }
+                  },
+                ),
+              ),
+          ],
         );
       },
     );
@@ -1557,6 +1968,40 @@ class _CalendarScreenState extends State<CalendarScreen>
                     style: TextStyle(
                         fontFamily: 'Vazirmatn',
                         fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _store.settings.defaultView,
+                  decoration: const InputDecoration(
+                    labelText: 'نمای پیش‌فرض',
+                    labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'month',
+                        child: Text('ماه',
+                            style: TextStyle(fontFamily: 'Vazirmatn'))),
+                    DropdownMenuItem(
+                        value: 'week',
+                        child: Text('هفته',
+                            style: TextStyle(fontFamily: 'Vazirmatn'))),
+                    DropdownMenuItem(
+                        value: 'day',
+                        child: Text('روز',
+                            style: TextStyle(fontFamily: 'Vazirmatn'))),
+                    DropdownMenuItem(
+                        value: 'agenda',
+                        child: Text('فهرست',
+                            style: TextStyle(fontFamily: 'Vazirmatn'))),
+                  ],
+                  onChanged: (v) async {
+                    if (v == null) return;
+                    setL(() => _store.settings.defaultView = v);
+                    await _store.saveSettings();
+                    setState(() => _view = v);
+                  },
+                ),
+                const SizedBox(height: 8),
                 SwitchListTile(
                   title: const Text('نمایش مناسبت‌ها',
                       style: TextStyle(fontFamily: 'Vazirmatn')),
@@ -1743,7 +2188,9 @@ class _CalendarScreenState extends State<CalendarScreen>
                 _openDateConverter),
             _toolTile(Icons.notifications_active_outlined, 'یادآورها',
                 _openReminders),
-            _toolTile(Icons.mosque, 'اوقات شرعی (تقریبی)', _showPrayer),
+            _toolTile(Icons.settings_outlined, 'تنظیمات تقویم',
+                _openSettings),
+            _toolTile(Icons.mosque, 'اوقات شرعی', _showPrayer),
             _toolTile(Icons.explore, 'زاویه قبله', _showQibla),
             _toolTile(Icons.fingerprint, 'ذکرشمار', _showDhikr),
             _toolTile(Icons.menu_book, 'ادعیه نمونه', _showDuas),
@@ -1783,36 +2230,135 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   void _showPrayer() {
     final g = _selectedG ?? DateTime.now();
+    final j = Jalali.fromDateTime(g);
     final map = PrayerTimesApprox.compute(
         g, _store.settings.cityLat, _store.settings.cityLng);
+    final season = SeasonTheme.ofJalali(j);
+    final now = TimeOfDay.now();
+    String? nextName;
+    for (final e in map.entries) {
+      final t = e.value;
+      if (t.hour > now.hour ||
+          (t.hour == now.hour && t.minute >= now.minute)) {
+        nextName = e.key;
+        break;
+      }
+    }
     showModalBottomSheet(
       context: context,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        margin: const EdgeInsets.only(top: 40),
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
           children: [
-            Text('اوقات شرعی — ${_store.settings.prayerCity}',
-                style: const TextStyle(
-                    fontFamily: 'Vazirmatn', fontWeight: FontWeight.w800)),
-            Text('تقریبی و غیررسمی',
-                style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 11,
-                    color: Theme.of(ctx)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.5))),
-            for (final e in map.entries)
-              ListTile(
-                title: Text(e.key,
-                    style: const TextStyle(fontFamily: 'Vazirmatn')),
-                trailing: Text(
-                  '${e.value.hour.toString().padLeft(2, '0')}:${e.value.minute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                      fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    season.primary.withValues(alpha: 0.9),
+                    season.accent.withValues(alpha: 0.75),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                children: [
+                  const Text('اوقات شرعی',
+                      style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          color: Colors.white)),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_store.settings.prayerCity} · ${j.day} ${j.monthName} ${j.year}',
+                    style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        color: Colors.white70,
+                        fontSize: 13),
+                  ),
+                  if (nextName != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'بعدی: $nextName  ${PrayerTimesApprox.fmt(map[nextName]!)}',
+                      style: const TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            for (final e in map.entries)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: e.key == nextName
+                      ? season.soft.withValues(alpha: 0.65)
+                      : Theme.of(ctx)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(14),
+                  border: e.key == nextName
+                      ? Border.all(color: season.primary.withValues(alpha: 0.4))
+                      : null,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(e.key,
+                          style: const TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w700)),
+                    ),
+                    Text(
+                      PrayerTimesApprox.fmt(e.value),
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                        color: season.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              'محاسبه تقریبی نجومی است و جایگزین اوقات رسمی اوقاف یا نرم‌افزارهای تخصصی نیست.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 11,
+                color: Theme.of(ctx)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.5),
+              ),
+            ),
           ],
         ),
       ),
@@ -1820,87 +2366,233 @@ class _CalendarScreenState extends State<CalendarScreen>
   }
 
   void _showQibla() {
-    final br = PrayerTimesApprox.qiblaBearing(
-        _store.settings.cityLat, _store.settings.cityLng);
-    showDialog(
+    final lat = _store.settings.cityLat;
+    final lng = _store.settings.cityLng;
+    final br = PrayerTimesApprox.qiblaBearing(lat, lng);
+    final season = SeasonTheme.ofJalali(_selectedJ);
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('زاویه قبله',
-            style: TextStyle(fontFamily: 'Vazirmatn')),
-        content: Text(
-          'از موقعیت «${_store.settings.prayerCity}»\nزاویه قبله نسبت به شمال جغرافیایی:\n\n${br.toStringAsFixed(1)} درجه\n\nقطب‌نمای زنده حسگر در این نسخه فعال نیست؛ فقط زاویه محاسبه‌شده نمایش داده می‌شود.',
-          style: const TextStyle(fontFamily: 'Vazirmatn'),
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('باشه',
-                  style: TextStyle(fontFamily: 'Vazirmatn'))),
-        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('جهت قبله',
+                style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18)),
+            const SizedBox(height: 6),
+            Text(
+              _store.settings.prayerCity,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                color: Theme.of(ctx)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 200,
+              width: 200,
+              child: CustomPaint(
+                painter: _QiblaCompassPainter(
+                  bearing: br,
+                  color: season.primary,
+                  soft: season.soft,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${br.toStringAsFixed(1)}°',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontWeight: FontWeight.w900,
+                fontSize: 32,
+                color: season.primary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'از شمال جغرافیایی به سمت قبله',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 13,
+                color: Theme.of(ctx)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'قطب‌نما روی گوشی را با شمال واقعی هم‌راستا کنید؛ این عدد زاویه ثابت نسبت به شمال است.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 11.5,
+                color: Theme.of(ctx)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _showDhikr() {
+    final season = SeasonTheme.ofJalali(_selectedJ);
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         return StatefulBuilder(builder: (ctx, setL) {
           final d = _store.dhikr;
-          return Padding(
-            padding: const EdgeInsets.all(24),
+          final progress =
+              d.target <= 0 ? 0.0 : (d.count / d.target).clamp(0.0, 1.0);
+          return Container(
+            height: MediaQuery.of(ctx).size.height * 0.75,
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).colorScheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(d.name,
-                    style: const TextStyle(
+                const Text('ذکرشمار',
+                    style: TextStyle(
                         fontFamily: 'Vazirmatn',
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800)),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18)),
                 const SizedBox(height: 12),
-                Text('${d.count} / ${d.target}',
-                    style: const TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontSize: 36,
-                        fontWeight: FontWeight.w900)),
-                const SizedBox(height: 16),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(64)),
-                  onPressed: () async {
-                    setL(() => d.count++);
-                    await _store.saveDhikr();
-                  },
-                  child: const Text('ذکر',
-                      style: TextStyle(
-                          fontFamily: 'Vazirmatn', fontSize: 18)),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final p in DuaCatalog.dhikrPresets)
+                      ActionChip(
+                        label: Text(p['name'] as String,
+                            style: const TextStyle(
+                                fontFamily: 'Vazirmatn', fontSize: 12)),
+                        onPressed: () async {
+                          setL(() {
+                            _store.dhikr.name = p['name'] as String;
+                            _store.dhikr.target = p['target'] as int;
+                            _store.dhikr.count = 0;
+                          });
+                          await _store.saveDhikr();
+                        },
+                      ),
+                  ],
                 ),
-                TextButton(
-                  onPressed: () async {
-                    final ok = await showDialog<bool>(
-                      context: ctx,
-                      builder: (c) => AlertDialog(
-                        title: const Text('صفر شود؟',
-                            style: TextStyle(fontFamily: 'Vazirmatn')),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(c, false),
-                              child: const Text('خیر',
-                                  style: TextStyle(fontFamily: 'Vazirmatn'))),
-                          TextButton(
-                              onPressed: () => Navigator.pop(c, true),
-                              child: const Text('بله',
-                                  style: TextStyle(fontFamily: 'Vazirmatn'))),
+                const SizedBox(height: 18),
+                Text(d.name,
+                    style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontWeight: FontWeight.w800,
+                        fontSize: 20,
+                        color: season.primary)),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 160,
+                  width: 160,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        height: 160,
+                        width: 160,
+                        child: CircularProgressIndicator(
+                          value: progress,
+                          strokeWidth: 10,
+                          backgroundColor: season.soft,
+                          color: season.primary,
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${d.count}',
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w900,
+                              fontSize: 40,
+                              color: season.primary,
+                            ),
+                          ),
+                          Text(
+                            'از ${d.target}',
+                            style: const TextStyle(
+                                fontFamily: 'Vazirmatn', fontSize: 13),
+                          ),
                         ],
                       ),
-                    );
-                    if (ok == true) {
-                      setL(() => d.count = 0);
-                      await _store.saveDhikr();
-                    }
-                  },
-                  child: const Text('صفر',
-                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          setL(() => _store.dhikr.count = 0);
+                          await _store.saveDhikr();
+                        },
+                        child: const Text('صفر',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: season.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        onPressed: () async {
+                          setL(() => _store.dhikr.count++);
+                          await _store.saveDhikr();
+                          if (_store.dhikr.count >= _store.dhikr.target &&
+                              _store.dhikr.target > 0) {
+                            // soft feedback via snack
+                          }
+                        },
+                        child: const Text('ذکر +',
+                            style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'با لمس دکمه بشمارید؛ پیشرفت ذخیره می‌شود.',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 12,
+                    color: Theme.of(ctx)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.5),
+                  ),
                 ),
               ],
             ),
@@ -1911,40 +2603,88 @@ class _CalendarScreenState extends State<CalendarScreen>
   }
 
   void _showDuas() {
-    const duas = [
-      (
-        'دعای فرج',
-        'اللّهُمَّ کُنْ لِوَلِیِّکَ ... (متن کامل از منابع معتبر مراجعه شود)',
-        'منبع: متون رایج — برای صحت به منبع رسمی رجوع کنید'
-      ),
-      (
-        'ذکر یونسیه',
-        'لا إِلهَ إِلّا أَنْتَ سُبْحانَکَ إِنّی کُنْتُ مِنَ الظّالِمینَ',
-        'قرآن کریم، سوره انبیاء'
-      ),
-    ];
+    final season = SeasonTheme.ofJalali(_selectedJ);
     showModalBottomSheet(
       context: context,
-      builder: (ctx) => ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text('ادعیه نمونه',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontFamily: 'Vazirmatn', fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          for (final d in duas)
-            Card(
-              child: ListTile(
-                title: Text(d.$1,
-                    style: const TextStyle(
-                        fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700)),
-                subtitle: Text('${d.$2}\n${d.$3}',
-                    style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
-                isThreeLine: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(ctx).size.height * 0.85,
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            const Text('ادعیه و اذکار',
+                style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                itemCount: DuaCatalog.items.length,
+                itemBuilder: (_, i) {
+                  final d = DuaCatalog.items[i];
+                  return Card(
+                    elevation: 0,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    color: i.isEven
+                        ? season.soft.withValues(alpha: 0.45)
+                        : Theme.of(ctx)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.4),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(d['title']!,
+                              style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontWeight: FontWeight.w800,
+                                color: season.primary,
+                              )),
+                          const SizedBox(height: 8),
+                          Text(
+                            d['ar']!,
+                            textAlign: TextAlign.center,
+                            textDirection: TextDirection.rtl,
+                            style: const TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 18,
+                              height: 1.6,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            d['fa']!,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 13,
+                              color: Theme.of(ctx)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2013,14 +2753,15 @@ class _CalendarScreenState extends State<CalendarScreen>
               ListTile(
                 title: Text(o.title,
                     style: const TextStyle(fontFamily: 'Vazirmatn')),
-                subtitle: Text('${o.day} / ${o.month}',
-                    style: const TextStyle(fontFamily: 'Vazirmatn')),
+                subtitle: Text(
+                  '${o.day} ${Jalali.monthNames[o.month - 1]} (هر سال)',
+                  style: const TextStyle(fontFamily: 'Vazirmatn'),
+                ),
                 trailing: IconButton(
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () async {
                     await _store.removePersonal(o.id);
                     setState(() {});
-                    if (ctx.mounted) Navigator.pop(ctx);
                   },
                 ),
               ),

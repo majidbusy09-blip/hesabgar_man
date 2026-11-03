@@ -529,6 +529,10 @@ class CalendarStore {
     return out;
   }
 
+  /// تبدیل پایدار به جلالی (ظهر محلی تا جابه‌جایی نیمه‌شب در CI/UTC رخ ندهد)
+  static Jalali _jalaliOf(DateTime d) =>
+      Jalali.fromDateTime(DateTime(d.year, d.month, d.day, 12));
+
   /// آیا [day] یک وقوع معتبر برای قانون تکرار است؟ (بدون حلقه روی روزها)
   static bool _recurrenceMatches({
     required String rule,
@@ -542,9 +546,8 @@ class CalendarStore {
         final diff = day.difference(start).inDays;
         return diff >= 0 && diff % 7 == 0;
       case 'monthly':
-        // ماهانه بر اساس تقویم شمسی (مناسب اپ فارسی)
-        final js = Jalali.fromDateTime(start);
-        final jd = Jalali.fromDateTime(day);
+        final js = _jalaliOf(start);
+        final jd = _jalaliOf(day);
         final months =
             (jd.year - js.year) * 12 + (jd.month - js.month);
         if (months < 0) return false;
@@ -552,12 +555,12 @@ class CalendarStore {
         final target = js.day > len ? len : js.day;
         return jd.day == target;
       case 'yearly':
-        final js = Jalali.fromDateTime(start);
-        final jd = Jalali.fromDateTime(day);
+        final js = _jalaliOf(start);
+        final jd = _jalaliOf(day);
         if (jd.year < js.year) return false;
         if (jd.month != js.month) return false;
         final len = Jalali(jd.year, jd.month, 1).monthLength;
-        final target = js.day > len ? len : js.day; // ۲۹ اسفند → ۲۸ در غیرکبیسه
+        final target = js.day > len ? len : js.day;
         return jd.day == target;
       default:
         return false;

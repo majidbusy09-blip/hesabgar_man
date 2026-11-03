@@ -97,35 +97,39 @@ class AppNotifications {
         ),
       );
 
-  /// زمان‌بندی یک اعلان در [when] محلی
-  Future<void> schedule({
+  /// زمان‌بندی یک اعلان. خروجی: true=موفق، false=رد/شکست
+  Future<bool> schedule({
     required int id,
     required String title,
     required String body,
     required DateTime when,
   }) async {
     if (!_ready) await init();
-    if (!_ready) return;
-    if (when.isBefore(DateTime.now().add(const Duration(seconds: 30)))) {
-      return; // گذشته یا خیلی نزدیک
+    if (!_ready) {
+      debugPrint('schedule($id): plugin not ready');
+      return false;
     }
+    if (when.isBefore(DateTime.now().add(const Duration(seconds: 30)))) {
+      debugPrint('schedule($id): time in the past');
+      return false;
+    }
+    final tzWhen = tz.TZDateTime.from(when, tz.local);
+    // اول exact، در شکست → inexact (روش متفاوت)
     try {
-      final tzWhen = tz.TZDateTime.from(when, tz.local);
       await _plugin.zonedSchedule(
         id,
         title,
         body,
         tzWhen,
         _details,
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
+      return true;
     } catch (e) {
-      debugPrint('schedule($id): $e');
-      // fallback inexact
+      debugPrint('schedule exact($id): $e — fallback inexact');
       try {
-        final tzWhen = tz.TZDateTime.from(when, tz.local);
         await _plugin.zonedSchedule(
           id,
           title,
@@ -136,8 +140,10 @@ class AppNotifications {
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
         );
+        return true;
       } catch (e2) {
-        debugPrint('schedule fallback: $e2');
+        debugPrint('schedule failed($id): $e2');
+        return false;
       }
     }
   }
@@ -201,24 +207,55 @@ class AppNotifications {
     }
   }
 
-  Future<void> scheduleEventReminder({
+  /// حداکثر اعلان آینده برای یک رویداد تکراری (محدودیت عملی اندروید)
+  static const int maxRecurringNotifs = 5;
+
+  static int eventOccurrenceNotifId(String eventId, int index) {
+    final base = eventNotifId(eventId);
+    return (base + index * 17) % 2147483647;
+  }
+
+  /// لغو همهٔ اعلان‌های یک رویداد (پایه + تکرار)
+  Future<void> cancelEventReminders(String eventId) async {
+    await cancel(eventNotifId(eventId));
+    for (var i = 0; i < maxRecurringNotifs; i++) {
+      await cancel(eventOccurrenceNotifId(eventId, i));
+    }
+  }
+
+  /// زمان‌بندی یادآوری. برای تکرار: تا [maxRecurringNotifs] وقوع آینده.
+  /// [nextStarts] لیست زمان شروع وقوع‌های آینده (از قبل محاسبه شده).
+  Future<bool> scheduleEventReminder({
     required String eventId,
     required String title,
     required DateTime start,
     required int reminderMinutes,
+    List<DateTime>? nextStarts,
   }) async {
-    if (reminderMinutes <= 0) {
-      await cancel(eventNotifId(eventId));
-      return;
+    await cancelEventReminders(eventId);
+    if (reminderMinutes <= 0) return true;
+
+    final starts = (nextStarts == null || nextStarts.isEmpty)
+        ? <DateTime>[start]
+        : nextStarts.take(maxRecurringNotifs).toList();
+
+    var anyOk = false;
+    var anyFail = false;
+    for (var i = 0; i < starts.length; i++) {
+      final when = starts[i].subtract(Duration(minutes: reminderMinutes));
+      final ok = await schedule(
+        id: eventOccurrenceNotifId(eventId, i),
+        title: 'یادآوری: $title',
+        body: reminderMinutes >= 1440 ? 'فردا: $title' : 'به‌زودی: $title',
+        when: when,
+      );
+      if (ok) {
+        anyOk = true;
+      } else {
+        anyFail = true;
+      }
     }
-    final when = start.subtract(Duration(minutes: reminderMinutes));
-    await schedule(
-      id: eventNotifId(eventId),
-      title: 'یادآوری: $title',
-      body: reminderMinutes >= 1440
-          ? 'فردا: $title'
-          : 'به‌زودی: $title',
-      when: when,
-    );
+    if (anyFail && !anyOk) return false;
+    return true;
   }
 }

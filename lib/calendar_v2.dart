@@ -324,52 +324,103 @@ class CalendarStore {
     lastError = null;
     try {
       final s = await LocalStore.instance;
-      events = _decodeList(s.getString(_kEvents), (m) => CalEvent.fromJson(m));
-      notes = _decodeList(s.getString(_kNotes), (m) => CalNote.fromJson(m));
-      tasks = _decodeList(s.getString(_kTasks), (m) => CalTask.fromJson(m));
-      final cats =
-          _decodeList(s.getString(_kCats), (m) => CalCategory.fromJson(m));
-      if (cats.isNotEmpty) {
-        categories = cats;
-        final ids = categories.map((c) => c.id).toSet();
-        for (final d in CalCategory.defaults) {
-          if (!ids.contains(d.id)) categories.add(d);
+      // هر بخش جدا: اگر یکی خراب بود بقیه و حافظهٔ قبلی حفظ می‌شود
+      try {
+        events =
+            _decodeList(s.getString(_kEvents), (m) => CalEvent.fromJson(m));
+      } catch (e) {
+        lastError = 'رویدادها بارگذاری نشدند: $e';
+        debugPrint(lastError);
+      }
+      try {
+        notes = _decodeList(s.getString(_kNotes), (m) => CalNote.fromJson(m));
+      } catch (e) {
+        lastError = (lastError ?? '') + '\nیادداشت‌ها: $e';
+      }
+      try {
+        tasks = _decodeList(s.getString(_kTasks), (m) => CalTask.fromJson(m));
+      } catch (e) {
+        lastError = (lastError ?? '') + '\nکارها: $e';
+      }
+      try {
+        final cats =
+            _decodeList(s.getString(_kCats), (m) => CalCategory.fromJson(m));
+        if (cats.isNotEmpty) {
+          categories = cats;
+          final ids = categories.map((c) => c.id).toSet();
+          for (final d in CalCategory.defaults) {
+            if (!ids.contains(d.id)) categories.add(d);
+          }
         }
+      } catch (e) {
+        lastError = (lastError ?? '') + '\nدسته‌ها: $e';
       }
-      personalOccasions =
-          _decodeList(s.getString(_kOcc), (m) => PersonalOccasion.fromJson(m));
-      final rawS = s.getString(_kSettings);
-      if (rawS != null && rawS.isNotEmpty) {
-        settings = CalSettings.fromJson(jsonDecode(rawS) as Map<String, dynamic>);
+      try {
+        personalOccasions = _decodeList(
+            s.getString(_kOcc), (m) => PersonalOccasion.fromJson(m));
+      } catch (e) {
+        lastError = (lastError ?? '') + '\nمناسبت‌ها: $e';
       }
-      final rawD = s.getString(_kDhikr);
-      if (rawD != null && rawD.isNotEmpty) {
-        dhikr = DhikrState.fromJson(jsonDecode(rawD) as Map<String, dynamic>);
+      try {
+        final rawS = s.getString(_kSettings);
+        if (rawS != null && rawS.isNotEmpty) {
+          settings =
+              CalSettings.fromJson(jsonDecode(rawS) as Map<String, dynamic>);
+        }
+      } catch (e) {
+        lastError = (lastError ?? '') + '\nتنظیمات: $e';
+      }
+      try {
+        final rawD = s.getString(_kDhikr);
+        if (rawD != null && rawD.isNotEmpty) {
+          dhikr =
+              DhikrState.fromJson(jsonDecode(rawD) as Map<String, dynamic>);
+        }
+      } catch (e) {
+        lastError = (lastError ?? '') + '\nذکر: $e';
       }
     } catch (e) {
       lastError = e.toString();
-      rethrow;
+      // دادهٔ حافظه را پاک نمی‌کنیم
     }
   }
 
+  /// بارگذاری امن: رکورد خراب شمرده می‌شود؛ JSON کاملاً خراب → پرتاب خطا (لیست حافظه حفظ می‌شود)
   List<T> _decodeList<T>(
       String? raw, T Function(Map<String, dynamic>) f) {
     if (raw == null || raw.isEmpty) return [];
+    late final dynamic decoded;
     try {
-      final list = jsonDecode(raw) as List;
-      return list
-          .map((e) {
-            try {
-              return f(e as Map<String, dynamic>);
-            } catch (_) {
-              return null;
-            }
-          })
-          .whereType<T>()
-          .toList();
-    } catch (_) {
-      return [];
+      decoded = jsonDecode(raw);
+    } catch (e) {
+      // نباید لیست خالی برگردانیم و دادهٔ حافظه را پاک کنیم
+      throw StateError('خرابی JSON فهرست: $e');
     }
+    if (decoded is! List) {
+      throw StateError('فرمت فهرست نامعتبر است');
+    }
+    final items = <T>[];
+    var corrupt = 0;
+    for (final e in decoded) {
+      try {
+        if (e is Map<String, dynamic>) {
+          items.add(f(e));
+        } else if (e is Map) {
+          items.add(f(Map<String, dynamic>.from(e)));
+        } else {
+          corrupt++;
+        }
+      } catch (err) {
+        corrupt++;
+        debugPrint('calendar decode record: $err');
+      }
+    }
+    if (corrupt > 0) {
+      lastError =
+          (lastError == null ? '' : '${lastError!}\n') +
+          '$corrupt رکورد خراب در بارگذاری نادیده گرفته شد (دادهٔ سالم حفظ شد)';
+    }
+    return items;
   }
 
   Future<void> _save(String key, List list) async {
@@ -565,6 +616,85 @@ class CalendarStore {
       default:
         return false;
     }
+  }
+
+  /// تا [limit] زمان شروع آینده برای اعلان
+  static List<DateTime> nextOccurrenceStarts(
+    CalEvent e, {
+    int limit = 5,
+    DateTime? from,
+  }) {
+    DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+    final now = from ?? DateTime.now();
+    final out = <DateTime>[];
+    final rule = e.recurrence ?? 'none';
+    final until =
+        e.recurrenceUntil != null ? dayOnly(e.recurrenceUntil!) : null;
+    var cursor = dayOnly(e.start);
+    final startDay = dayOnly(e.start);
+
+    void tryAdd(DateTime day) {
+      final start = DateTime(
+        day.year,
+        day.month,
+        day.day,
+        e.start.hour,
+        e.start.minute,
+        e.start.second,
+      );
+      if (until != null && dayOnly(start).isAfter(until)) return;
+      if (start.isAfter(now.subtract(const Duration(minutes: 2)))) {
+        out.add(start);
+      }
+    }
+
+    if (rule == 'none' || rule.isEmpty) {
+      tryAdd(cursor);
+      return out;
+    }
+
+    var guard = 0;
+    while (out.length < limit && guard < 900) {
+      guard++;
+      if (until != null && cursor.isAfter(until)) break;
+      if (_recurrenceMatches(rule: rule, start: startDay, day: cursor)) {
+        tryAdd(cursor);
+      }
+      switch (rule) {
+        case 'daily':
+          cursor = cursor.add(const Duration(days: 1));
+          break;
+        case 'weekly':
+          cursor = cursor.add(const Duration(days: 7));
+          break;
+        case 'monthly':
+          final j = Jalali.fromDateTime(
+              DateTime(cursor.year, cursor.month, cursor.day, 12));
+          var m = j.month + 1;
+          var y = j.year;
+          if (m > 12) {
+            m = 1;
+            y++;
+          }
+          final len = Jalali(y, m, 1).monthLength;
+          final d = j.day > len ? len : j.day;
+          final g = Jalali(y, m, d).toDateTime();
+          cursor = DateTime(g.year, g.month, g.day);
+          break;
+        case 'yearly':
+          final j = Jalali.fromDateTime(
+              DateTime(cursor.year, cursor.month, cursor.day, 12));
+          final y = j.year + 1;
+          final len = Jalali(y, j.month, 1).monthLength;
+          final d = j.day > len ? len : j.day;
+          final g = Jalali(y, j.month, d).toDateTime();
+          cursor = DateTime(g.year, g.month, g.day);
+          break;
+        default:
+          return out;
+      }
+    }
+    return out;
   }
 
   List<CalNote> notesOn(DateTime day) {
@@ -1935,8 +2065,8 @@ class _CalendarScreenState extends State<CalendarScreen>
                     TextButton(
                       onPressed: () async {
                         try {
-                          await AppNotifications.instance.cancel(
-                              AppNotifications.eventNotifId(existing.id));
+                          await AppNotifications.instance
+                              .cancelEventReminders(existing.id);
                           await _store.removeEvent(existing.id);
                           if (ctx.mounted) Navigator.pop(ctx, false);
                           setState(() {});
@@ -1976,21 +2106,47 @@ class _CalendarScreenState extends State<CalendarScreen>
         colorValue: existing?.colorValue ?? 0xFF42A5F5,
       ));
       try {
-        // همیشه اعلان قبلی را لغو کن؛ سپس در صورت نیاز جدید بساز
-        await AppNotifications.instance.cancel(
-            AppNotifications.eventNotifId(evId));
+        final saved = CalEvent(
+          id: evId,
+          title: title.text.trim(),
+          start: start,
+          end: allDay ? null : end,
+          allDay: allDay,
+          recurrence: recurrence,
+          reminderMinutes: reminder,
+        );
+        await AppNotifications.instance.cancelEventReminders(evId);
         if (reminder > 0) {
           final okPerm =
               await AppNotifications.instance.ensurePermissionForReminders(
             context: context,
           );
           if (okPerm) {
-            await AppNotifications.instance.scheduleEventReminder(
+            final nexts =
+                CalendarStore.nextOccurrenceStarts(saved, limit: 5);
+            final okNotif =
+                await AppNotifications.instance.scheduleEventReminder(
               eventId: evId,
               title: title.text.trim(),
               start: start,
               reminderMinutes: reminder,
+              nextStarts: nexts,
             );
+            if (!okNotif && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text(
+                  'رویداد ذخیره شد؛ زمان‌بندی اعلان ناموفق بود.',
+                  style: TextStyle(fontFamily: 'Vazirmatn'),
+                ),
+              ));
+            }
+          } else if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                'رویداد ذخیره شد؛ مجوز اعلان داده نشد.',
+                style: TextStyle(fontFamily: 'Vazirmatn'),
+              ),
+            ));
           }
         }
       } catch (e) {

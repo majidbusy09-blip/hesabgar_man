@@ -1,3 +1,4 @@
+import 'dart:async';
 // ===== core.dart — storage, theme, providers, brand =====
 import 'dart:convert';
 import 'dart:io';
@@ -44,15 +45,41 @@ class LocalStore {
     }
   }
 
+  /// قفل ساده برای سریالی‌کردن نوشتن‌های هم‌زمان
+  Future<void> _writeChain = Future.value();
+
   Future<void> _flush() async {
     if (_file == null) {
       throw StateError('LocalStore: مسیر ذخیره‌سازی آماده نیست');
     }
+    // سریالی: هر نوشتن منتظر قبلی می‌ماند
+    final done = Completer<void>();
+    final prev = _writeChain;
+    _writeChain = done.future;
+    await prev;
     try {
-      await _file!.writeAsString(jsonEncode(_data), flush: true);
+      final payload = jsonEncode(_data);
+      final tmp = File('${_file!.path}.tmp');
+      await tmp.writeAsString(payload, flush: true);
+      // جایگزینی اتمیک‌تر از نوشتن مستقیم روی فایل اصلی
+      if (await _file!.exists()) {
+        try {
+          await tmp.rename(_file!.path);
+        } catch (_) {
+          // روی بعضی سیستم‌ها rename روی فایل موجود fail می‌شود
+          await _file!.writeAsString(payload, flush: true);
+          try {
+            await tmp.delete();
+          } catch (_) {}
+        }
+      } else {
+        await tmp.rename(_file!.path);
+      }
     } catch (e) {
       debugPrint('LocalStore flush: $e');
       rethrow;
+    } finally {
+      done.complete();
     }
   }
 

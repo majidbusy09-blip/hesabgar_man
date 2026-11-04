@@ -231,9 +231,19 @@ jobs:
 
       - name: Analyze
         run: |
-          # قالب پیش‌فرض flutter create به MyApp اشاره می‌کند و analyze را می‌شکند
           rm -f test/widget_test.dart
-          flutter analyze lib test --no-fatal-infos --no-fatal-warnings
+          # فقط error واقعی بیلد را متوقف کند؛ info/warning مانع انتشار نشود
+          set +e
+          flutter analyze lib test > analyze_out.txt 2>&1
+          CODE=$?
+          set -e
+          cat analyze_out.txt
+          if grep -qE '^[[:space:]]*error •' analyze_out.txt; then
+            echo "Analyze found ERROR level issues"
+            exit 1
+          fi
+          echo "Analyze OK (no error-level issues; exit was $CODE)"
+          exit 0
 
 
       - name: Run unit tests

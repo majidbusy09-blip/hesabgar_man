@@ -149,13 +149,25 @@ class AppNotifications {
   }
 
   Future<void> cancel(int id) async {
-    if (!_ready) return;
-    await _plugin.cancel(id);
+    try {
+      if (!_ready) await init();
+      if (!_ready) return;
+      await _plugin.cancel(id);
+    } catch (e) {
+      // باگ شناخته‌شده برخی نسخه‌های پلاگین (Missing type parameter)
+      // نباید ذخیره داده کاربر را خراب کند
+      debugPrint('AppNotifications.cancel($id): $e');
+    }
   }
 
   Future<void> cancelAll() async {
-    if (!_ready) return;
-    await _plugin.cancelAll();
+    try {
+      if (!_ready) await init();
+      if (!_ready) return;
+      await _plugin.cancelAll();
+    } catch (e) {
+      debugPrint('AppNotifications.cancelAll: $e');
+    }
   }
 
   /// شناسه پایدار برای قسط (محدودهٔ امن int32)

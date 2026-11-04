@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -11,6 +12,40 @@ import 'core.dart';
 import 'features.dart'
     show Expense, ExpenseStore, Jalali, NumFmt, showJalaliDatePicker;
 import 'notifications.dart';
+
+/// مبلغ با جداکننده هزارگان + ارقام فارسی/عربی → لاتین
+class MoneyInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final text = NumFmt.groupTyping(newValue.text);
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+}
+
+/// شناسه صیادی ۱۶ رقم، گروه‌بندی ۴تایی
+class SayadInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    var digits = NumFmt.toLatinDigits(newValue.text).replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 16) digits = digits.substring(0, 16);
+    final buf = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && i % 4 == 0) buf.write(' ');
+      buf.write(digits[i]);
+    }
+    final t = buf.toString();
+    return TextEditingValue(
+      text: t,
+      selection: TextSelection.collapsed(offset: t.length),
+    );
+  }
+}
+
 
 enum CheckKind { received, paid }
 
@@ -84,6 +119,7 @@ class BankCheck {
   final String? phone;
   final String? description;
   final String? imagePath;
+  final String? imagePathBack;
   final String status;
   final bool remindersEnabled;
   final List<int> reminderDays;
@@ -105,6 +141,7 @@ class BankCheck {
     this.phone,
     this.description,
     this.imagePath,
+    this.imagePathBack,
     this.status = CheckStatus.pending,
     this.remindersEnabled = true,
     this.reminderDays = const [7, 3, 1, 0],
@@ -172,6 +209,8 @@ class BankCheck {
     String? description,
     String? imagePath,
     bool clearImage = false,
+    String? imagePathBack,
+    bool clearImageBack = false,
     String? status,
     bool? remindersEnabled,
     List<int>? reminderDays,
@@ -192,6 +231,8 @@ class BankCheck {
         phone: phone ?? this.phone,
         description: description ?? this.description,
         imagePath: clearImage ? null : (imagePath ?? this.imagePath),
+        imagePathBack:
+            clearImageBack ? null : (imagePathBack ?? this.imagePathBack),
         status: status ?? this.status,
         remindersEnabled: remindersEnabled ?? this.remindersEnabled,
         reminderDays: reminderDays ?? this.reminderDays,
@@ -215,6 +256,7 @@ class BankCheck {
         'phone': phone,
         'description': description,
         'imagePath': imagePath,
+        'imagePathBack': imagePathBack,
         'status': status,
         'remindersEnabled': remindersEnabled,
         'reminderDays': reminderDays,
@@ -263,6 +305,7 @@ class BankCheck {
       phone: j['phone'] as String?,
       description: j['description'] as String?,
       imagePath: j['imagePath'] as String?,
+      imagePathBack: j['imagePathBack'] as String?,
       status: j['status'] as String? ?? CheckStatus.pending,
       remindersEnabled: j['remindersEnabled'] as bool? ?? true,
       reminderDays: days.isEmpty ? const [7, 3, 1, 0] : days,
@@ -339,12 +382,17 @@ class CheckStore {
     items.sort((a, b) => a.dueDate.compareTo(b.dueDate));
     try {
       await _save();
-      await _syncReminders(c);
     } catch (e) {
       items
         ..clear()
         ..addAll(snap);
       rethrow;
+    }
+    // اعلان جدا از ذخیره — شکست اعلان داده را برنمی‌گرداند
+    try {
+      await _syncReminders(c);
+    } catch (e) {
+      debugPrint('CheckStore._syncReminders: $e');
     }
   }
 
@@ -353,12 +401,16 @@ class CheckStore {
     items.removeWhere((e) => e.id == id);
     try {
       await _save();
-      await _cancelReminders(id);
     } catch (e) {
       items
         ..clear()
         ..addAll(snap);
       rethrow;
+    }
+    try {
+      await _cancelReminders(id);
+    } catch (e) {
+      debugPrint('CheckStore._cancelReminders: $e');
     }
   }
 
@@ -979,6 +1031,7 @@ class _CheckFormPageState extends State<CheckFormPage> {
   bool _reminders = true;
   final Set<int> _remDays = {7, 3, 1, 0};
   String? _imagePath;
+  String? _imagePathBack;
   bool _saving = false;
   String? _error;
 
@@ -991,7 +1044,13 @@ class _CheckFormPageState extends State<CheckFormPage> {
       _amount.text = NumFmt.format(e.amount.round());
       _person.text = e.personName;
       _number.text = e.checkNumber ?? '';
-      _sayad.text = e.sayadId ?? '';
+      final sid = e.sayadId ?? '';
+      if (sid.length == 16) {
+        _sayad.text =
+            '${sid.substring(0, 4)} ${sid.substring(4, 8)} ${sid.substring(8, 12)} ${sid.substring(12, 16)}';
+      } else {
+        _sayad.text = sid;
+      }
       _bank.text = e.bankName ?? '';
       _phone.text = e.phone ?? '';
       _desc.text = e.description ?? '';
@@ -1002,6 +1061,7 @@ class _CheckFormPageState extends State<CheckFormPage> {
         ..clear()
         ..addAll(e.reminderDays);
       _imagePath = e.imagePath;
+      _imagePathBack = e.imagePathBack;
     } else {
       _kind = CheckKind.received;
       _due = DateTime.now();
@@ -1020,18 +1080,100 @@ class _CheckFormPageState extends State<CheckFormPage> {
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _pickImage({required bool back}) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('دوربین',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('گالری',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
     final x = await ImagePicker().pickImage(
-        source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600);
+        source: source, imageQuality: 85, maxWidth: 1600);
     if (x == null) return;
     final dir = await getApplicationDocumentsDirectory();
     final folder = Directory(p.join(dir.path, 'check_images'));
     if (!await folder.exists()) await folder.create(recursive: true);
     final id = widget.existing?.id ??
         'chk_${DateTime.now().millisecondsSinceEpoch}';
-    final dest = p.join(folder.path, '$id.jpg');
+    final suffix = back ? 'back' : 'front';
+    final dest = p.join(folder.path, '${id}_$suffix.jpg');
     await File(x.path).copy(dest);
-    setState(() => _imagePath = dest);
+    setState(() {
+      if (back) {
+        _imagePathBack = dest;
+      } else {
+        _imagePath = dest;
+      }
+    });
+  }
+
+  Widget _thumb(String? path, String label, VoidCallback onAdd) {
+    final has = path != null && File(path).existsSync();
+    return Expanded(
+      child: InkWell(
+        onTap: onAdd,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 110,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outline
+                    .withValues(alpha: 0.35)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: has
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.file(File(path!), fit: BoxFit.cover),
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        width: double.infinity,
+                        color: Colors.black54,
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(label,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                color: Colors.white,
+                                fontSize: 11)),
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.add_a_photo_outlined, size: 28),
+                    const SizedBox(height: 6),
+                    Text(label,
+                        style: const TextStyle(
+                            fontFamily: 'Vazirmatn', fontSize: 12)),
+                  ],
+                ),
+        ),
+      ),
+    );
   }
 
   Future<void> _save() async {
@@ -1049,14 +1191,12 @@ class _CheckFormPageState extends State<CheckFormPage> {
       setState(() => _error = 'نام شخص الزامی است');
       return;
     }
-    final sayad = _sayad.text.trim();
-    if (sayad.isNotEmpty) {
-      final lat = NumFmt.toLatinDigits(sayad);
-      if (lat.length != 16 || int.tryParse(lat) == null) {
-        setState(() => _error = 'شناسه صیادی باید ۱۶ رقم باشد');
-        return;
-      }
+    final sayadRaw = NumFmt.toLatinDigits(_sayad.text).replaceAll(RegExp(r'\D'), '');
+    if (sayadRaw.isNotEmpty && sayadRaw.length != 16) {
+      setState(() => _error = 'شناسه صیادی باید دقیقاً ۱۶ رقم باشد');
+      return;
     }
+    final sayad = sayadRaw;
     setState(() => _saving = true);
     try {
       final id = widget.existing?.id ??
@@ -1071,12 +1211,13 @@ class _CheckFormPageState extends State<CheckFormPage> {
         personName: _person.text.trim(),
         checkNumber:
             _number.text.trim().isEmpty ? null : _number.text.trim(),
-        sayadId: sayad.isEmpty ? null : NumFmt.toLatinDigits(sayad),
+        sayadId: sayad.isEmpty ? null : sayad,
         bankName: _bank.text.trim().isEmpty ? null : _bank.text.trim(),
         phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         description:
             _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         imagePath: _imagePath,
+        imagePathBack: _imagePathBack,
         status: base?.status ?? CheckStatus.pending,
         remindersEnabled: _reminders,
         reminderDays: _remDays.toList()..sort((a, b) => b.compareTo(a)),
@@ -1124,7 +1265,7 @@ class _CheckFormPageState extends State<CheckFormPage> {
             textAlign: TextAlign.center,
             keyboardType: TextInputType.number,
             // amounts via NumFmt on save
-            inputFormatters: const [],
+            inputFormatters: [MoneyInputFormatter()],
             style: const TextStyle(fontFamily: 'Vazirmatn'),
             decoration: InputDecoration(
               labelText: 'مبلغ (تومان) *',
@@ -1178,10 +1319,13 @@ class _CheckFormPageState extends State<CheckFormPage> {
             controller: _sayad,
             textAlign: TextAlign.center,
             keyboardType: TextInputType.number,
+            inputFormatters: [SayadInputFormatter()],
             style: const TextStyle(fontFamily: 'Vazirmatn'),
             decoration: InputDecoration(
               labelText: 'شناسه صیادی (۱۶ رقم)',
               labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
+              hintText: 'xxxx xxxx xxxx xxxx',
+              hintStyle: const TextStyle(fontFamily: 'Vazirmatn'),
               border:
                   OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
@@ -1251,21 +1395,17 @@ class _CheckFormPageState extends State<CheckFormPage> {
               ],
             ),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _pickImage,
-            icon: const Icon(Icons.image_outlined),
-            label: Text(
-                _imagePath == null ? 'افزودن تصویر چک' : 'تغییر تصویر',
-                style: const TextStyle(fontFamily: 'Vazirmatn')),
+          const Text('تصویر چک',
+              style: TextStyle(
+                  fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _thumb(_imagePath, 'روی چک', () => _pickImage(back: false)),
+              const SizedBox(width: 10),
+              _thumb(_imagePathBack, 'پشت چک', () => _pickImage(back: true)),
+            ],
           ),
-          if (_imagePath != null && File(_imagePath!).existsSync()) ...[
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.file(File(_imagePath!),
-                  height: 140, fit: BoxFit.cover),
-            ),
-          ],
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!,
@@ -1402,9 +1542,25 @@ class _CheckDetailPageState extends State<CheckDetailPage> {
             _row('تراکنش مالی', 'ثبت شده (${c.linkedExpenseId})'),
           if (c.imagePath != null && File(c.imagePath!).existsSync()) ...[
             const SizedBox(height: 12),
+            const Text('روی چک',
+                style: TextStyle(
+                    fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Image.file(File(c.imagePath!), fit: BoxFit.cover),
+            ),
+          ],
+          if (c.imagePathBack != null &&
+              File(c.imagePathBack!).existsSync()) ...[
+            const SizedBox(height: 12),
+            const Text('پشت چک',
+                style: TextStyle(
+                    fontFamily: 'Vazirmatn', fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.file(File(c.imagePathBack!), fit: BoxFit.cover),
             ),
           ],
           const SizedBox(height: 16),

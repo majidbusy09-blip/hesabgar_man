@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -14,51 +15,90 @@ import 'features.dart'
 import 'notifications.dart';
 import 'calendar_v2.dart' show CalEvent, CalendarStore;
 
-/// تطبیق نام بانک ایرانی → رنگ و حرف اختصاری
+
+/// تطبیق نام بانک ایرانی با لوگوی واقعی (SVG در assets/banks)
 class BankVisual {
+  final String asset; // مسیر asset یا خالی
   final String letter;
   final Color color;
-  const BankVisual(this.letter, this.color);
+  const BankVisual({required this.asset, required this.letter, required this.color});
 
-  static const _map = <String, BankVisual>{
-    'ملی': BankVisual('مل', Color(0xFF1B5E20)),
-    'ملت': BankVisual('مت', Color(0xFFB71C1C)),
-    'صادرات': BankVisual('صا', Color(0xFF0D47A1)),
-    'تجارت': BankVisual('تج', Color(0xFFE65100)),
-    'سپه': BankVisual('سپ', Color(0xFF4A148C)),
-    'رفاه': BankVisual('رف', Color(0xFF00695C)),
-    'مسکن': BankVisual('مس', Color(0xFF37474F)),
-    'کشاورزی': BankVisual('کش', Color(0xFF33691E)),
-    'پارسیان': BankVisual('پا', Color(0xFFBF360C)),
-    'سامان': BankVisual('سا', Color(0xFF1565C0)),
-    'پاسارگاد': BankVisual('پس', Color(0xFF1A237E)),
-    'اقتصاد نوین': BankVisual('اق', Color(0xFF880E4F)),
-    'آینده': BankVisual('آی', Color(0xFF006064)),
-    'شهر': BankVisual('شه', Color(0xFF263238)),
-    'سینا': BankVisual('سی', Color(0xFF4527A0)),
-    'دی': BankVisual('دی', Color(0xFF01579B)),
-    'ایران زمین': BankVisual('از', Color(0xFF3E2723)),
-    'کارآفرین': BankVisual('کا', Color(0xFF827717)),
-    'پست': BankVisual('پست', Color(0xFF5D4037)),
-    'رسالت': BankVisual('رس', Color(0xFF1B5E20)),
-    'گردشگری': BankVisual('گر', Color(0xFF004D40)),
-    'مهر': BankVisual('مه', Color(0xFF33691E)),
-    'قرض': BankVisual('قح', Color(0xFF2E7D32)),
-    'خاورمیانه': BankVisual('خا', Color(0xFF0D47A1)),
-    'کوثر': BankVisual('کو', Color(0xFF6A1B9A)),
-    'انصار': BankVisual('ان', Color(0xFFC62828)),
-    'حکمت': BankVisual('حک', Color(0xFF283593)),
-    'توسعه': BankVisual('تو', Color(0xFF0277BD)),
-    'صنعت': BankVisual('صن', Color(0xFF455A64)),
+  static const _defs = <String, BankVisual>{
+    'ملی': BankVisual(asset: 'assets/banks/melli.svg', letter: 'مل', color: Color(0xFF1B5E20)),
+    'ملت': BankVisual(asset: 'assets/banks/mellat.svg', letter: 'مت', color: Color(0xFFB71C1C)),
+    'صادرات': BankVisual(asset: 'assets/banks/saderat.svg', letter: 'صا', color: Color(0xFF0D47A1)),
+    'تجارت': BankVisual(asset: 'assets/banks/tejarat.svg', letter: 'تج', color: Color(0xFFE65100)),
+    'سپه': BankVisual(asset: 'assets/banks/sepah.svg', letter: 'سپ', color: Color(0xFF4A148C)),
+    'کشاورزی': BankVisual(asset: 'assets/banks/keshavarzi.svg', letter: 'کش', color: Color(0xFF33691E)),
+    'مسکن': BankVisual(asset: 'assets/banks/maskan.svg', letter: 'مس', color: Color(0xFF37474F)),
+    'پارسیان': BankVisual(asset: 'assets/banks/parsian.svg', letter: 'پا', color: Color(0xFFBF360C)),
+    'پاسارگاد': BankVisual(asset: 'assets/banks/pasargad.svg', letter: 'پس', color: Color(0xFF1A237E)),
+    'سامان': BankVisual(asset: 'assets/banks/saman.svg', letter: 'سا', color: Color(0xFF1565C0)),
+    'سینا': BankVisual(asset: 'assets/banks/sina.svg', letter: 'سی', color: Color(0xFF4527A0)),
+    'شهر': BankVisual(asset: 'assets/banks/shahr.svg', letter: 'شه', color: Color(0xFF263238)),
+    'دی': BankVisual(asset: 'assets/banks/dey.svg', letter: 'دی', color: Color(0xFF01579B)),
+    'ایران زمین': BankVisual(asset: 'assets/banks/iranzamin.svg', letter: 'از', color: Color(0xFF3E2723)),
+    'کارآفرین': BankVisual(asset: 'assets/banks/karafarin.svg', letter: 'کا', color: Color(0xFF827717)),
+    'رسالت': BankVisual(asset: 'assets/banks/resalat.svg', letter: 'رس', color: Color(0xFF1B5E20)),
+    'مهر': BankVisual(asset: 'assets/banks/mehriran.svg', letter: 'مه', color: Color(0xFF33691E)),
+    'پست': BankVisual(asset: 'assets/banks/post.svg', letter: 'پست', color: Color(0xFF5D4037)),
+    'گردشگری': BankVisual(asset: 'assets/banks/gardeshgari.svg', letter: 'گر', color: Color(0xFF004D40)),
+    'خاورمیانه': BankVisual(asset: 'assets/banks/khavarmianeh.svg', letter: 'خا', color: Color(0xFF0D47A1)),
+    'صنعت': BankVisual(asset: 'assets/banks/sanatmadan.svg', letter: 'صن', color: Color(0xFF455A64)),
+    'آینده': BankVisual(asset: 'assets/banks/ayandeh.svg', letter: 'آی', color: Color(0xFF006064)),
+    'سرمایه': BankVisual(asset: 'assets/banks/sarmayeh.svg', letter: 'سر', color: Color(0xFF6A1B9A)),
+    'انصار': BankVisual(asset: 'assets/banks/ansar.svg', letter: 'ان', color: Color(0xFFC62828)),
+    'حکمت': BankVisual(asset: 'assets/banks/hekmat.svg', letter: 'حک', color: Color(0xFF283593)),
+    'کوثر': BankVisual(asset: 'assets/banks/kosar.svg', letter: 'کو', color: Color(0xFF6A1B9A)),
   };
 
   static BankVisual? match(String name) {
     final n = name.trim();
     if (n.isEmpty) return null;
-    for (final e in _map.entries) {
+    for (final e in _defs.entries) {
       if (n.contains(e.key)) return e.value;
     }
-    return BankVisual(n.substring(0, 1), const Color(0xFF546E7A));
+    return BankVisual(
+      asset: '',
+      letter: n.substring(0, 1),
+      color: const Color(0xFF546E7A),
+    );
+  }
+
+  /// ویجت لوگوی واقعی یا fallback حرف
+  static Widget logo(String? bankName, {double size = 28}) {
+    final v = match(bankName ?? '');
+    if (v == null || (bankName ?? '').trim().isEmpty) {
+      return Icon(Icons.account_balance_outlined, size: size * 0.85);
+    }
+    if (v.asset.isNotEmpty) {
+      return SvgPicture.asset(
+        v.asset,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        placeholderBuilder: (_) => _fallback(v, size),
+      );
+    }
+    return _fallback(v, size);
+  }
+
+  static Widget _fallback(BankVisual v, double size) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: v.color, shape: BoxShape.circle),
+      child: Text(
+        v.letter,
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          color: Colors.white,
+          fontSize: size * 0.32,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
   }
 }
 
@@ -1021,10 +1061,20 @@ class _ChecksScreenState extends State<ChecksScreen>
                     ],
                   ),
                   const SizedBox(height: 6),
-                  Text(c.personName,
-                      style: const TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          fontWeight: FontWeight.w700)),
+                  Row(
+                    children: [
+                      if ((c.bankName ?? '').trim().isNotEmpty) ...[
+                        BankVisual.logo(c.bankName, size: 22),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(c.personName,
+                            style: const TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
                   Text(
                     'سررسید: ${jalaliLabel(c.dueDate)}'
                     '${c.isOverdue ? ' · گذشته' : c.isDueToday ? ' · امروز' : ''}',
@@ -1195,25 +1245,9 @@ class _CheckFormPageState extends State<CheckFormPage> {
 
 
   Widget _bankIconWidget() {
-    final v = BankVisual.match(_bank.text);
-    if (v == null || _bank.text.trim().isEmpty) {
-      return const Icon(Icons.account_balance_outlined);
-    }
     return Padding(
-      padding: const EdgeInsets.all(8),
-      child: CircleAvatar(
-        backgroundColor: v.color,
-        radius: 14,
-        child: Text(
-          v.letter,
-          style: const TextStyle(
-            fontFamily: 'Vazirmatn',
-            color: Colors.white,
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
+      padding: const EdgeInsets.all(6),
+      child: BankVisual.logo(_bank.text, size: 28),
     );
   }
 

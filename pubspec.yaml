@@ -23,6 +23,7 @@ dependencies:
   timezone: ^0.10.0
   flutter_timezone: ^4.0.0
   flutter_compass: ^0.8.1
+  flutter_svg: ^2.0.10
 
 dev_dependencies:
   flutter_test:
@@ -43,6 +44,7 @@ flutter:
   assets:
     - assets/brand/
     - assets/sounds/
+    - assets/banks/
   fonts:
     - family: Vazirmatn
       fonts:

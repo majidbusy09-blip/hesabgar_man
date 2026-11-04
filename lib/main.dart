@@ -4,12 +4,42 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'core.dart';
 import 'features.dart';
+import 'checks.dart' show CheckDetailPage;
 import 'notifications.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppNotifications.instance.init();
+  AppNotifications.instance.onNotificationTap = _handleNotifPayload;
+  // اگر اپ از اعلان سرد شروع شده
+  final launch = AppNotifications.pendingPayload;
+  if (launch != null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleNotifPayload(launch);
+    });
+  }
   runApp(const HesabgarManApp());
+}
+
+void _handleNotifPayload(String payload) {
+  if (payload.startsWith('check:')) {
+    final id = payload.substring(6);
+    final nav = appNavigatorKey.currentState;
+    if (nav == null) {
+      AppNotifications.pendingPayload = payload;
+      return;
+    }
+    // تأخیر کوتاه تا UI آماده شود
+    Future.microtask(() {
+      nav.push(
+        MaterialPageRoute(
+          builder: (_) => CheckDetailPage(checkId: id),
+        ),
+      );
+    });
+  }
 }
 
 class HesabgarManApp extends StatelessWidget {
@@ -33,6 +63,7 @@ class HesabgarManApp extends StatelessWidget {
             );
           }
           return MaterialApp(
+            navigatorKey: appNavigatorKey,
             title: 'حسابگر من',
             debugShowCheckedModeBanner: false,
             locale: const Locale('fa', 'IR'),

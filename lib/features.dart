@@ -6406,10 +6406,21 @@ class Expense {
 enum ExpenseLoadStatus { notLoaded, loaded, empty, error }
 
 class ExpenseStore {
+  ExpenseStore._();
+  static final ExpenseStore instance = ExpenseStore._();
+  /// سازگاری با کدهای قبلی: ExpenseStore() همان instance مشترک است
+  factory ExpenseStore() => instance;
+
   static const _key = 'expenses_v2';
   List<Expense> _items = [];
   ExpenseLoadStatus loadStatus = ExpenseLoadStatus.notLoaded;
   String? lastError;
+
+  /// برای نوسازی UI هزینه‌ها بعد از ثبت از بخش چک‌ها
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+  void _bump() {
+    revision.value++;
+  }
 
   List<Expense> get items => List.unmodifiable(_items);
 
@@ -6541,6 +6552,7 @@ class ExpenseStore {
     final raw = jsonEncode(_items.map((e) => e.toJson()).toList());
     await store.setString(_key, raw);
     lastError = null;
+    _bump();
   }
 }
 
@@ -12760,11 +12772,33 @@ class FinancialDataPort {
         data[k] = [];
       }
     }
+    // تصاویر چک‌ها (base64) برای انتقال کامل
+    final checkImages = <String, String>{};
+    try {
+      final rawChecks = data['checks_v1'];
+      if (rawChecks is List) {
+        for (final e in rawChecks) {
+          if (e is! Map) continue;
+          for (final key in ['imagePath', 'imagePathBack']) {
+            final path = e[key] as String?;
+            if (path == null || path.isEmpty) continue;
+            final f = File(path);
+            if (await f.exists()) {
+              final b64 = base64Encode(await f.readAsBytes());
+              checkImages[path] = b64;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('backup check images: $e');
+    }
     return {
       'app': 'hesabgar_man',
       'formatVersion': formatVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       'data': data,
+      'checkImages': checkImages,
     };
   }
 
@@ -12830,6 +12864,52 @@ class FinancialDataPort {
       jsonDecode(encoded);
       await store.setString(k, encoded);
     }
+    // بازیابی تصاویر چک
+    try {
+      final imgs = map['checkImages'];
+      if (imgs is Map) {
+        final dir = await getApplicationDocumentsDirectory();
+        final folder = Directory(p.join(dir.path, 'check_images'));
+        if (!await folder.exists()) await folder.create(recursive: true);
+        final pathMap = <String, String>{};
+        for (final e in imgs.entries) {
+          final oldPath = e.key.toString();
+          final b64 = e.value.toString();
+          final name = p.basename(oldPath);
+          final dest = p.join(folder.path, name);
+          await File(dest).writeAsBytes(base64Decode(b64), flush: true);
+          pathMap[oldPath] = dest;
+        }
+        // به‌روزرسانی مسیرها در checks_v1
+        final rawC = store.getString('checks_v1');
+        if (rawC != null && rawC.isNotEmpty && pathMap.isNotEmpty) {
+          final list = jsonDecode(rawC) as List;
+          for (var i = 0; i < list.length; i++) {
+            if (list[i] is! Map) continue;
+            final m = Map<String, dynamic>.from(list[i] as Map);
+            for (final key in ['imagePath', 'imagePathBack']) {
+              final op = m[key] as String?;
+              if (op != null && pathMap.containsKey(op)) {
+                m[key] = pathMap[op];
+              }
+            }
+            list[i] = m;
+          }
+          await store.setString('checks_v1', jsonEncode(list));
+        }
+      }
+    } catch (e) {
+      debugPrint('restore check images: $e');
+    }
+    try {
+      await CheckStore.instance.load();
+      await CheckStore.instance.rescheduleAll();
+    } catch (e) {
+      debugPrint('reschedule checks after restore: $e');
+    }
+    try {
+      await ExpenseStore.instance.load();
+    } catch (_) {}
     return 'ok';
   }
 

@@ -18,6 +18,10 @@ class AppNotifications {
   bool _ready = false;
   bool get isReady => _ready;
 
+  /// payload آخرین اعلان لمس‌شده (مثلاً check:id) تا UI باز کند
+  static String? pendingPayload;
+  void Function(String payload)? onNotificationTap;
+
   static const _channelId = 'hesabgar_reminders';
   static const _channelName = 'یادآوری حسابگر من';
   static const _channelDesc = 'اقساط تسهیلات و رویدادهای تقویم';
@@ -36,7 +40,15 @@ class AppNotifications {
       const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
       const initSettings = InitializationSettings(android: androidInit);
 
-      await _plugin.initialize(initSettings);
+      await _plugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (resp) {
+          final p = resp.payload;
+          if (p == null || p.isEmpty) return;
+          pendingPayload = p;
+          onNotificationTap?.call(p);
+        },
+      );
 
       final android = _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
@@ -103,6 +115,7 @@ class AppNotifications {
     required String title,
     required String body,
     required DateTime when,
+    String? payload,
   }) async {
     if (!_ready) await init();
     if (!_ready) {
@@ -125,6 +138,7 @@ class AppNotifications {
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
+        payload: payload,
       );
       return true;
     } catch (e) {
@@ -139,6 +153,7 @@ class AppNotifications {
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
+          payload: payload,
         );
         return true;
       } catch (e2) {

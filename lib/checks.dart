@@ -548,9 +548,15 @@ class CheckStore {
   double sumOf(List<BankCheck> list) =>
       list.fold(0.0, (s, e) => s + e.amount);
 
+  /// شناسه پایدار اعلان — مستقل از hashCode دارت (بین اجراها ثابت)
   static int notifId(String checkId, int dayOffset) {
-    final base = checkId.hashCode.abs() % 1000000;
-    return (300000000 + base * 10 + (dayOffset % 10)) % 2147483647;
+    var h = 2166136261;
+    for (final u in checkId.codeUnits) {
+      h ^= u;
+      h = (h * 16777619) & 0x7fffffff;
+    }
+    final base = h % 900000;
+    return 310000000 + base * 10 + (dayOffset.clamp(0, 9));
   }
 
   static String calendarEventId(String checkId) => 'chk_cal_$checkId';
@@ -608,16 +614,23 @@ class CheckStore {
     final ok = await AppNotifications.instance.ensurePermissionForReminders();
     if (!ok) return;
     final due = DateTime(c.dueDate.year, c.dueDate.month, c.dueDate.day, 9);
+    final dueLabel = jalaliLabel(c.dueDate);
+    final amountLabel = NumFmt.format(c.amount.round());
     for (final daysBefore in c.reminderDays) {
       final when = due.subtract(Duration(days: daysBefore));
-      final body = daysBefore == 0
-          ? 'امروز سررسید چک ${c.kind.label} — ${c.personName} — ${NumFmt.format(c.amount.round())} تومان'
-          : '$daysBefore روز تا سررسید چک ${c.kind.label} — ${c.personName}';
+      final remain = daysBefore == 0
+          ? 'امروز سررسید'
+          : '$daysBefore روز تا سررسید';
+      final body =
+          'چک ${c.kind.label} · ${c.personName}\n'
+          '$amountLabel تومان · سررسید $dueLabel\n'
+          '$remain';
       await AppNotifications.instance.schedule(
         id: notifId(c.id, daysBefore),
         title: 'چک ${c.kind.label}',
         body: body,
         when: when,
+        payload: 'check:${c.id}',
       );
     }
   }
@@ -1123,52 +1136,111 @@ class _ChecksScreenState extends State<ChecksScreen>
     final updated = await _store.changeStatus(c, status);
     if (!mounted) return;
     setState(() {});
+    // فقط وصول/پاس → پیشنهاد ثبت مالی با تأیید کاربر
     if (status == CheckStatus.settled && updated.linkedExpenseId == null) {
-      final link = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('ثبت در هزینه‌ها؟',
-              style: TextStyle(fontFamily: 'Vazirmatn')),
-          content: Text(
-            c.kind == CheckKind.received
-                ? 'این چک وصول شد. به درآمد اضافه شود؟'
-                : 'این چک پاس شد. به هزینه اضافه شود؟',
-            style: const TextStyle(fontFamily: 'Vazirmatn'),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('خیر',
-                    style: TextStyle(fontFamily: 'Vazirmatn'))),
-            FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('بله',
-                    style: TextStyle(fontFamily: 'Vazirmatn'))),
-          ],
-        ),
-      );
-      if (link == true) await linkCheckToExpense(updated);
+      await askAndLinkFinance(context, updated);
       if (mounted) setState(() {});
     }
   }
 }
 
-Future<void> linkCheckToExpense(BankCheck c) async {
-  if (c.linkedExpenseId != null) return;
-  final store = ExpenseStore();
-  await store.load();
+/// ثبت درآمد/هزینه از چک با زیرساخت ExpenseStore (تکی مشترک)
+/// خروجی: id تراکنش یا null در صورت شکست
+Future<String?> linkCheckToExpense(BankCheck c) async {
+  if (c.linkedExpenseId != null) return c.linkedExpenseId;
   final expId = 'chkexp_${c.id}';
-  if (store.items.any((e) => e.id == expId)) return;
-  await store.add(Expense(
-    id: expId,
-    title: 'چک ${c.kind.label}: ${c.personName}',
-    amount: c.amount,
-    category: c.kind == CheckKind.received ? 'سایر درآمد' : 'سایر',
-    date: DateTime.now(),
-    note: 'از چک‌های من · ref:${c.id}',
-    isIncome: c.kind == CheckKind.received,
-  ));
-  await CheckStore.instance.upsert(c.copyWith(linkedExpenseId: expId));
+  try {
+    final store = ExpenseStore.instance;
+    await store.load();
+    // جلوگیری از تکرار
+    final existing = store.items.where((e) =>
+        e.id == expId || (e.note != null && e.note!.contains('ref:${c.id}')));
+    if (existing.isNotEmpty) {
+      final id = existing.first.id;
+      await CheckStore.instance.upsert(c.copyWith(linkedExpenseId: id));
+      return id;
+    }
+    final isIncome = c.kind == CheckKind.received;
+    final title = isIncome
+        ? 'وصول چک - ${c.personName}'
+        : 'پاس چک - ${c.personName}';
+    await store.add(Expense(
+      id: expId,
+      title: title,
+      amount: c.amount,
+      category: isIncome ? 'سایر درآمد' : 'سایر',
+      date: DateTime.now(), // تاریخ واقعی وصول/پاس
+      note: 'از چک‌های من · ref:${c.id}',
+      isIncome: isIncome,
+    ));
+    await CheckStore.instance.upsert(c.copyWith(linkedExpenseId: expId));
+    return expId;
+  } catch (e) {
+    debugPrint('linkCheckToExpense: $e');
+    rethrow;
+  }
+}
+
+Future<bool> askAndLinkFinance(BuildContext context, BankCheck c) async {
+  if (c.linkedExpenseId != null) return true;
+  final isIncome = c.kind == CheckKind.received;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(
+        isIncome ? 'ثبت به‌عنوان درآمد؟' : 'ثبت به‌عنوان هزینه؟',
+        style: const TextStyle(fontFamily: 'Vazirmatn'),
+      ),
+      content: Text(
+        isIncome
+            ? 'آیا می‌خواهید مبلغ این چک به‌عنوان درآمد در حسابگر من ثبت شود؟\n\n'
+                '${NumFmt.format(c.amount.round())} تومان — ${c.personName}'
+            : 'آیا می‌خواهید مبلغ این چک به‌عنوان هزینه در حسابگر من ثبت شود؟\n\n'
+                '${NumFmt.format(c.amount.round())} تومان — ${c.personName}',
+        style: const TextStyle(fontFamily: 'Vazirmatn'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('خیر', style: TextStyle(fontFamily: 'Vazirmatn')),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('بله، ثبت شود',
+              style: TextStyle(fontFamily: 'Vazirmatn')),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return false;
+  try {
+    await linkCheckToExpense(c);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          isIncome ? 'درآمد ثبت شد' : 'هزینه ثبت شد',
+          style: const TextStyle(fontFamily: 'Vazirmatn'),
+        ),
+      ));
+    }
+    return true;
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          'ثبت مالی ناموفق بود. می‌توانید دوباره تلاش کنید.\n$e',
+          style: const TextStyle(fontFamily: 'Vazirmatn'),
+        ),
+        action: SnackBarAction(
+          label: 'تلاش مجدد',
+          onPressed: () {
+            askAndLinkFinance(context, c);
+          },
+        ),
+      ));
+    }
+    return false;
+  }
 }
 
 // ─── فرم ───
@@ -1736,7 +1808,23 @@ class _CheckDetailPageState extends State<CheckDetailPage> {
           if (c.phone != null) _row('تماس', c.phone!),
           if (c.description != null) _row('بابت', c.description!),
           if (c.linkedExpenseId != null)
-            _row('تراکنش مالی', 'ثبت شده (${c.linkedExpenseId})'),
+            _row('تراکنش مالی', 'ثبت شده')
+          else if (c.status == CheckStatus.settled) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () async {
+                await askAndLinkFinance(context, c);
+                await _reload();
+              },
+              icon: const Icon(Icons.account_balance_wallet_outlined),
+              label: Text(
+                c.kind == CheckKind.received
+                    ? 'ثبت به‌عنوان درآمد'
+                    : 'ثبت به‌عنوان هزینه',
+                style: const TextStyle(fontFamily: 'Vazirmatn'),
+              ),
+            ),
+          ],
           if (c.imagePath != null && File(c.imagePath!).existsSync()) ...[
             const SizedBox(height: 12),
             const Text('روی چک',
@@ -1815,29 +1903,7 @@ class _CheckDetailPageState extends State<CheckDetailPage> {
                     if (s == CheckStatus.settled &&
                         updated.linkedExpenseId == null &&
                         mounted) {
-                      final link = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('ثبت مالی؟',
-                              style: TextStyle(fontFamily: 'Vazirmatn')),
-                          content: const Text(
-                              'به هزینه‌ها/درآمد اضافه شود؟',
-                              style: TextStyle(fontFamily: 'Vazirmatn')),
-                          actions: [
-                            TextButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                child: const Text('خیر',
-                                    style:
-                                        TextStyle(fontFamily: 'Vazirmatn'))),
-                            FilledButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text('بله',
-                                    style:
-                                        TextStyle(fontFamily: 'Vazirmatn'))),
-                          ],
-                        ),
-                      );
-                      if (link == true) await linkCheckToExpense(updated);
+                      await askAndLinkFinance(context, updated);
                     }
                     await _reload();
                   },

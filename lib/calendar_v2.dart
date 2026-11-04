@@ -1180,7 +1180,70 @@ class _CalendarScreenState extends State<CalendarScreen>
     }
   }
 
+  Future<void> _pickCalendarYear() async {
+    final nowY = _todayJ.year;
+    final years = [for (var y = nowY + 5; y >= nowY - 60; y--) y];
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.55,
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              const Text(
+                'انتخاب سال شمسی',
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: years.length,
+                  itemBuilder: (_, i) {
+                    final y = years[i];
+                    final sel = y == _focused.year;
+                    return ListTile(
+                      title: Text(
+                        '$y',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight:
+                              sel ? FontWeight.w900 : FontWeight.w600,
+                          fontSize: sel ? 18 : 15,
+                          color: sel ? scheme.primary : null,
+                        ),
+                      ),
+                      selected: sel,
+                      onTap: () => Navigator.pop(ctx, y),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (selected != null && mounted) {
+      setState(() {
+        final len = Jalali(selected, _focused.month, 1).monthLength;
+        final d = _focused.day > len ? len : _focused.day;
+        _focused = Jalali(selected, _focused.month, d);
+      });
+    }
+  }
+
   Widget _buildMonth(ColorScheme scheme) {
+
     final season = SeasonTheme.ofJalali(_focused);
     final first = Jalali(_focused.year, _focused.month, 1);
     final len = first.monthLength;

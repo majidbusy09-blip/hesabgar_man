@@ -6406,8 +6406,7 @@ class Expense {
 enum ExpenseLoadStatus { notLoaded, loaded, empty, error }
 
 class ExpenseStore {
-  static const _key = 'expenses_v2',
-    'checks_v1';
+  static const _key = 'expenses_v2';
   List<Expense> _items = [];
   ExpenseLoadStatus loadStatus = ExpenseLoadStatus.notLoaded;
   String? lastError;

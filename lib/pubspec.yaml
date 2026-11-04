@@ -1,0 +1,56 @@
+name: hesabgar_man
+description: "حسابگر من - ماشین‌حساب و ابزارهای مالی شخصی"
+publish_to: 'none'
+version: 1.0.7+8
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  provider: ^6.1.2
+  math_expressions: ^2.4.0
+  image_picker: ^1.1.2
+  palette_generator: ^0.3.3+4
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  http: ^1.2.2
+  pdf: ^3.11.1
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.10.0
+  flutter_timezone: ^4.0.0
+  flutter_compass: ^0.8.1
+  flutter_svg: ^2.0.10+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/brand/app_icon.png
+  adaptive_icon_background: "#FF8A42"
+  adaptive_icon_foreground: assets/brand/app_icon.png
+  min_sdk_android: 21
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/brand/
+    - assets/sounds/
+    - assets/banks/
+  fonts:
+    - family: Vazirmatn
+      fonts:
+        - asset: assets/fonts/Vazirmatn-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Vazirmatn-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Vazirmatn-Bold.ttf
+          weight: 700

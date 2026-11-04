@@ -5,6 +5,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# هر push جدید روی main، بیلد قبلی همان شاخه را لغو می‌کند تا صف گیر نکند
+concurrency:
+  group: build-main
+  cancel-in-progress: true
+
 # لازم برای ساخت Release خودکار
 permissions:
   contents: write

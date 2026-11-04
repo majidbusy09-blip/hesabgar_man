@@ -1273,8 +1273,9 @@ class _CalendarScreenState extends State<CalendarScreen>
           child: Row(
             children: [
               IconButton.filledTonal(
+                tooltip: 'ماه قبل',
                 onPressed: () =>
-                    setState(() => _focused = _focused.addMonths(1)),
+                    setState(() => _focused = _focused.addMonths(-1)),
                 icon: const Icon(Icons.chevron_right_rounded),
               ),
               Expanded(
@@ -1320,8 +1321,9 @@ class _CalendarScreenState extends State<CalendarScreen>
                 ),
               ),
               IconButton.filledTonal(
+                tooltip: 'ماه بعد',
                 onPressed: () =>
-                    setState(() => _focused = _focused.addMonths(-1)),
+                    setState(() => _focused = _focused.addMonths(1)),
                 icon: const Icon(Icons.chevron_left_rounded),
               ),
             ],

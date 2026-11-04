@@ -12,6 +12,56 @@ import 'core.dart';
 import 'features.dart'
     show Expense, ExpenseStore, Jalali, NumFmt, showJalaliDatePicker;
 import 'notifications.dart';
+import 'calendar_v2.dart' show CalEvent, CalendarStore;
+
+/// تطبیق نام بانک ایرانی → رنگ و حرف اختصاری
+class BankVisual {
+  final String letter;
+  final Color color;
+  const BankVisual(this.letter, this.color);
+
+  static const _map = <String, BankVisual>{
+    'ملی': BankVisual('مل', Color(0xFF1B5E20)),
+    'ملت': BankVisual('مت', Color(0xFFB71C1C)),
+    'صادرات': BankVisual('صا', Color(0xFF0D47A1)),
+    'تجارت': BankVisual('تج', Color(0xFFE65100)),
+    'سپه': BankVisual('سپ', Color(0xFF4A148C)),
+    'رفاه': BankVisual('رف', Color(0xFF00695C)),
+    'مسکن': BankVisual('مس', Color(0xFF37474F)),
+    'کشاورزی': BankVisual('کش', Color(0xFF33691E)),
+    'پارسیان': BankVisual('پا', Color(0xFFBF360C)),
+    'سامان': BankVisual('سا', Color(0xFF1565C0)),
+    'پاسارگاد': BankVisual('پس', Color(0xFF1A237E)),
+    'اقتصاد نوین': BankVisual('اق', Color(0xFF880E4F)),
+    'آینده': BankVisual('آی', Color(0xFF006064)),
+    'شهر': BankVisual('شه', Color(0xFF263238)),
+    'سینا': BankVisual('سی', Color(0xFF4527A0)),
+    'دی': BankVisual('دی', Color(0xFF01579B)),
+    'ایران زمین': BankVisual('از', Color(0xFF3E2723)),
+    'کارآفرین': BankVisual('کا', Color(0xFF827717)),
+    'پست': BankVisual('پست', Color(0xFF5D4037)),
+    'رسالت': BankVisual('رس', Color(0xFF1B5E20)),
+    'گردشگری': BankVisual('گر', Color(0xFF004D40)),
+    'مهر': BankVisual('مه', Color(0xFF33691E)),
+    'قرض': BankVisual('قح', Color(0xFF2E7D32)),
+    'خاورمیانه': BankVisual('خا', Color(0xFF0D47A1)),
+    'کوثر': BankVisual('کو', Color(0xFF6A1B9A)),
+    'انصار': BankVisual('ان', Color(0xFFC62828)),
+    'حکمت': BankVisual('حک', Color(0xFF283593)),
+    'توسعه': BankVisual('تو', Color(0xFF0277BD)),
+    'صنعت': BankVisual('صن', Color(0xFF455A64)),
+  };
+
+  static BankVisual? match(String name) {
+    final n = name.trim();
+    if (n.isEmpty) return null;
+    for (final e in _map.entries) {
+      if (n.contains(e.key)) return e.value;
+    }
+    return BankVisual(n.substring(0, 1), const Color(0xFF546E7A));
+  }
+}
+
 
 /// مبلغ با جداکننده هزارگان + ارقام فارسی/عربی → لاتین
 class MoneyInputFormatter extends TextInputFormatter {
@@ -388,11 +438,16 @@ class CheckStore {
         ..addAll(snap);
       rethrow;
     }
-    // اعلان جدا از ذخیره — شکست اعلان داده را برنمی‌گرداند
+    // اعلان و تقویم جدا از ذخیره
     try {
       await _syncReminders(c);
     } catch (e) {
       debugPrint('CheckStore._syncReminders: $e');
+    }
+    try {
+      await _syncCalendar(c);
+    } catch (e) {
+      debugPrint('CheckStore._syncCalendar wrap: $e');
     }
   }
 
@@ -411,6 +466,11 @@ class CheckStore {
       await _cancelReminders(id);
     } catch (e) {
       debugPrint('CheckStore._cancelReminders: $e');
+    }
+    try {
+      await _removeCalendar(id);
+    } catch (e) {
+      debugPrint('CheckStore._removeCalendar wrap: $e');
     }
   }
 
@@ -451,6 +511,49 @@ class CheckStore {
   static int notifId(String checkId, int dayOffset) {
     final base = checkId.hashCode.abs() % 1000000;
     return (300000000 + base * 10 + (dayOffset % 10)) % 2147483647;
+  }
+
+  static String calendarEventId(String checkId) => 'chk_cal_$checkId';
+
+  Future<void> _syncCalendar(BankCheck c) async {
+    try {
+      final cal = CalendarStore();
+      await cal.load();
+      final eid = calendarEventId(c.id);
+      if (CheckStatus.isFinal(c.status) && c.status != CheckStatus.settled) {
+        await cal.removeEvent(eid);
+        return;
+      }
+      final start = DateTime(c.dueDate.year, c.dueDate.month, c.dueDate.day, 9);
+      final title = 'چک ${c.kind.label}: ${c.personName}';
+      final note =
+          '${NumFmt.format(c.amount.round())} تومان · ${c.statusLabel}'
+          '${c.bankName != null ? ' · ${c.bankName}' : ''}';
+      await cal.upsertEvent(CalEvent(
+        id: eid,
+        title: title,
+        note: note,
+        start: start,
+        allDay: true,
+        categoryId: 'c_finance',
+        colorValue: c.kind == CheckKind.received ? 0xFF2E7D32 : 0xFFC62828,
+        recurrence: 'none',
+        reminderMinutes: 0, // اعلان از خود چک مدیریت می‌شود
+        done: CheckStatus.isFinal(c.status),
+      ));
+    } catch (e) {
+      debugPrint('CheckStore._syncCalendar: $e');
+    }
+  }
+
+  Future<void> _removeCalendar(String checkId) async {
+    try {
+      final cal = CalendarStore();
+      await cal.load();
+      await cal.removeEvent(calendarEventId(checkId));
+    } catch (e) {
+      debugPrint('CheckStore._removeCalendar: $e');
+    }
   }
 
   Future<void> _cancelReminders(String id) async {
@@ -745,30 +848,39 @@ class _ChecksScreenState extends State<ChecksScreen>
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          child: Row(
+          child: Column(
             children: [
-              Expanded(
-                child: TextField(
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(fontFamily: 'Vazirmatn'),
-                  decoration: InputDecoration(
-                    hintText: 'جست‌وجو: نام، شماره، صیاد، بانک…',
-                    hintStyle: const TextStyle(
-                        fontFamily: 'Vazirmatn', fontSize: 13),
-                    prefixIcon: const Icon(Icons.search),
-                    isDense: true,
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: FilledButton.icon(
+                  onPressed: () => _openForm(),
+                  icon: const Icon(Icons.add, size: 26),
+                  label: const Text('ثبت چک جدید',
+                      style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800)),
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
-                  onChanged: (v) => setState(() => _query = v),
                 ),
               ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: () => _openForm(),
-                icon: const Icon(Icons.add),
-                label: const Text('ثبت چک',
-                    style: TextStyle(fontFamily: 'Vazirmatn')),
+              const SizedBox(height: 10),
+              TextField(
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontFamily: 'Vazirmatn'),
+                decoration: InputDecoration(
+                  hintText: 'جست‌وجو: نام، شماره، صیاد، بانک…',
+                  hintStyle: const TextStyle(
+                      fontFamily: 'Vazirmatn', fontSize: 13),
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onChanged: (v) => setState(() => _query = v),
               ),
             ],
           ),
@@ -1065,6 +1177,7 @@ class _CheckFormPageState extends State<CheckFormPage> {
     } else {
       _kind = CheckKind.received;
       _due = DateTime.now();
+      _reminders = false; // دریافتی: پیش‌فرض خاموش
     }
   }
 
@@ -1257,7 +1370,13 @@ class _CheckFormPageState extends State<CheckFormPage> {
                       style: TextStyle(fontFamily: 'Vazirmatn'))),
             ],
             selected: {_kind},
-            onSelectionChanged: (s) => setState(() => _kind = s.first),
+            onSelectionChanged: (s) => setState(() {
+              _kind = s.first;
+              if (widget.existing == null) {
+                // پرداختی: یادآوری روشن / دریافتی: خاموش
+                _reminders = _kind == CheckKind.paid;
+              }
+            }),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -1335,11 +1454,13 @@ class _CheckFormPageState extends State<CheckFormPage> {
             controller: _bank,
             textAlign: TextAlign.right,
             style: const TextStyle(fontFamily: 'Vazirmatn'),
+            onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               labelText: 'نام بانک',
               labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
               border:
                   OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: _bankIconWidget(),
             ),
           ),
           const SizedBox(height: 12),
@@ -1485,27 +1606,45 @@ class _CheckDetailPageState extends State<CheckDetailPage> {
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () async {
-              final yes = await showDialog<bool>(
+              final yes = await showDialog<Object>(
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text('حذف چک؟',
                       style: TextStyle(fontFamily: 'Vazirmatn')),
-                  content: const Text(
-                      'اعلان‌های این چک لغو می‌شود. تراکنش مالی مرتبط حذف نمی‌شود.',
-                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                  content: Text(
+                    c.linkedExpenseId == null
+                        ? 'چک و اعلان‌ها و رویداد تقویم حذف می‌شوند.'
+                        : 'چک و اعلان‌ها حذف می‌شوند.\n\nاگر هنگام وصول/پاس، این چک را در هزینه‌ها/درآمد ثبت کرده باشید، آن تراکنش جدا نگه داشته می‌شود مگر گزینه زیر را بزنید.',
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                  ),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
                         child: const Text('انصراف',
                             style: TextStyle(fontFamily: 'Vazirmatn'))),
+                    if (c.linkedExpenseId != null)
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, 'all'),
+                        child: const Text('حذف چک + تراکنش',
+                            style: TextStyle(fontFamily: 'Vazirmatn')),
+                      ),
                     FilledButton(
                         onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('حذف',
+                        child: const Text('حذف چک',
                             style: TextStyle(fontFamily: 'Vazirmatn'))),
                   ],
                 ),
               );
-              if (yes == true) {
+              if (yes == true || yes == 'all') {
+                if (yes == 'all' && c.linkedExpenseId != null) {
+                  try {
+                    final es = ExpenseStore();
+                    await es.load();
+                    await es.remove(c.linkedExpenseId!);
+                  } catch (e) {
+                    debugPrint('remove linked expense: $e');
+                  }
+                }
                 await CheckStore.instance.remove(c.id);
                 if (context.mounted) Navigator.pop(context);
               }

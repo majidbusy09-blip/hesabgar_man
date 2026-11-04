@@ -11694,7 +11694,7 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
           Row(
             children: [
               IconButton(
-                onPressed: () => _shiftMonth(1),
+                onPressed: () => _shiftMonth(-1),
                 icon: const Icon(Icons.chevron_right),
               ),
               Expanded(
@@ -11739,7 +11739,7 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
                 ),
               ),
               IconButton(
-                onPressed: () => _shiftMonth(-1),
+                onPressed: () => _shiftMonth(1),
                 icon: const Icon(Icons.chevron_left),
               ),
             ],

@@ -10,7 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'core.dart';
 import 'features.dart'
-    show Expense, ExpenseStore, Jalali, NumFmt, showJalaliDatePicker;
+    show Expense, ExpenseStore, Jalali, showJalaliDatePicker;
 import 'notifications.dart';
 import 'calendar_v2.dart' show CalEvent, CalendarStore;
 
@@ -1191,6 +1191,30 @@ class _CheckFormPageState extends State<CheckFormPage> {
     _phone.dispose();
     _desc.dispose();
     super.dispose();
+  }
+
+
+  Widget _bankIconWidget() {
+    final v = BankVisual.match(_bank.text);
+    if (v == null || _bank.text.trim().isEmpty) {
+      return const Icon(Icons.account_balance_outlined);
+    }
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: CircleAvatar(
+        backgroundColor: v.color,
+        radius: 14,
+        child: Text(
+          v.letter,
+          style: const TextStyle(
+            fontFamily: 'Vazirmatn',
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _pickImage({required bool back}) async {

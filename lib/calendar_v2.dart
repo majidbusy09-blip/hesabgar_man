@@ -1255,7 +1255,18 @@ class _CalendarScreenState extends State<CalendarScreen>
             : g0.weekday + 1;
     final sel = _selectedG ?? DateTime.now();
 
-    return Column(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: (details) {
+        final v = details.primaryVelocity ?? 0;
+        if (v.abs() < 200) return;
+        // کشیدن به چپ (velocity منفی در LTR) → ماه بعد؛ به راست → ماه قبل
+        // در RTL هم primaryVelocity همین معنا را دارد
+        setState(() {
+          _focused = _focused.addMonths(v < 0 ? 1 : -1);
+        });
+      },
+      child: Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
@@ -1263,7 +1274,7 @@ class _CalendarScreenState extends State<CalendarScreen>
             children: [
               IconButton.filledTonal(
                 onPressed: () =>
-                    setState(() => _focused = _focused.addMonths(-1)),
+                    setState(() => _focused = _focused.addMonths(1)),
                 icon: const Icon(Icons.chevron_right_rounded),
               ),
               Expanded(
@@ -1310,7 +1321,7 @@ class _CalendarScreenState extends State<CalendarScreen>
               ),
               IconButton.filledTonal(
                 onPressed: () =>
-                    setState(() => _focused = _focused.addMonths(1)),
+                    setState(() => _focused = _focused.addMonths(-1)),
                 icon: const Icon(Icons.chevron_left_rounded),
               ),
             ],
@@ -1461,6 +1472,7 @@ class _CalendarScreenState extends State<CalendarScreen>
         ),
         Expanded(flex: 4, child: _dayPanel(scheme)),
       ],
+      ),
     );
   }
 

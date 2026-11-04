@@ -11694,7 +11694,7 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
           Row(
             children: [
               IconButton(
-                onPressed: () => _shiftMonth(-1),
+                onPressed: () => _shiftMonth(1),
                 icon: const Icon(Icons.chevron_right),
               ),
               Expanded(
@@ -11739,7 +11739,7 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
                 ),
               ),
               IconButton(
-                onPressed: () => _shiftMonth(1),
+                onPressed: () => _shiftMonth(-1),
                 icon: const Icon(Icons.chevron_left),
               ),
             ],
@@ -11761,11 +11761,18 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
             ],
           ),
           const SizedBox(height: 6),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 7,
-            children: days,
+          GestureDetector(
+            onHorizontalDragEnd: (details) {
+              final v = details.primaryVelocity ?? 0;
+              if (v.abs() < 200) return;
+              _shiftMonth(v < 0 ? 1 : -1);
+            },
+            child: GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 7,
+              children: days,
+            ),
           ),
           const SizedBox(height: 12),
           Row(

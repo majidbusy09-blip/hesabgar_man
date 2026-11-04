@@ -1,6 +1,7 @@
 // ===== features.dart — screens & logic =====
 import 'core.dart';
 import 'calendar_v2.dart';
+import 'checks.dart';
 import 'notifications.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -2414,24 +2415,24 @@ class _FinanceScreenState extends State<FinanceScreen> {
             children: [
               Expanded(
                 child: _FinanceMainTile(
-                  icon: Icons.account_balance_outlined,
-                  title: 'سود سپرده',
+                  icon: Icons.handshake_outlined,
+                  title: 'تسهیلات من',
                   onTap: () => _openTool(
                     context,
-                    'سود سپرده',
-                    const _DepositTab(),
+                    'تسهیلات من',
+                    const _LoanTab(),
                   ),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _FinanceMainTile(
-                  icon: Icons.handshake_outlined,
-                  title: 'تسهیلات',
+                  icon: Icons.receipt_long_outlined,
+                  title: 'چک‌های من',
                   onTap: () => _openTool(
                     context,
-                    'تسهیلات',
-                    const _LoanTab(),
+                    'چک‌های من',
+                    const ChecksScreen(),
                   ),
                 ),
               ),
@@ -2453,6 +2454,17 @@ class _FinanceScreenState extends State<FinanceScreen> {
           _sectionTitle(context, 'محاسبات سریع'),
           _FinanceListGroup(
             children: [
+              _FinanceListRow(
+                icon: Icons.account_balance_outlined,
+                title: 'سود سپرده',
+                subtitle: 'سود روزانه، ماهانه و سالانه',
+                enabled: true,
+                onTap: () => _openTool(
+                  context,
+                  'سود سپرده',
+                  const _DepositTab(),
+                ),
+              ),
               _FinanceListRow(
                 icon: Icons.percent,
                 title: 'تخفیف و درصد',
@@ -2739,7 +2751,7 @@ class _FinanceListRow extends StatelessWidget {
 }
 
 // ---------- سود سپرده (ساده روزانه) ----------
-// ---------- سود سپرده (ساده روزانه) ----------
+
 class _DepositTab extends StatefulWidget {
   const _DepositTab();
 
@@ -6394,7 +6406,8 @@ class Expense {
 enum ExpenseLoadStatus { notLoaded, loaded, empty, error }
 
 class ExpenseStore {
-  static const _key = 'expenses_v2';
+  static const _key = 'expenses_v2',
+    'checks_v1';
   List<Expense> _items = [];
   ExpenseLoadStatus loadStatus = ExpenseLoadStatus.notLoaded;
   String? lastError;
@@ -11540,6 +11553,80 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
     });
   }
 
+  Future<void> _pickYear() async {
+    final nowY = Jalali.fromDateTime(DateTime.now()).year;
+    // بازهٔ معقول برای تسهیلات و هزینه‌ها
+    final years = [for (var y = nowY + 5; y >= nowY - 60; y--) y];
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.55,
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: scheme.onSurface.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text(
+                  'انتخاب سال شمسی',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: years.length,
+                  itemBuilder: (_, i) {
+                    final y = years[i];
+                    final sel = y == _year;
+                    return ListTile(
+                      title: Text(
+                        '$y',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight:
+                              sel ? FontWeight.w900 : FontWeight.w600,
+                          fontSize: sel ? 18 : 15,
+                          color: sel ? scheme.primary : null,
+                        ),
+                      ),
+                      selected: sel,
+                      onTap: () => Navigator.pop(ctx, y),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (selected != null) {
+      setState(() {
+        _year = selected;
+        final len = Jalali(_year, _month, 1).monthLength;
+        if (_day > len) _day = len;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -11612,14 +11699,44 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
                 icon: const Icon(Icons.chevron_right),
               ),
               Expanded(
-                child: Text(
-                  '${Jalali.monthNames[_month - 1]} $_year',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
+                child: Column(
+                  children: [
+                    Text(
+                      Jalali.monthNames[_month - 1],
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: _pickYear,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '$_year',
+                              style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                                color: scheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.arrow_drop_down,
+                                color: scheme.primary, size: 22),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               IconButton(
@@ -12619,6 +12736,7 @@ class FinancialDataPort {
     'recurring_v1',
     'savings_v1',
     'reminders_v1',
+    'checks_v1',
   ];
 
   static Future<Map<String, dynamic>> buildBackupMap() async {

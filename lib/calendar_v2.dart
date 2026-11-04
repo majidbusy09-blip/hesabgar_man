@@ -1216,14 +1216,30 @@ class _CalendarScreenState extends State<CalendarScreen>
                         color: season.primary,
                       ),
                     ),
-                    Text(
-                      '${_focused.year} · ${season.name}',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: season.accent,
+                    InkWell(
+                      onTap: _pickCalendarYear,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${_focused.year} · ${season.name}',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: season.accent,
+                              ),
+                            ),
+                            Icon(Icons.arrow_drop_down,
+                                size: 20, color: season.accent),
+                          ],
+                        ),
                       ),
                     ),
                   ],

@@ -13149,78 +13149,532 @@ class FinancialDataPort {
   }
 }
 
+
+class GuideItem {
+  final String title;
+  final String body;
+  final List<String> bullets;
+  const GuideItem({
+    required this.title,
+    required this.body,
+    this.bullets = const [],
+  });
+
+  String get searchable =>
+      '$title $body ${bullets.join(' ')}'.toLowerCase();
+}
+
+class GuideSection {
+  final String id;
+  final String title;
+  final IconData icon;
+  final List<GuideItem> items;
+  const GuideSection({
+    required this.id,
+    required this.title,
+    required this.icon,
+    required this.items,
+  });
+
+  String get searchable =>
+      '$title ${items.map((e) => e.searchable).join(' ')}'.toLowerCase();
+}
+
+/// راهنمای داخل اپ — با هر قابلیت جدید بخش‌ها را به‌روز کن
 class AppGuide {
   static const String title = 'راهنمای حسابگر من';
   static const String versionLabel = '۱.۰.۷';
 
-  /// متن راهنما — خلاصه و قابل‌فهم برای همه
-  static const String body = 'حسابگر من سه ماشین‌حساب و چند ابزار روزمره را یک‌جا جمع کرده است.\n\n■ ماشین‌حساب\n• ساده، علمی و حسابداری\n• تاریخچه تا پاک‌کردن دستی می‌ماند\n\n■ مدیریت مالی من\n• ثبت درآمد و هزینه با تاریخ شمسی و دسته‌های سفارشی\n• بودجه ماه و دسته، گزارش ماهانه/سالانه\n• برنامه‌های آینده و تراکنش تکرارشونده\n• اهداف پس‌انداز و یادآوری داخل برنامه\n• پشتیبان‌گیری، CSV و PDF گزارش از تنظیمات/گزارش\n\n■ مالی\nسود سپرده، وام، جدول اقساط، طلا، تخفیف و مالیات\n\n■ تقویم\nشمسی، میلادی و قمری با مناسبت‌ها\n\n■ تنظیمات\nتم، صدا، ویبره، تم از عکس، پشتیبان اطلاعات\n\nاعداد سه‌رقم‌سه‌رقم نمایش داده می‌شوند.';
+  /// متن ساده برای سازگاری با کدهای قدیمی (در صورت ارجاع)
+  static String get body =>
+      sections.map((s) => '■ ${s.title}\n${s.items.map((i) => '• ${i.title}').join('\n')}').join('\n\n');
+
+  static const List<GuideSection> sections = [
+    GuideSection(
+      id: 'welcome',
+      title: 'خوش‌آمدید',
+      icon: Icons.waving_hand_outlined,
+      items: [
+        GuideItem(
+          title: 'حسابگر من چیست؟',
+          body:
+              'مجموعه‌ای از ابزارهای محاسباتی، مالی و روزمره در یک برنامه فارسی: ماشین‌حساب، مدیریت درآمد و هزینه، تسهیلات و چک، تقویم و تنظیمات شخصی.',
+        ),
+      ],
+    ),
+    GuideSection(
+      id: 'calculator',
+      title: 'ماشین‌حساب',
+      icon: Icons.calculate_outlined,
+      items: [
+        GuideItem(
+          title: 'حالت ساده',
+          body: 'محاسبات روزمره با چهار عمل اصلی.',
+          bullets: [
+            'جمع، تفریق، ضرب و تقسیم',
+            'درصد و پرانتز',
+            'نمایش جداکننده هزارگان برای اعداد',
+          ],
+        ),
+        GuideItem(
+          title: 'حالت علمی',
+          body: 'برای محاسبات پیشرفته‌تر ریاضی.',
+          bullets: [
+            'سینوس، کسینوس، تانژانت و معکوس آن‌ها',
+            'لگاریتم، ریشه، توان و فاکتوریل',
+            'ثابت‌های π و e',
+            'حالت زاویه DEG (درجه) یا RAD (رادیان) را متناسب با مسئله انتخاب کنید',
+          ],
+        ),
+        GuideItem(
+          title: 'حالت حسابداری',
+          body: 'مناسب محاسبات سریع فروشگاهی و مالی.',
+          bullets: [
+            'جمع و تفریق با اعمال سریع',
+            'ضرب، تقسیم و درصد به سبک حسابداری',
+            'دکمه سه صفر برای ورود سریع مبالغ',
+            'نوار عملیات و تاریخچه محاسبات',
+          ],
+        ),
+        GuideItem(
+          title: 'تاریخچه و حافظه',
+          body: 'نتایج قبلی و حافظه عددی در دسترس است.',
+          bullets: [
+            'تاریخچه تا وقتی خودتان پاک نکنید باقی می‌ماند',
+            'MC پاک‌کردن حافظه · MR فراخوانی · M+ و M− تغییر حافظه',
+          ],
+        ),
+      ],
+    ),
+    GuideSection(
+      id: 'finance_home',
+      title: 'مدیریت مالی من',
+      icon: Icons.account_balance_wallet_outlined,
+      items: [
+        GuideItem(
+          title: 'ثبت درآمد و هزینه',
+          body: 'از صفحه هزینه‌ها تراکنش جدید ثبت کنید.',
+          bullets: [
+            'مبلغ، عنوان، تاریخ شمسی و دسته‌بندی را وارد کنید',
+            'اعداد با جداکننده هزارگان نمایش داده می‌شوند',
+          ],
+        ),
+        GuideItem(
+          title: 'دسته‌بندی‌ها',
+          body:
+              'درآمد و هزینه را با دسته‌های پیش‌فرض یا سفارشی مرتب کنید تا گزارش‌ها دقیق‌تر باشد.',
+        ),
+        GuideItem(
+          title: 'گزارش‌ها و بودجه',
+          body:
+              'درآمد و هزینه ماهانه و سالانه، سهم هر دسته و مقایسه با بودجه را ببینید.',
+        ),
+        GuideItem(
+          title: 'برنامه آینده و تکرارشونده',
+          body:
+              'تعهدات و دریافت‌های آینده یا پرداخت‌های دوره‌ای را ثبت کنید. این موارد به‌تنهایی تراکنش قطعی نیستند مگر جداگانه ثبت شوند.',
+        ),
+        GuideItem(
+          title: 'اهداف پس‌انداز و یادآوری',
+          body:
+              'هدف پس‌انداز تعریف کنید و برای پیگیری کارها از یادآوری داخل برنامه استفاده کنید.',
+        ),
+      ],
+    ),
+    GuideSection(
+      id: 'finance_tools',
+      title: 'ابزارهای مالی',
+      icon: Icons.insights_outlined,
+      items: [
+        GuideItem(
+          title: 'تسهیلات من',
+          body: 'محاسبه و پیگیری وام و اقساط.',
+          bullets: [
+            'محاسبه قسط: مبلغ وام، نرخ سود و تعداد اقساط',
+            'مشاهده قسط ماهانه، مجموع پرداختی و جدول بازپرداخت',
+            'نرخ واقعی وام از روی مبلغ، قسط و تعداد اقساط',
+            'ثبت وام، اقساط پرداخت‌شده، یادآوری و اتصال به تقویم در صورت فعال بودن گزینه‌ها',
+          ],
+        ),
+        GuideItem(
+          title: 'چک‌های من',
+          body: 'مدیریت چک‌های دریافتی و پرداختی.',
+          bullets: [
+            'ثبت مبلغ، سررسید، طرف مقابل و اطلاعات اختیاری (صیاد، بانک، تصویر)',
+            'وضعیت‌ها: وصول/پاس، برگشت، منتقل، باطل',
+            'یادآوری محلی قبل از سررسید (با مجوز اعلان گوشی)',
+            'با تأیید شما، وصول می‌تواند درآمد و پاس می‌تواند هزینه ثبت شود — بدون تکرار',
+          ],
+        ),
+        GuideItem(
+          title: 'محاسبه طلا',
+          body:
+              'قیمت گرم، وزن، اجرت، سود فروشنده و مالیات را وارد کنید یا نرخ آنلاین بگیرید. نتیجه تقریبی و بر اساس ورودی شماست.',
+        ),
+        GuideItem(
+          title: 'سود سپرده و تخفیف',
+          body:
+              'سود سپرده با مبلغ و نرخ؛ و محاسبه تخفیف یا سود و زیان فروش از همین بخش.',
+        ),
+        GuideItem(
+          title: 'تبدیل عدد به حروف',
+          body:
+              'مبلغ عددی را به نوشتار فارسی تبدیل کنید؛ مناسب مبلغ چک و اسناد.',
+        ),
+      ],
+    ),
+    GuideSection(
+      id: 'calendar',
+      title: 'تقویم',
+      icon: Icons.calendar_month_outlined,
+      items: [
+        GuideItem(
+          title: 'گاه‌شماری‌ها و نماها',
+          body:
+              'تقویم شمسی، میلادی و قمری. نماهای ماه، هفته، روز و فهرست را انتخاب کنید.',
+        ),
+        GuideItem(
+          title: 'رویداد، یادداشت و تسک',
+          body:
+              'برای هر روز رویداد با تکرار و یادآوری، یادداشت یا تسک اضافه کنید. مناسبت‌های شخصی سالانه نیز قابل ثبت‌اند.',
+        ),
+        GuideItem(
+          title: 'اعلان‌ها',
+          body:
+              'برای دریافت اعلان واقعی سیستم‌عامل، مجوز اعلان را در تنظیمات گوشی فعال کنید.',
+        ),
+        GuideItem(
+          title: 'ابزارهای تقویم',
+          body: 'اوقات شرعی تقریبی بر اساس شهر، جهت قبله و ذکرشمار.',
+          bullets: [
+            'اوقات شرعی جایگزین اعلام رسمی مراجع نیست',
+            'قبله‌نما به حسگر گوشی وابسته است؛ از فلز و آهنربا فاصله بگیرید',
+          ],
+        ),
+      ],
+    ),
+    GuideSection(
+      id: 'tools',
+      title: 'مبدل و جمع مرکب',
+      icon: Icons.swap_horiz_rounded,
+      items: [
+        GuideItem(
+          title: 'مبدل واحد',
+          body:
+              'مقدار را وارد کنید، واحد مبدأ و مقصد را انتخاب کنید. گروه‌هایی مانند طول، وزن، زمان و زاویه در فهرست برنامه هستند.',
+        ),
+        GuideItem(
+          title: 'جمع و تفریق مرکب',
+          body:
+              'برای مقادیر چندبخشی (مثل ساعت و دقیقه) واحد را انتخاب کنید، مقادیر را وارد و نتیجه را محاسبه کنید.',
+        ),
+      ],
+    ),
+    GuideSection(
+      id: 'settings',
+      title: 'تنظیمات و پشتیبان',
+      icon: Icons.settings_outlined,
+      items: [
+        GuideItem(
+          title: 'تم و ظاهر',
+          body:
+              'از گالری تم‌ها ظاهر را عوض کنید یا با انتخاب عکس، رنگ‌های تم اختصاصی بسازید.',
+        ),
+        GuideItem(
+          title: 'صدا و ویبره',
+          body: 'بازخورد دکمه‌ها را از تنظیمات روشن یا خاموش کنید.',
+        ),
+        GuideItem(
+          title: 'پشتیبان‌گیری و بازیابی',
+          body:
+              'فایل JSON پشتیبان بسازید و در محل امن نگه دارید. بازیابی ممکن است داده فعلی را جایگزین کند؛ قبلش نسخه ایمنی بگیرید.',
+        ),
+        GuideItem(
+          title: 'خروجی CSV و گزارش',
+          body:
+              'تراکنش‌ها را برای Excel به‌صورت CSV بگیرید. گزارش PDF نیز در بخش گزارش مالی در دسترس است.',
+        ),
+      ],
+    ),
+    GuideSection(
+      id: 'tips',
+      title: 'نکات مهم',
+      icon: Icons.lightbulb_outline,
+      items: [
+        GuideItem(
+          title: 'استفاده بهتر',
+          body: '',
+          bullets: [
+            'مبالغ و تاریخ‌ها را دقیق ثبت کنید و دسته‌بندی مناسب انتخاب کنید',
+            'از اطلاعات مهم مرتب پشتیبان بگیرید',
+            'برای اعلان‌ها مجوز گوشی را بدهید',
+            'در ماشین‌حساب علمی حالت DEG یا RAD را درست بگذارید',
+            'نرخ طلای آنلاین ممکن است با بازار اختلاف داشته باشد',
+            'ابزارهای مالی کمک تصمیم‌گیری‌اند و جایگزین قرارداد رسمی بانکی نیستند',
+          ],
+        ),
+      ],
+    ),
+  ];
 }
 
-class GuideScreen extends StatelessWidget {
+class GuideScreen extends StatefulWidget {
   const GuideScreen({super.key});
+
+  @override
+  State<GuideScreen> createState() => _GuideScreenState();
+}
+
+class _GuideScreenState extends State<GuideScreen> {
+  final _query = TextEditingController();
+  String _q = '';
+  final Set<String> _expanded = {};
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  List<GuideSection> get _filtered {
+    final q = _q.trim().toLowerCase();
+    if (q.isEmpty) return AppGuide.sections;
+    final out = <GuideSection>[];
+    for (final s in AppGuide.sections) {
+      if (s.searchable.contains(q)) {
+        final items = s.items
+            .where((i) =>
+                i.searchable.contains(q) || s.title.toLowerCase().contains(q))
+            .toList();
+        out.add(GuideSection(
+          id: s.id,
+          title: s.title,
+          icon: s.icon,
+          items: items.isEmpty ? s.items : items,
+        ));
+      }
+    }
+    return out;
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final sections = _filtered;
+
     return Scaffold(
       appBar: AppBar(title: const Text(AppGuide.title)),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      body: Column(
         children: [
-          Card(
-            color: scheme.primaryContainer.withValues(alpha: 0.35),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.menu_book_rounded, color: scheme.primary, size: 28),
-                  const SizedBox(width: 12),
-                  Expanded(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _query,
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontFamily: 'Vazirmatn'),
+              decoration: InputDecoration(
+                hintText: 'جست‌وجو در راهنما… مثلاً چک، وام، تم',
+                hintStyle:
+                    const TextStyle(fontFamily: 'Vazirmatn', fontSize: 13),
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _q.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          _query.clear();
+                          setState(() => _q = '');
+                        },
+                      ),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() {
+                _q = v;
+                final qq = v.trim().toLowerCase();
+                if (qq.isNotEmpty) {
+                  _expanded
+                    ..clear()
+                    ..addAll(AppGuide.sections
+                        .where((s) => s.searchable.contains(qq))
+                        .map((s) => s.id));
+                }
+              }),
+            ),
+          ),
+          Expanded(
+            child: sections.isEmpty
+                ? Center(
                     child: Text(
-                      'آشنایی سریع با امکانات اپ',
+                      'موردی پیدا نشد',
                       style: TextStyle(
                         fontFamily: 'Vazirmatn',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        color: scheme.onSurface,
+                        color: scheme.onSurface.withValues(alpha: 0.5),
                       ),
                     ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+                    itemCount: sections.length + 2,
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        return Card(
+                          color: scheme.primaryContainer.withValues(alpha: 0.35),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Icon(Icons.menu_book_rounded,
+                                    color: scheme.primary, size: 28),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'بخش موردنظر را باز کنید یا در بالا جست‌وجو کنید. نسخه ${AppGuide.versionLabel}',
+                                    style: TextStyle(
+                                      fontFamily: 'Vazirmatn',
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13.5,
+                                      color: scheme.onSurface,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      if (index == sections.length + 1) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            'حسابگر من؛ محاسبه، برنامه‌ریزی و مدیریت مالی در یک‌جا.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 12.5,
+                              color: scheme.onSurface.withValues(alpha: 0.55),
+                              height: 1.5,
+                            ),
+                          ),
+                        );
+                      }
+                      final s = sections[index - 1];
+                      final open = _expanded.contains(s.id) ||
+                          (_q.trim().isNotEmpty &&
+                              s.searchable.contains(_q.trim().toLowerCase()));
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        clipBehavior: Clip.antiAlias,
+                        child: Theme(
+                          data: Theme.of(context).copyWith(
+                            dividerColor: Colors.transparent,
+                          ),
+                          child: ExpansionTile(
+                            key: ValueKey('guide_${s.id}_$open'),
+                            initiallyExpanded: open,
+                            onExpansionChanged: (v) {
+                              setState(() {
+                                if (v) {
+                                  _expanded.add(s.id);
+                                } else {
+                                  _expanded.remove(s.id);
+                                }
+                              });
+                            },
+                            leading: CircleAvatar(
+                              backgroundColor:
+                                  scheme.primary.withValues(alpha: 0.12),
+                              child: Icon(s.icon,
+                                  color: scheme.primary, size: 22),
+                            ),
+                            title: Text(
+                              s.title,
+                              style: const TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
+                            ),
+                            children: [
+                              for (final item in s.items)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                      16, 0, 16, 14),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      Text(
+                                        item.title,
+                                        style: TextStyle(
+                                          fontFamily: 'Vazirmatn',
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                          color: scheme.primary,
+                                        ),
+                                      ),
+                                      if (item.body.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          item.body,
+                                          style: const TextStyle(
+                                            fontFamily: 'Vazirmatn',
+                                            fontSize: 13.5,
+                                            height: 1.65,
+                                          ),
+                                        ),
+                                      ],
+                                      if (item.bullets.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        for (final b in item.bullets)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                                bottom: 4),
+                                            child: Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text('•  ',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Vazirmatn',
+                                                      color: scheme.primary,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    )),
+                                                Expanded(
+                                                  child: Text(
+                                                    b,
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Vazirmatn',
+                                                      fontSize: 13.2,
+                                                      height: 1.55,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              child: SelectableText(
-                AppGuide.body,
-                style: const TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 14.5,
-                  height: 1.75,
-                ),
-                textAlign: TextAlign.justify,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'نسخه ${AppGuide.versionLabel}',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Vazirmatn',
-              fontSize: 12,
-              color: scheme.onSurface.withValues(alpha: 0.55),
-            ),
           ),
         ],
       ),
     );
   }
 }
+
+
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});

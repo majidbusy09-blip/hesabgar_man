@@ -3089,34 +3089,39 @@ class _LoanTabState extends State<_LoanTab> {
     try {
       await AppNotifications.instance.ensurePermissionForReminders();
       final allDates = <DateTime>[
-        for (var i = 0; i < loan.months; i++)
-          _jalaliPaymentDateTime(startJ, loan.paymentDay, baseOffset + i),
+        for (var i = 0; i < loan.months; i++) loan.dueDateForIndex(i),
       ];
-      // لغو و زمان‌بندی با ایندکس واقعی قسط
-      for (var i = 0; i < allDates.length; i++) {
-        await AppNotifications.instance.cancel(
-            AppNotifications.loanNotifId(loan.id, i));
-        await AppNotifications.instance.cancel(
-            AppNotifications.loanNotifId(loan.id, i, dayBefore: true));
+      final hour = loan.reminderHour.clamp(0, 23);
+      final days = loan.reminderDays.isNotEmpty
+          ? loan.reminderDays
+          : <int>[
+              if (loan.remindSameDay) 0,
+              if (loan.remindDayBefore) 1,
+            ];
+      for (var i = 0; i < loan.months; i++) {
+        for (var d = 0; d <= 30; d++) {
+          await AppNotifications.instance
+              .cancel(AppNotifications.loanNotifId(loan.id, i, daysBefore: d));
+        }
       }
       for (var i = 0; i < allDates.length; i++) {
         if (loan.isPaid(i)) continue;
         final day = allDates[i];
-        final payMorning = DateTime(day.year, day.month, day.day, 9, 0);
-        if (loan.remindSameDay) {
+        for (final d in days) {
+          final when = DateTime(day.year, day.month, day.day, hour)
+              .subtract(Duration(days: d));
+          final remain = d == 0
+              ? 'امروز موعد قسط ${i + 1}'
+              : d == 1
+                  ? 'فردا موعد قسط ${i + 1}'
+                  : '$d روز تا قسط ${i + 1}';
           await AppNotifications.instance.schedule(
-            id: AppNotifications.loanNotifId(loan.id, i),
+            id: AppNotifications.loanNotifId(loan.id, i, daysBefore: d),
             title: 'قسط: ${loan.title}',
-            body: 'امروز موعد قسط ${i + 1} است.',
-            when: payMorning,
-          );
-        }
-        if (loan.remindDayBefore) {
-          await AppNotifications.instance.schedule(
-            id: AppNotifications.loanNotifId(loan.id, i, dayBefore: true),
-            title: 'فردا قسط: ${loan.title}',
-            body: 'فردا موعد پرداخت قسط ${i + 1} است.',
-            when: payMorning.subtract(const Duration(days: 1)),
+            body:
+                '$remain · ${NumFmt.format(loan.monthlyPayment.round())} تومان',
+            when: when,
+            payload: 'loan:${loan.id}:$i',
           );
         }
       }
@@ -3157,6 +3162,60 @@ class _LoanTabState extends State<_LoanTab> {
 
   Future<void> _togglePaid(_TrackedLoan loan, int index, {bool quiet = false}) async {
     final wasPaid = loan.isPaid(index);
+
+    if (!wasPaid) {
+      // تأیید پرداخت
+      if (!quiet && mounted) {
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('ثبت پرداخت قسط؟',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+            content: Text(
+              'قسط ${index + 1} از «${loan.title}» به‌عنوان پرداخت‌شده علامت بخورد؟',
+              style: const TextStyle(fontFamily: 'Vazirmatn'),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('انصراف',
+                      style: TextStyle(fontFamily: 'Vazirmatn'))),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('پرداخت شد',
+                      style: TextStyle(fontFamily: 'Vazirmatn'))),
+            ],
+          ),
+        );
+        if (ok != true) return;
+      }
+    } else {
+      if (!quiet && mounted) {
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('برگشت پرداخت؟',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+            content: const Text(
+              'این قسط دوباره پرداخت‌نشده شود؟',
+              style: TextStyle(fontFamily: 'Vazirmatn'),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('انصراف',
+                      style: TextStyle(fontFamily: 'Vazirmatn'))),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('بله',
+                      style: TextStyle(fontFamily: 'Vazirmatn'))),
+            ],
+          ),
+        );
+        if (ok != true) return;
+      }
+    }
+
     final next = Set<int>.from(loan.paidIndices);
     if (wasPaid) {
       next.remove(index);
@@ -3169,30 +3228,113 @@ class _LoanTabState extends State<_LoanTab> {
     setState(() => _loans[i] = updated);
     await _saveLoans();
 
-    // ثبت خودکار در هزینه فقط اگر هنگام تعریف تسهیلات فعال شده باشد
-    if (!wasPaid && loan.autoAddExpenses && mounted) {
-      try {
-        final store = ExpenseStore();
-        await store.load();
-        final exists = store.items.any((e) => e.id == 'loan_pay_${loan.id}_$index');
-        if (!exists) {
-          await store.add(Expense(
-            id: 'loan_pay_${loan.id}_$index',
-            title: 'قسط ${index + 1}: ${loan.title}',
-            amount: loan.monthlyPayment,
-            category: 'مسکن',
-            date: DateTime.now(),
-            note: 'از بخش تسهیلات (خودکار)',
-            isIncome: false,
-          ));
-          if (!quiet && mounted) {
+    // اعلان این قسط را با وضعیت جدید همگام کن
+    try {
+      await _syncLoanToCalendar(updated);
+    } catch (e) {
+      debugPrint('toggle sync: $e');
+    }
+
+    // ثبت هزینه فقط با تأیید صریح (نه silent)
+    if (!wasPaid && mounted) {
+      final expId = 'loan_installment_${loan.id}_$index';
+      bool wantExpense = loan.autoAddExpenses;
+      if (!quiet) {
+        final ask = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('ثبت در هزینه‌ها؟',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+            content: Text(
+              'آیا می‌خواهید قسط ${index + 1} '
+              '(${NumFmt.format(loan.monthlyPayment.round())} تومان) '
+              'در بخش هزینه‌ها هم ثبت شود؟',
+              style: const TextStyle(fontFamily: 'Vazirmatn'),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('خیر',
+                      style: TextStyle(fontFamily: 'Vazirmatn'))),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('بله، ثبت هزینه',
+                      style: TextStyle(fontFamily: 'Vazirmatn'))),
+            ],
+          ),
+        );
+        wantExpense = ask == true;
+      }
+      if (wantExpense) {
+        try {
+          final store = ExpenseStore();
+          await store.load();
+          final exists = store.items.any((e) => e.id == expId);
+          if (!exists) {
+            await store.add(Expense(
+              id: expId,
+              title: 'قسط ${index + 1}: ${loan.title}',
+              amount: loan.monthlyPayment,
+              category: 'مسکن',
+              date: DateTime.now(),
+              note: 'از بخش تسهیلات · ref:${loan.id}:$index',
+              isIncome: false,
+            ));
+          }
+          if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Text('قسط در هزینه‌ها ثبت شد',
                   style: TextStyle(fontFamily: 'Vazirmatn')),
             ));
           }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('وضعیت قسط ذخیره شد؛ ثبت هزینه ناموفق: $e',
+                  style: const TextStyle(fontFamily: 'Vazirmatn')),
+            ));
+          }
         }
-      } catch (_) {}
+      }
+    } else if (wasPaid && mounted && !quiet) {
+      // برگشت پرداخت — هزینه را خودکار حذف نکن
+      final expId = 'loan_installment_${loan.id}_$index';
+      final oldId = 'loan_pay_${loan.id}_$index';
+      try {
+        final store = ExpenseStore();
+        await store.load();
+        final hit = store.items.where((e) => e.id == expId || e.id == oldId);
+        if (hit.isNotEmpty) {
+          final del = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('هزینه مرتبط',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+              content: const Text(
+                'برای این قسط هزینه ثبت شده. حذف شود؟',
+                style: TextStyle(fontFamily: 'Vazirmatn'),
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('بماند',
+                        style: TextStyle(fontFamily: 'Vazirmatn'))),
+                FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('حذف هزینه',
+                        style: TextStyle(fontFamily: 'Vazirmatn'))),
+              ],
+            ),
+          );
+          if (del == true) {
+            for (final e in hit) {
+              await store.remove(e.id);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('unpay expense: $e');
+      }
     }
   }
 
@@ -3466,6 +3608,7 @@ class _LoanTabState extends State<_LoanTab> {
   }
 
   Future<void> _addTrackedLoan() async {
+    // remDays/remHour در دیالوگ محلی تعریف می‌شوند
     final titleC = TextEditingController();
     final amountC = TextEditingController();
     final payC = TextEditingController();
@@ -3475,6 +3618,8 @@ class _LoanTabState extends State<_LoanTab> {
     final paidAlreadyC = TextEditingController();
     var remindDay = true;
     var remindBefore = true;
+    final remDays = <int>{0, 1};
+    var remHour = 9;
     var autoExpense = false;
     DateTime start = DateTime.now();
 
@@ -3625,22 +3770,64 @@ class _LoanTabState extends State<_LoanTab> {
                     value: autoExpense,
                     onChanged: (v) => setL(() => autoExpense = v),
                   ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('یادآوری همان روز پرداخت',
-                        style: TextStyle(fontFamily: 'Vazirmatn')),
-                    value: remindDay,
-                    onChanged: (v) => setL(() => remindDay = v),
+                  const Text('آلارم قسط (اعلان سیستم)',
+                      style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final d in [0, 1, 3, 7])
+                        FilterChip(
+                          label: Text(
+                            d == 0
+                                ? 'همان روز'
+                                : d == 1
+                                    ? '۱ روز قبل'
+                                    : '$d روز قبل',
+                            style: const TextStyle(fontFamily: 'Vazirmatn'),
+                          ),
+                          selected: remDays.contains(d),
+                          onSelected: (sel) => setL(() {
+                            if (sel) {
+                              remDays.add(d);
+                            } else {
+                              remDays.remove(d);
+                            }
+                            remindDay = remDays.contains(0);
+                            remindBefore = remDays.contains(1);
+                          }),
+                        ),
+                    ],
                   ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('یادآوری یک روز قبل',
-                        style: TextStyle(fontFamily: 'Vazirmatn')),
-                    value: remindBefore,
-                    onChanged: (v) => setL(() => remindBefore = v),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Text('ساعت آلارم:',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                      const SizedBox(width: 12),
+                      DropdownButton<int>(
+                        value: remHour,
+                        items: [
+                          for (var h = 7; h <= 21; h++)
+                            DropdownMenuItem(
+                              value: h,
+                              child: Text(
+                                '${h.toString().padLeft(2, '0')}:00',
+                                style: const TextStyle(fontFamily: 'Vazirmatn'),
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setL(() => remHour = v);
+                        },
+                      ),
+                    ],
                   ),
                   Text(
-                    'یادآوری داخل تقویم و برنامه ثبت می‌شود (اعلان سیستم‌عامل جداگانه نیست).',
+                    'اعلان واقعی گوشی در ساعت انتخاب‌شده (نیاز به مجوز اعلان).',
                     style: TextStyle(
                       fontFamily: 'Vazirmatn',
                       fontSize: 11,
@@ -3721,6 +3908,8 @@ class _LoanTabState extends State<_LoanTab> {
       ratePercent: rate,
       remindSameDay: remindDay,
       remindDayBefore: remindBefore,
+      reminderDays: remDays.toList()..sort(),
+      reminderHour: remHour,
       note: note,
       paidIndices: paidSet,
       autoAddExpenses: autoExpense,
@@ -3760,6 +3949,12 @@ class _LoanTabState extends State<_LoanTab> {
         TextEditingController(text: '${existing.paidCount}');
     var remindDay = existing.remindSameDay;
     var remindBefore = existing.remindDayBefore;
+    final remDays = <int>{
+      ...existing.reminderDays,
+      if (existing.remindSameDay) 0,
+      if (existing.remindDayBefore) 1,
+    };
+    var remHour = existing.reminderHour.clamp(7, 21);
     var autoExpense = existing.autoAddExpenses;
     final start = existing.start;
 
@@ -3857,19 +4052,62 @@ class _LoanTabState extends State<_LoanTab> {
                     value: autoExpense,
                     onChanged: (v) => setL(() => autoExpense = v),
                   ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('یادآوری همان روز',
-                        style: TextStyle(fontFamily: 'Vazirmatn')),
-                    value: remindDay,
-                    onChanged: (v) => setL(() => remindDay = v),
+                  const Text('آلارم قسط (اعلان سیستم)',
+                      style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final d in [0, 1, 3, 7])
+                        FilterChip(
+                          label: Text(
+                            d == 0
+                                ? 'همان روز'
+                                : d == 1
+                                    ? '۱ روز قبل'
+                                    : '$d روز قبل',
+                            style: const TextStyle(fontFamily: 'Vazirmatn'),
+                          ),
+                          selected: remDays.contains(d),
+                          onSelected: (sel) => setL(() {
+                            if (sel) {
+                              remDays.add(d);
+                            } else {
+                              remDays.remove(d);
+                            }
+                            remindDay = remDays.contains(0);
+                            remindBefore = remDays.contains(1);
+                          }),
+                        ),
+                    ],
                   ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('یادآوری یک روز قبل',
-                        style: TextStyle(fontFamily: 'Vazirmatn')),
-                    value: remindBefore,
-                    onChanged: (v) => setL(() => remindBefore = v),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Text('ساعت آلارم:',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                      const SizedBox(width: 12),
+                      DropdownButton<int>(
+                        value: remHour,
+                        items: [
+                          for (var h = 7; h <= 21; h++)
+                            DropdownMenuItem(
+                              value: h,
+                              child: Text(
+                                '${h.toString().padLeft(2, '0')}:00',
+                                style:
+                                    const TextStyle(fontFamily: 'Vazirmatn'),
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setL(() => remHour = v);
+                        },
+                      ),
+                    ],
                   ),
                   FilledButton(
                     onPressed: () => Navigator.pop(ctx, true),
@@ -3922,6 +4160,8 @@ class _LoanTabState extends State<_LoanTab> {
       ratePercent: _rateFor(p, pm, months),
       remindSameDay: remindDay,
       remindDayBefore: remindBefore,
+      reminderDays: remDays.toList()..sort(),
+      reminderHour: remHour,
       paidIndices: paidSet,
       note: existing.note,
       autoAddExpenses: autoExpense,
@@ -4636,6 +4876,10 @@ class _TrackedLoan {
   final double ratePercent;
   final bool remindSameDay;
   final bool remindDayBefore;
+  /// روزهای قبل از سررسید برای آلارم (۰=همان روز، ۱=یک روز قبل، ...)
+  final List<int> reminderDays;
+  /// ساعت آلارم محلی (۰–۲۳)، پیش‌فرض ۹ صبح
+  final int reminderHour;
   final Set<int> paidIndices;
   final String? note;
   final bool autoAddExpenses;
@@ -4651,10 +4895,17 @@ class _TrackedLoan {
     required this.ratePercent,
     required this.remindSameDay,
     required this.remindDayBefore,
+    List<int>? reminderDays,
+    this.reminderHour = 9,
     Set<int>? paidIndices,
     this.note,
     this.autoAddExpenses = false,
-  }) : paidIndices = paidIndices ?? {};
+  })  : paidIndices = paidIndices ?? {},
+        reminderDays = reminderDays ??
+            [
+              if (remindSameDay) 0,
+              if (remindDayBefore) 1,
+            ];
 
   int get paidCount => paidIndices.length;
   int get remainingCount => (months - paidCount).clamp(0, months);
@@ -4663,13 +4914,45 @@ class _TrackedLoan {
 
   bool isPaid(int index) => paidIndices.contains(index);
 
-  /// ایندکس قسط برای ماه جلالی داده‌شده؛ null اگر خارج از بازه وام
+  /// ایندکس قسط برای ماه جلالی — مرجع = اولین قسط واقعی (نه لزوماً ماه شروع)
   int? installmentIndexForJalaliMonth(Jalali month) {
-    final startJ = Jalali.fromDateTime(start);
+    final first = firstPaymentDate;
+    final firstJ = Jalali.fromDateTime(first);
     final monthsPassed =
-        (month.year - startJ.year) * 12 + (month.month - startJ.month);
+        (month.year - firstJ.year) * 12 + (month.month - firstJ.month);
     if (monthsPassed < 0 || monthsPassed >= months) return null;
     return monthsPassed;
+  }
+
+  /// تاریخ اولین قسط بر اساس روز پرداخت شمسی
+  DateTime get firstPaymentDate {
+    final startJ = Jalali.fromDateTime(start);
+    final len = startJ.monthLength;
+    final day = paymentDay.clamp(1, len);
+    if (startJ.day <= day) {
+      return Jalali(startJ.year, startJ.month, day).toDateTime();
+    }
+    var y = startJ.year;
+    var m = startJ.month + 1;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+    final len2 = Jalali(y, m, 1).monthLength;
+    return Jalali(y, m, paymentDay.clamp(1, len2)).toDateTime();
+  }
+
+  /// سررسید قسط با شماره ۰-based
+  DateTime dueDateForIndex(int index) {
+    final firstJ = Jalali.fromDateTime(firstPaymentDate);
+    var y = firstJ.year;
+    var m = firstJ.month + index;
+    while (m > 12) {
+      m -= 12;
+      y++;
+    }
+    final len = Jalali(y, m, 1).monthLength;
+    return Jalali(y, m, paymentDay.clamp(1, len)).toDateTime();
   }
 
   _TrackedLoan copyWith({
@@ -4682,6 +4965,8 @@ class _TrackedLoan {
     double? ratePercent,
     bool? remindSameDay,
     bool? remindDayBefore,
+    List<int>? reminderDays,
+    int? reminderHour,
     Set<int>? paidIndices,
     String? note,
     bool clearNote = false,
@@ -4698,6 +4983,8 @@ class _TrackedLoan {
         ratePercent: ratePercent ?? this.ratePercent,
         remindSameDay: remindSameDay ?? this.remindSameDay,
         remindDayBefore: remindDayBefore ?? this.remindDayBefore,
+        reminderDays: reminderDays ?? this.reminderDays,
+        reminderHour: reminderHour ?? this.reminderHour,
         paidIndices: paidIndices ?? this.paidIndices,
         note: clearNote ? null : (note ?? this.note),
         autoAddExpenses: autoAddExpenses ?? this.autoAddExpenses,
@@ -4714,6 +5001,8 @@ class _TrackedLoan {
         'ratePercent': ratePercent,
         'remindSameDay': remindSameDay,
         'remindDayBefore': remindDayBefore,
+        'reminderDays': reminderDays,
+        'reminderHour': reminderHour,
         'paidIndices': paidIndices.toList()..sort(),
         'note': note,
         'autoAddExpenses': autoAddExpenses,
@@ -4738,6 +5027,17 @@ class _TrackedLoan {
       ratePercent: (j['ratePercent'] as num?)?.toDouble() ?? 0,
       remindSameDay: j['remindSameDay'] as bool? ?? true,
       remindDayBefore: j['remindDayBefore'] as bool? ?? true,
+      reminderDays: () {
+        final raw = j['reminderDays'];
+        if (raw is List && raw.isNotEmpty) {
+          return raw.map((e) => (e as num).toInt()).toList();
+        }
+        final days = <int>[];
+        if (j['remindSameDay'] as bool? ?? true) days.add(0);
+        if (j['remindDayBefore'] as bool? ?? true) days.add(1);
+        return days;
+      }(),
+      reminderHour: (j['reminderHour'] as num?)?.toInt() ?? 9,
       paidIndices: paid,
       note: j['note'] as String?,
       autoAddExpenses: j['autoAddExpenses'] as bool? ?? false,
@@ -12022,7 +12322,15 @@ class CalendarOccasion {
   final int day;
   final String title;
   final bool isHoliday;
-  const CalendarOccasion(this.month, this.day, this.title, {this.isHoliday = false});
+  /// برجسته‌نمایی در شبکهٔ تقویم (مثل روز دانش‌آموز)
+  final bool isFeatured;
+  const CalendarOccasion(
+    this.month,
+    this.day,
+    this.title, {
+    this.isHoliday = false,
+    this.isFeatured = false,
+  });
 }
 
 class OccasionData {
@@ -12040,6 +12348,7 @@ class OccasionData {
     CalendarOccasion(12, 29, 'ملی شدن صنعت نفت', isHoliday: true),
     CalendarOccasion(7, 13, 'روز نیروی دریایی'),
     CalendarOccasion(8, 4, 'روز ارتش'),
+    CalendarOccasion(8, 13, 'روز دانش‌آموز', isFeatured: true),
     CalendarOccasion(9, 16, 'روز دانشجو'),
     CalendarOccasion(10, 12, 'روز میلاد حضرت رسول (تقریبی ملی)'),
     CalendarOccasion(2, 25, 'روز بزرگداشت فردوسی'),
@@ -12755,6 +13064,7 @@ class FinancialDataPort {
     'savings_v1',
     'reminders_v1',
     'checks_v1',
+    'tracked_loans_v1',
   ];
 
   static Future<Map<String, dynamic>> buildBackupMap() async {

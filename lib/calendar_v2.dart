@@ -1381,6 +1381,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                 final holiday = _store.settings.showHolidays &&
                     (occasions.any((o) => o.isHoliday) ||
                         j.weekdayIndex == 6);
+                final featured = occasions.any((o) => o.isFeatured);
                 final hasEv = _store.occurrencesOn(g).isNotEmpty;
                 final hasNote = _store.notesOn(g).isNotEmpty;
                 final hasTask = _store.tasksOn(g).isNotEmpty;
@@ -1395,7 +1396,9 @@ class _CalendarScreenState extends State<CalendarScreen>
                         ? scheme.primary
                         : (isToday
                             ? scheme.primaryContainer.withValues(alpha: 0.65)
-                            : Colors.transparent),
+                            : (featured
+                                ? scheme.tertiaryContainer.withValues(alpha: 0.55)
+                                : Colors.transparent)),
                     borderRadius: BorderRadius.circular(12),
                     child: InkWell(
                       onTap: () => setState(() => _selectedG = g),
@@ -1420,7 +1423,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                               style: TextStyle(
                                 fontFamily: 'Vazirmatn',
                                 fontSize: 15,
-                                fontWeight: isSel || isToday
+                                fontWeight: isSel || isToday || featured
                                     ? FontWeight.w800
                                     : FontWeight.w500,
                                 color: isSel
@@ -1453,6 +1456,10 @@ class _CalendarScreenState extends State<CalendarScreen>
                                         ? scheme.onPrimary
                                             .withValues(alpha: 0.7)
                                         : scheme.secondary),
+                                  if (featured)
+                                    _dot(isSel
+                                        ? scheme.onPrimary
+                                        : scheme.tertiary),
                                 ],
                               ),
                             ),
@@ -1543,13 +1550,25 @@ class _CalendarScreenState extends State<CalendarScreen>
             children: [
               for (final o in occ)
                 Chip(
-                  label: Text(o.title,
-                      style: const TextStyle(
-                          fontFamily: 'Vazirmatn', fontSize: 11)),
+                  avatar: o.isFeatured
+                      ? Icon(Icons.star_rounded,
+                          size: 16, color: scheme.tertiary)
+                      : null,
+                  label: Text(
+                    o.title,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: o.isFeatured ? 12.5 : 11,
+                      fontWeight:
+                          o.isFeatured ? FontWeight.w800 : FontWeight.w500,
+                    ),
+                  ),
                   visualDensity: VisualDensity.compact,
                   backgroundColor: o.isHoliday
                       ? scheme.errorContainer
-                      : scheme.surfaceContainerHighest,
+                      : (o.isFeatured
+                          ? scheme.tertiaryContainer
+                          : scheme.surfaceContainerHighest),
                 ),
               for (final o in personal)
                 Chip(

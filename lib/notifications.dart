@@ -185,18 +185,23 @@ class AppNotifications {
     }
   }
 
-  /// شناسه پایدار برای قسط (محدودهٔ امن int32)
-  static int loanNotifId(String loanId, int index, {bool dayBefore = false}) {
-    final base = loanId.hashCode.abs() % 100000;
-    final n = base * 100 + (index % 90) + (dayBefore ? 1 : 0);
-    return n % 2147483647;
+  /// شناسه پایدار قسط — بدون String.hashCode (ثابت بین اجراها)
+  static int loanNotifId(String loanId, int index, {int daysBefore = 0}) {
+    var h = 2166136261;
+    for (final u in loanId.codeUnits) {
+      h ^= u;
+      h = (h * 16777619) & 0x7fffffff;
+    }
+    final base = h % 800000;
+    final d = daysBefore.clamp(0, 30);
+    return 320000000 + base * 40 + (index % 40) * 31 + d;
   }
 
   static int eventNotifId(String eventId) {
     return (eventId.hashCode.abs() % 2000000000) + 1;
   }
 
-  /// زمان‌بندی اقساط یک تسهیلات
+  /// زمان‌بندی اقساط یک تسهیلات با روزهای قبل و ساعت دلخواه
   Future<void> scheduleLoanInstallments({
     required String loanId,
     required String title,
@@ -204,31 +209,39 @@ class AppNotifications {
     required List<DateTime> paymentDates,
     required bool sameDay,
     required bool dayBefore,
+    List<int>? reminderDays,
+    int reminderHour = 9,
   }) async {
     if (!_ready) await init();
-    // لغو قبلی در بازهٔ این وام (تقریبی)
+    final hour = reminderHour.clamp(0, 23);
+    final days = (reminderDays != null && reminderDays.isNotEmpty)
+        ? List<int>.from(reminderDays)
+        : <int>[
+            if (sameDay) 0,
+            if (dayBefore) 1,
+          ];
+    // لغو بازهٔ وسیع روزهای قبل (۰..۳۰) برای جلوگیری از اعلان یتیم
     for (var i = 0; i < paymentDates.length; i++) {
-      await cancel(loanNotifId(loanId, i, dayBefore: false));
-      await cancel(loanNotifId(loanId, i, dayBefore: true));
+      for (var d = 0; d <= 30; d++) {
+        await cancel(loanNotifId(loanId, i, daysBefore: d));
+      }
     }
     for (var i = 0; i < paymentDates.length; i++) {
       final day = paymentDates[i];
-      final payMorning = DateTime(day.year, day.month, day.day, 9, 0);
-      if (sameDay) {
+      for (final d in days) {
+        final when = DateTime(day.year, day.month, day.day, hour, 0)
+            .subtract(Duration(days: d));
+        final remain = d == 0
+            ? 'امروز موعد قسط ${i + 1} است'
+            : d == 1
+                ? 'فردا موعد قسط ${i + 1} است'
+                : '$d روز تا قسط ${i + 1}';
         await schedule(
-          id: loanNotifId(loanId, i),
+          id: loanNotifId(loanId, i, daysBefore: d),
           title: 'قسط: $title',
-          body: 'امروز موعد قسط ${i + 1} است.',
-          when: payMorning,
-        );
-      }
-      if (dayBefore) {
-        final before = payMorning.subtract(const Duration(days: 1));
-        await schedule(
-          id: loanNotifId(loanId, i, dayBefore: true),
-          title: 'فردا قسط: $title',
-          body: 'فردا موعد پرداخت قسط ${i + 1} است.',
-          when: before,
+          body: '$remain · ${amount.round()} تومان',
+          when: when,
+          payload: 'loan:$loanId:$i',
         );
       }
     }

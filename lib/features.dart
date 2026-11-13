@@ -3114,23 +3114,29 @@ class _LoanTabState extends State<_LoanTab> {
       }
       if (permissionOk && days.isNotEmpty) {
         final now = DateTime.now();
+        final jToday = Jalali.now();
         for (var i = 0; i < allDates.length; i++) {
           if (loan.isPaid(i)) continue;
           final day = allDates[i];
+          final jDue = Jalali.fromDateTime(day);
+          final isDueToday = jDue.year == jToday.year &&
+              jDue.month == jToday.month &&
+              jDue.day == jToday.day;
           for (final d in days) {
-            var when = DateTime(day.year, day.month, day.day, hour, 0)
+            // سررسید را با اجزای شمسی → میلادی پایدار می‌سازیم
+            final dueG = jDue.toDateTime();
+            var when = DateTime(dueG.year, dueG.month, dueG.day, hour, 0)
                 .subtract(Duration(days: d));
             final remain = d == 0
                 ? 'امروز موعد قسط ${i + 1}'
                 : d == 1
                     ? 'فردا موعد قسط ${i + 1}'
                     : '$d روز تا قسط ${i + 1}';
-            // اگر همان روز سررسید است و ساعت گذشته، یک یادآوری فوری (~۹۰ثانیه بعد)
-            // تا کاربر بفهمد آلارم کار می‌کند و قسط امروز فراموش نشود.
-            if (when.isBefore(now.add(const Duration(seconds: 30)))) {
-              final dueDay = DateTime(day.year, day.month, day.day);
-              final today = DateTime(now.year, now.month, now.day);
-              if (d == 0 && dueDay == today) {
+            // اگر زمان گذشته:
+            // - قسط امروز + همان‌روز: ۹۰ثانیه بعد (یادآوری فوری)
+            // - وگرنه رد کن
+            if (!when.isAfter(now.add(const Duration(seconds: 15)))) {
+              if (d == 0 && isDueToday) {
                 when = now.add(const Duration(seconds: 90));
               } else {
                 skippedPast++;
@@ -3182,9 +3188,11 @@ class _LoanTabState extends State<_LoanTab> {
         } else if (loan.reminderDays.isNotEmpty) {
           messenger.showSnackBar(SnackBar(
             content: Text(
-              skippedPast > 0
-                  ? 'ساعت یادآوری گذشته بود و سررسید بعدی در آینده نیست. روز/ساعت آینده انتخاب کنید.'
-                  : 'اعلان ثبت نشد. یادآوری را روشن کنید و ساعت آینده بگذارید.',
+              !permissionOk
+                  ? 'مجوز اعلان لازم است (تنظیمات گوشی → حسابگر من → اعلان‌ها).'
+                  : skippedPast > 0
+                      ? 'زمان انتخاب‌شده قابل ثبت نبود. اگر ساعت آینده است، مجوز «آلارم و یادآوری» را در تنظیمات اندروید روشن کنید.'
+                      : 'اعلان ثبت نشد. یک‌بار دیگر ذخیره کنید یا ساعت دیگری انتخاب کنید.',
               style: const TextStyle(fontFamily: 'Vazirmatn'),
             ),
             duration: const Duration(seconds: 5),
@@ -3997,7 +4005,7 @@ class _LoanTabState extends State<_LoanTab> {
                       DropdownButton<int>(
                         value: remHour,
                         items: [
-                          for (var h = 7; h <= 21; h++)
+                          for (var h = 7; h <= 22; h++)
                             DropdownMenuItem(
                               value: h,
                               child: Text(
@@ -4140,7 +4148,7 @@ class _LoanTabState extends State<_LoanTab> {
       if (existing.remindSameDay) 0,
       if (existing.remindDayBefore) 1,
     };
-    var remHour = existing.reminderHour.clamp(7, 21);
+    var remHour = existing.reminderHour.clamp(7, 22);
     var autoExpense = existing.autoAddExpenses;
     final start = existing.start;
 
@@ -4279,7 +4287,7 @@ class _LoanTabState extends State<_LoanTab> {
                       DropdownButton<int>(
                         value: remHour,
                         items: [
-                          for (var h = 7; h <= 21; h++)
+                          for (var h = 7; h <= 22; h++)
                             DropdownMenuItem(
                               value: h,
                               child: Text(

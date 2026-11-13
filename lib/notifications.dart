@@ -128,11 +128,22 @@ class AppNotifications {
       debugPrint('schedule($id): plugin not ready');
       return false;
     }
-    if (when.isBefore(DateTime.now().add(const Duration(seconds: 30)))) {
-      debugPrint('schedule($id): time in the past');
+    final now = DateTime.now();
+    if (!when.isAfter(now.add(const Duration(seconds: 15)))) {
+      debugPrint('schedule($id): time in the past ($when vs $now)');
       return false;
     }
-    final tzWhen = tz.TZDateTime.from(when, tz.local);
+    // ساخت صریح زمان محلی — از from خودداری می‌کنیم تا اختلاف timezone خراب نکند
+    final tzWhen = tz.TZDateTime(
+      tz.local,
+      when.year,
+      when.month,
+      when.day,
+      when.hour,
+      when.minute,
+      when.second,
+    );
+    debugPrint('schedule($id): at $tzWhen (local=${tz.local.name})');
     // اول exact، در شکست → inexact (روش متفاوت)
     try {
       await _plugin.zonedSchedule(

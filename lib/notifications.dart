@@ -31,9 +31,23 @@ class AppNotifications {
     try {
       tzdata.initializeTimeZones();
       try {
-        final name = await FlutterTimezone.getLocalTimezone();
+        // flutter_timezone 3 → String ، نسخه ۴ → TimezoneInfo
+        final raw = await FlutterTimezone.getLocalTimezone();
+        final String name;
+        if (raw is String) {
+          name = raw;
+        } else {
+          // TimezoneInfo.identifier
+          try {
+            name = (raw as dynamic).identifier as String;
+          } catch (_) {
+            name = raw.toString();
+          }
+        }
         tz.setLocalLocation(tz.getLocation(name));
-      } catch (_) {
+        debugPrint('tz local set: $name');
+      } catch (e) {
+        debugPrint('tz fallback Tehran: $e');
         tz.setLocalLocation(tz.getLocation('Asia/Tehran'));
       }
 
@@ -117,7 +131,7 @@ class AppNotifications {
     if (!_ready) await init();
     if (!_ready) return false;
     try {
-      await _plugin.show(id, title, body, _details, payload: payload);
+      await _plugin.show(id, title, body, _detailsFor(body), payload: payload);
       return true;
     } catch (e) {
       debugPrint('showNow($id): $e');
@@ -125,18 +139,21 @@ class AppNotifications {
     }
   }
 
-  NotificationDetails get _details => const NotificationDetails(
+  NotificationDetails _detailsFor(String body) => NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,
           _channelName,
           channelDescription: _channelDesc,
           importance: Importance.high,
           priority: Priority.high,
-          styleInformation: BigTextStyleInformation(''),
+          styleInformation: BigTextStyleInformation(body),
+          playSound: true,
+          enableVibration: true,
         ),
       );
 
-  /// زمان‌بندی یک اعلان. خروجی: true=موفق، false=رد/شکست
+  /// زمان‌بندی یک اعلان.
+  /// الگو: اختلاف تا «الان» + TZDateTime.now(local) — مطابق مستند رسمی پلاگین
   Future<bool> schedule({
     required int id,
     required String title,
@@ -149,52 +166,42 @@ class AppNotifications {
       debugPrint('schedule($id): plugin not ready');
       return false;
     }
-    final now = DateTime.now();
-    if (!when.isAfter(now.add(const Duration(seconds: 10)))) {
-      debugPrint('schedule($id): time in the past ($when vs $now)');
+
+    final delay = when.difference(DateTime.now());
+    if (delay.inSeconds < 15) {
+      debugPrint('schedule($id): too soon/past delay=${delay.inSeconds}s');
       return false;
     }
-    // زمان محلی پایدار
-    final loc = tz.local;
-    var tzWhen = tz.TZDateTime(
-      loc,
-      when.year,
-      when.month,
-      when.day,
-      when.hour,
-      when.minute,
-      when.second,
-    );
-    // اگر به هر دلیل نسبت به «الان» در tz گذشته شد، کمی جلو ببر
-    final tzNow = tz.TZDateTime.now(loc);
-    if (!tzWhen.isAfter(tzNow.add(const Duration(seconds: 10)))) {
-      debugPrint('schedule($id): tzWhen $tzWhen <= tzNow $tzNow — bump');
-      tzWhen = tzNow.add(const Duration(seconds: 90));
-    }
-    debugPrint('schedule($id): at $tzWhen (loc=${loc.name})');
 
-    final modes = <AndroidScheduleMode>[
-      AndroidScheduleMode.alarmClock,
+    // نسبت به ساعت timezone محلی — نه ساخت دستی سال/ماه/روز
+    final tzWhen = tz.TZDateTime.now(tz.local).add(delay);
+    debugPrint(
+        'schedule($id): delay=${delay.inMinutes}min → $tzWhen (${tz.local.name})');
+
+    final details = _detailsFor(body);
+
+    // اول exact؛ اگر دستگاه اجازه نداد → inexact (هر دو بدون پرتاب باید کار کنند)
+    for (final mode in <AndroidScheduleMode>[
       AndroidScheduleMode.exactAllowWhileIdle,
       AndroidScheduleMode.inexactAllowWhileIdle,
-    ];
-    for (final mode in modes) {
+    ]) {
       try {
         await _plugin.zonedSchedule(
           id,
           title,
           body,
           tzWhen,
-          _details,
+          details,
           androidScheduleMode: mode,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
           payload: payload,
         );
-        debugPrint('schedule($id): OK mode=$mode');
+        debugPrint('schedule($id): success mode=$mode');
         return true;
-      } catch (e) {
-        debugPrint('schedule($id) mode=$mode failed: $e');
+      } catch (e, st) {
+        debugPrint('schedule($id) mode=$mode error: $e');
+        debugPrint('$st');
       }
     }
     return false;

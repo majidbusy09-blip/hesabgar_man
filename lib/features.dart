@@ -3105,9 +3105,10 @@ class _LoanTabState extends State<_LoanTab> {
               if (loan.remindSameDay) 0,
               if (loan.remindDayBefore) 1,
             ];
-      // لغو اعلان‌های قبلی همین وام (فقط آفست‌های رایج)
-      final cancelDays = <int>{0, 1, 3, 7, 14, 30, ...days};
+      // لغو اعلان‌های قبلی (فقط اقساط پرداخت‌نشده + آفست‌های لازم)
+      final cancelDays = <int>{0, 1, 3, 7, 14, ...days};
       for (var i = 0; i < loan.months; i++) {
+        if (loan.isPaid(i) && i > 0) continue;
         for (final d in cancelDays) {
           await AppNotifications.instance
               .cancel(AppNotifications.loanNotifId(loan.id, i, daysBefore: d));

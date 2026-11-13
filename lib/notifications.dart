@@ -31,19 +31,17 @@ class AppNotifications {
     try {
       tzdata.initializeTimeZones();
       try {
-        // flutter_timezone 3 → String ، نسخه ۴ → TimezoneInfo
+        // flutter_timezone 3 → String ؛ نسخه ۴ → TimezoneInfo.identifier
         final raw = await FlutterTimezone.getLocalTimezone();
-        final String name;
-        if (raw is String) {
-          name = raw;
-        } else {
-          // TimezoneInfo.identifier
-          try {
-            name = (raw as dynamic).identifier as String;
-          } catch (_) {
-            name = raw.toString();
-          }
-        }
+        final name = raw is String
+            ? raw
+            : (() {
+                try {
+                  return (raw as dynamic).identifier as String;
+                } catch (_) {
+                  return raw.toString();
+                }
+              })();
         tz.setLocalLocation(tz.getLocation(name));
         debugPrint('tz local set: $name');
       } catch (e) {

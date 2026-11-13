@@ -237,15 +237,31 @@ jobs:
       - name: Analyze
         run: |
           rm -f test/widget_test.dart
-          # فقط error واقعی بیلد را متوقف کند؛ info/warning مانع انتشار نشود
+          # فقط کد فعال اپ (ورود main + فایل‌های یکپارچه). پوشه‌های قدیمی
+          # lib/features/* و lib/shared/* و lib/core/* موازی در analyze نیستند.
           set +e
-          flutter analyze lib test > analyze_out.txt 2>&1
+          flutter analyze \
+            lib/main.dart \
+            lib/core.dart \
+            lib/features.dart \
+            lib/calendar_v2.dart \
+            lib/checks.dart \
+            lib/notifications.dart \
+            test \
+            > analyze_out.txt 2>&1
           CODE=$?
           set -e
+          # حذف کد رنگی ترمینال برای grep پایدار
+          sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' analyze_out.txt > analyze_clean.txt || cp analyze_out.txt analyze_clean.txt
           cat analyze_out.txt
-          if grep -qE '^[[:space:]]*error •' analyze_out.txt; then
-            echo "Analyze found ERROR level issues"
-            exit 1
+          echo "---- ERROR lines (if any) ----"
+          grep -E 'error •|error -' analyze_clean.txt || true
+          if grep -qE 'error •|error -' analyze_clean.txt; then
+            # نادیده گرفتن خطوط خلاصه مثل "error • ..." در صورت نیاز؛ فقط severity اول خط
+            if grep -qE '^[[:space:]]*error [•-]' analyze_clean.txt; then
+              echo "Analyze found ERROR level issues"
+              exit 1
+            fi
           fi
           echo "Analyze OK (no error-level issues; exit was $CODE)"
           exit 0

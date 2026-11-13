@@ -4909,7 +4909,7 @@ class _LoanTabState extends State<_LoanTab> {
                               ),
                             ),
                     );
-                  })
+                  }),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(

@@ -5266,7 +5266,7 @@ class _ProfitLossTabState extends State<_ProfitLossTab> {
   }
 }
 
-// ---------- تبدیل عدد به حروف ----------
+// ---------- تبدیل عدد به حروف + تومان/ریال ----------
 class _NumberWordsTab extends StatefulWidget {
   const _NumberWordsTab();
 
@@ -5276,12 +5276,68 @@ class _NumberWordsTab extends StatefulWidget {
 
 class _NumberWordsTabState extends State<_NumberWordsTab> {
   final _input = TextEditingController();
-  bool _asToman = false;
-  String _words = '';
+  /// true = ورودی تومان، false = ورودی ریال
+  bool _inputIsToman = true;
+  String _tomanNum = '';
+  String _rialNum = '';
+  String _tomanWords = '';
+  String _rialWords = '';
+  bool _invalid = false;
 
   void _recalc() {
+    final raw = _input.text.trim();
+    if (raw.isEmpty) {
+      setState(() {
+        _invalid = false;
+        _tomanNum = '';
+        _rialNum = '';
+        _tomanWords = '';
+        _rialWords = '';
+      });
+      return;
+    }
+    final n = NumFmt.parse(raw);
+    if (n < 0 || (n == 0 && NumFmt.toLatinDigits(raw).replaceAll(RegExp(r'[^\d]'), '').isEmpty)) {
+      // اجازه صفر
+    }
+    // ورودی نامعتبر؟
+    final latin = NumFmt.toLatinDigits(raw).replaceAll(',', '').replaceAll('،', '').replaceAll('٬', '').trim();
+    final cleaned = latin.replaceAll(RegExp(r'[^\d.]'), '');
+    if (cleaned.isEmpty || !RegExp(r'^\d+(\.\d+)?$').hasMatch(cleaned)) {
+      setState(() {
+        _invalid = true;
+        _tomanNum = '';
+        _rialNum = '';
+        _tomanWords = 'ورودی نامعتبر';
+        _rialWords = 'ورودی نامعتبر';
+      });
+      return;
+    }
+
+    // تبدیل: ۱ تومان = ۱۰ ریال
+    final double toman;
+    final double rial;
+    if (_inputIsToman) {
+      toman = n;
+      rial = n * 10;
+    } else {
+      rial = n;
+      toman = n / 10;
+    }
+
+    final tomanRound = toman.round();
+    final rialRound = rial.round();
+
     setState(() {
-      _words = PersianWords.convert(_input.text, asToman: _asToman);
+      _invalid = false;
+      _tomanNum = NumFmt.format(tomanRound);
+      _rialNum = NumFmt.format(rialRound);
+      _tomanWords = PersianWords.convert('$tomanRound', asToman: true);
+      // ریال: همان موتور حروف بدون پسوند تومان، سپس «ریال»
+      final rialBase = PersianWords.convert('$rialRound', asToman: false);
+      _rialWords = (rialBase.isEmpty || rialBase == 'ورودی نامعتبر')
+          ? rialBase
+          : (rialBase.endsWith('ریال') ? rialBase : '$rialBase ریال');
     });
   }
 
@@ -5291,17 +5347,122 @@ class _NumberWordsTabState extends State<_NumberWordsTab> {
     super.dispose();
   }
 
-  Future<void> _copy() async {
-    if (_words.isEmpty || _words == 'ورودی نامعتبر') return;
-    // Clipboard via services
-    // ignore: prefer_const_constructors - dynamic import already in material
-    await Clipboard.setData(ClipboardData(text: _words));
+  Future<void> _copy(String text, String label) async {
+    if (text.isEmpty || text == 'ورودی نامعتبر' || text == '—') return;
+    await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('کپی شد', style: TextStyle(fontFamily: 'Vazirmatn')),
+      SnackBar(
+        content: Text('$label کپی شد',
+            style: const TextStyle(fontFamily: 'Vazirmatn')),
         behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 1),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  Widget _sideCard({
+    required ColorScheme scheme,
+    required String title,
+    required Color accent,
+    required String number,
+    required String words,
+    required IconData icon,
+  }) {
+    final empty = number.isEmpty;
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: accent.withValues(alpha: 0.28)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 20, color: accent),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: accent,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'عدد',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 12,
+                color: scheme.onSurface.withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 4),
+            SelectableText(
+              empty ? '—' : number,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                color: _invalid ? scheme.error : scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: empty || _invalid
+                    ? null
+                    : () => _copy(number, 'عدد $title'),
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('کپی عدد',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+              ),
+            ),
+            Divider(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+            Text(
+              'به حروف',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 12,
+                color: scheme.onSurface.withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 6),
+            SelectableText(
+              empty ? '—' : words,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                height: 1.55,
+                color: _invalid ? scheme.error : scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: empty || _invalid
+                    ? null
+                    : () => _copy(words, 'حروف $title'),
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('کپی حروف',
+                    style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -5313,18 +5474,41 @@ class _NumberWordsTabState extends State<_NumberWordsTab> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         Text(
-          'عدد را وارد کنید تا به حروف فارسی تبدیل شود. ارقام فارسی، عربی و انگلیسی پشتیبانی می‌شوند.',
+          'مبلغ را به تومان یا ریال وارد کنید. هر دو طرف هم‌زمان به‌صورت عدد و حروف نمایش داده می‌شوند و قابل کپی هستند.\n'
+          '۱ تومان = ۱۰ ریال',
           style: TextStyle(
             fontFamily: 'Vazirmatn',
             fontSize: 12.5,
-            height: 1.45,
-            color: scheme.onSurface.withValues(alpha: 0.55),
+            height: 1.5,
+            color: scheme.onSurface.withValues(alpha: 0.7),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(
+              value: true,
+              label: Text('ورود تومان',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+              icon: Icon(Icons.payments_outlined, size: 18),
+            ),
+            ButtonSegment(
+              value: false,
+              label: Text('ورود ریال',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+              icon: Icon(Icons.currency_exchange, size: 18),
+            ),
+          ],
+          selected: {_inputIsToman},
+          onSelectionChanged: (s) {
+            setState(() => _inputIsToman = s.first);
+            _recalc();
+          },
+        ),
+        const SizedBox(height: 14),
         TextField(
           controller: _input,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [
             FilteringTextInputFormatter.allow(
               RegExp(r'[\d.,\-۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫٬،]'),
@@ -5333,78 +5517,47 @@ class _NumberWordsTabState extends State<_NumberWordsTab> {
           ],
           textAlign: TextAlign.center,
           onChanged: (_) => _recalc(),
-          style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 22, fontWeight: FontWeight.w700),
+          style: const TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+          ),
           decoration: InputDecoration(
-            labelText: 'عدد',
+            labelText: _inputIsToman ? 'مبلغ به تومان' : 'مبلغ به ریال',
             labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             filled: true,
-          ),
-        ),
-        const SizedBox(height: 8),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'افزودن واحد تومان',
-            style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
-          ),
-          value: _asToman,
-          onChanged: (v) {
-            setState(() => _asToman = v);
-            _recalc();
-          },
-        ),
-        const SizedBox(height: 12),
-        Card(
-          margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(
-              color: scheme.primary.withValues(alpha: 0.22),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'به حروف',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 13,
-                    color: scheme.onSurface.withValues(alpha: 0.65),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SelectableText(
-                  _words.isEmpty ? '—' : _words,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    height: 1.5,
-                    color: _words == 'ورودی نامعتبر'
-                        ? scheme.error
-                        : scheme.onSurface,
-                  ),
-                ),
-              ],
+            prefixIcon: Icon(
+              _inputIsToman ? Icons.payments_outlined : Icons.currency_exchange,
             ),
           ),
         ),
         const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: _words.isEmpty || _words == 'ورودی نامعتبر' ? null : _copy,
-          icon: const Icon(Icons.copy),
-          label: const Text('کپی متن', style: TextStyle(fontFamily: 'Vazirmatn')),
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
+        _sideCard(
+          scheme: scheme,
+          title: 'تومان',
+          accent: scheme.primary,
+          number: _tomanNum,
+          words: _tomanWords,
+          icon: Icons.payments_outlined,
+        ),
+        const SizedBox(height: 12),
+        _sideCard(
+          scheme: scheme,
+          title: 'ریال',
+          accent: scheme.tertiary,
+          number: _rialNum,
+          words: _rialWords,
+          icon: Icons.currency_exchange,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'نکته: در ایران معمولاً قیمت‌ها به تومان گفته می‌شود؛ در اسناد بانکی اغلب ریال نوشته می‌شود.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 11.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.5),
           ),
         ),
       ],

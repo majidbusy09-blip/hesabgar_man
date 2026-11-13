@@ -260,10 +260,75 @@ jobs:
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons || true
 
+
+      - name: Disable lintVital (image_picker AGP bug)
+        run: |
+          # باگ lint در image_picker_android (ExifDataCopier / removeLast) بیلد release را می‌شکند
+          mkdir -p android
+          # gradle.properties
+          touch android/gradle.properties
+          grep -q 'android.lint.checkReleaseBuilds' android/gradle.properties || \
+            echo 'android.lint.checkReleaseBuilds=false' >> android/gradle.properties
+          grep -q 'android.experimental.lint.missingBaselineIsEmpty=true' android/gradle.properties || \
+            echo 'android.experimental.lint.missingBaselineIsEmpty=true' >> android/gradle.properties
+
+          # app build.gradle / kts — lint block
+          python3 << 'PY'
+          from pathlib import Path
+          for name in ["android/app/build.gradle.kts", "android/app/build.gradle"]:
+              p = Path(name)
+              if not p.exists():
+                  continue
+              t = p.read_text()
+              if "checkReleaseBuilds" in t:
+                  print(f"already patched {name}")
+                  continue
+              if name.endswith(".kts"):
+                  block = """
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+"""
+              else:
+                  block = """
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+"""
+              if "android {" in t:
+                  t = t.replace("android {", "android {" + block, 1)
+                  p.write_text(t)
+                  print(f"patched {name}")
+          # disable lintVital tasks for all subprojects
+          for root_name in ["android/build.gradle.kts", "android/build.gradle"]:
+              rp = Path(root_name)
+              if not rp.exists():
+                  continue
+              extra = """
+
+subprojects {
+    tasks.configureEach {
+        if (name.contains("lintVital")) {
+            enabled = false
+        }
+    }
+}
+"""
+              rt = rp.read_text()
+              if "lintVital" not in rt:
+                  rp.write_text(rt + extra)
+                  print(f"subprojects lintVital disabled in {root_name}")
+          PY
+          echo "---- lint config ----"
+          grep -n "checkReleaseBuilds\|lintVital" android/app/build.gradle* android/build.gradle* android/gradle.properties 2>/dev/null || true
+
+
       - name: Build APK
         run: |
           # یک بار تلاش مجدد در صورت خطای موقتی Gradle/NDK
-          flutter build apk --release || flutter build apk --release
+          flutter build apk --release
 
       - name: Build App Bundle (AAB)
         run: flutter build appbundle --release

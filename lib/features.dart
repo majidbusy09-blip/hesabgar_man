@@ -3211,16 +3211,15 @@ class _LoanTabState extends State<_LoanTab> {
             duration: Duration(seconds: 5),
           ));
         } else if (loan.reminderDays.isNotEmpty) {
+          final err = AppNotifications.instance.lastScheduleError;
+          final msg = !permissionOk
+              ? 'مجوز اعلان لازم است (تنظیمات گوشی → حسابگر من → اعلان‌ها).'
+              : (err != null && err.isNotEmpty)
+                  ? 'ثبت آلارم ناموفق: $err'
+                  : 'ثبت آلارم ناموفق. ساعت آینده انتخاب کنید و دوباره ذخیره کنید.';
           messenger.showSnackBar(SnackBar(
-            content: Text(
-              !permissionOk
-                  ? 'مجوز اعلان لازم است (تنظیمات گوشی → حسابگر من → اعلان‌ها).'
-                  : skippedPast > 0
-                      ? 'زمان انتخاب‌شده قابل ثبت نبود. اگر ساعت آینده است، مجوز «آلارم و یادآوری» را در تنظیمات اندروید روشن کنید.'
-                      : 'اعلان ثبت نشد. یک‌بار دیگر ذخیره کنید یا ساعت دیگری انتخاب کنید.',
-              style: const TextStyle(fontFamily: 'Vazirmatn'),
-            ),
-            duration: const Duration(seconds: 5),
+            content: Text(msg, style: const TextStyle(fontFamily: 'Vazirmatn')),
+            duration: const Duration(seconds: 6),
           ));
         }
       }

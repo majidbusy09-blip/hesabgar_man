@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -26,28 +25,16 @@ class AppNotifications {
   static const _channelName = 'یادآوری حسابگر من';
   static const _channelDesc = 'اقساط تسهیلات و رویدادهای تقویم';
 
+  /// آخرین خطای زمان‌بندی (برای نمایش به کاربر)
+  String? lastScheduleError;
+
   Future<void> init() async {
     if (_ready) return;
     try {
       tzdata.initializeTimeZones();
-      try {
-        // flutter_timezone 3 → String ؛ نسخه ۴ → TimezoneInfo.identifier
-        final raw = await FlutterTimezone.getLocalTimezone();
-        final name = raw is String
-            ? raw
-            : (() {
-                try {
-                  return (raw as dynamic).identifier as String;
-                } catch (_) {
-                  return raw.toString();
-                }
-              })();
-        tz.setLocalLocation(tz.getLocation(name));
-        debugPrint('tz local set: $name');
-      } catch (e) {
-        debugPrint('tz fallback Tehran: $e');
-        tz.setLocalLocation(tz.getLocation('Asia/Tehran'));
-      }
+      // اپ ایرانی: همیشه تهران — وابستگی به نام timezone دستگاه حذف شد
+      tz.setLocalLocation(tz.getLocation('Asia/Tehran'));
+      debugPrint('tz fixed: Asia/Tehran');
 
       const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
       const initSettings = InitializationSettings(android: androidInit);
@@ -72,11 +59,11 @@ class AppNotifications {
           importance: Importance.high,
         ),
       );
-      // مجوز اینجا درخواست نمی‌شود؛ فقط هنگام فعال‌کردن یادآوری
 
       _ready = true;
     } catch (e) {
       debugPrint('AppNotifications.init: $e');
+      lastScheduleError = 'init: $e';
       _ready = false;
     }
   }
@@ -129,7 +116,21 @@ class AppNotifications {
     if (!_ready) await init();
     if (!_ready) return false;
     try {
-      await _plugin.show(id, title, body, _detailsFor(body), payload: payload);
+      await _plugin.show(
+        id,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channelId,
+            _channelName,
+            channelDescription: _channelDesc,
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+        ),
+        payload: payload,
+      );
       return true;
     } catch (e) {
       debugPrint('showNow($id): $e');
@@ -152,6 +153,7 @@ class AppNotifications {
 
   /// زمان‌بندی یک اعلان.
   /// الگو: اختلاف تا «الان» + TZDateTime.now(local) — مطابق مستند رسمی پلاگین
+  /// زمان‌بندی یک اعلان آینده
   Future<bool> schedule({
     required int id,
     required String title,
@@ -159,33 +161,45 @@ class AppNotifications {
     required DateTime when,
     String? payload,
   }) async {
+    lastScheduleError = null;
     if (!_ready) await init();
     if (!_ready) {
-      debugPrint('schedule($id): plugin not ready');
+      lastScheduleError = 'سرویس اعلان آماده نیست';
       return false;
     }
 
     final delay = when.difference(DateTime.now());
     if (delay.inSeconds < 15) {
-      debugPrint('schedule($id): too soon/past delay=${delay.inSeconds}s');
+      lastScheduleError =
+          'زمان گذشته یا خیلی نزدیک است (${delay.inSeconds} ثانیه)';
       return false;
     }
 
-    // نسبت به ساعت timezone محلی — نه ساخت دستی سال/ماه/روز
+    // الگوی رسمی مستندات: now(local) + delay
     final tzWhen = tz.TZDateTime.now(tz.local).add(delay);
-    debugPrint(
-        'schedule($id): delay=${delay.inMinutes}min → $tzWhen (${tz.local.name})');
 
-    final details = _detailsFor(body);
+    // جزئیات ساده — بدون style اضافه
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+    );
 
-    // اول exact؛ اگر دستگاه اجازه نداد → inexact (هر دو بدون پرتاب باید کار کنند)
+    // شناسه باید در محدوده int32 بماند
+    final safeId = id & 0x7fffffff;
+
+    Object? lastErr;
     for (final mode in <AndroidScheduleMode>[
-      AndroidScheduleMode.exactAllowWhileIdle,
       AndroidScheduleMode.inexactAllowWhileIdle,
+      AndroidScheduleMode.exactAllowWhileIdle,
     ]) {
       try {
         await _plugin.zonedSchedule(
-          id,
+          safeId,
           title,
           body,
           tzWhen,
@@ -195,13 +209,14 @@ class AppNotifications {
               UILocalNotificationDateInterpretation.absoluteTime,
           payload: payload,
         );
-        debugPrint('schedule($id): success mode=$mode');
+        debugPrint('schedule OK id=$safeId mode=$mode at $tzWhen');
         return true;
-      } catch (e, st) {
-        debugPrint('schedule($id) mode=$mode error: $e');
-        debugPrint('$st');
+      } catch (e) {
+        lastErr = e;
+        debugPrint('schedule fail mode=$mode: $e');
       }
     }
+    lastScheduleError = lastErr?.toString() ?? 'zonedSchedule ناموفق';
     return false;
   }
 

@@ -3159,6 +3159,29 @@ class _LoanTabState extends State<_LoanTab> {
           }
         }
       }
+      // اگر هیچ اعلان آینده ثبت نشد ولی مجوز هست، یک تست فوری + ۹۰ثانیه بعد
+      if (permissionOk && scheduled == 0 && days.isNotEmpty) {
+        final testWhen = DateTime.now().add(const Duration(seconds: 90));
+        final okSched = await AppNotifications.instance.schedule(
+          id: AppNotifications.loanNotifId(loan.id, 0, daysBefore: 0),
+          title: 'قسط: ${loan.title}',
+          body:
+              'یادآوری آزمایشی · ${NumFmt.format(loan.monthlyPayment.round())} تومان',
+          when: testWhen,
+          payload: 'loan:${loan.id}:0',
+        );
+        if (okSched) {
+          scheduled = 1;
+        } else {
+          // حداقل کانال اعلان را تست کن
+          await AppNotifications.instance.showNow(
+            id: AppNotifications.loanNotifId(loan.id, 0, daysBefore: 0),
+            title: 'قسط: ${loan.title}',
+            body: 'اعلان آزمایشی — اگر این را می‌بینید کانال اعلان فعال است.',
+            payload: 'loan:${loan.id}:0',
+          );
+        }
+      }
       debugPrint('loan notif scheduled: $scheduled past: $skippedPast ok: $permissionOk');
     } catch (e) {
       debugPrint('loan notif: $e');

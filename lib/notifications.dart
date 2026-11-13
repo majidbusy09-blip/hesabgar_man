@@ -86,9 +86,12 @@ class AppNotifications {
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     final granted = await android?.requestNotificationsPermission() ?? false;
-    // اندروید ۱۲+ : مجوز آلارم دقیق (بدون آن ممکن است اعلان نیاید)
+    // اندروید ۱۲+ : مجوز آلارم دقیق
     try {
-      await android?.requestExactAlarmsPermission();
+      final canExact = await android?.canScheduleExactNotifications();
+      if (canExact == false) {
+        await android?.requestExactAlarmsPermission();
+      }
     } catch (e) {
       debugPrint('exact alarm permission: $e');
     }
@@ -102,6 +105,24 @@ class AppNotifications {
       ));
     }
     return granted;
+  }
+
+  /// اعلان فوری برای تست کانال
+  Future<bool> showNow({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    if (!_ready) await init();
+    if (!_ready) return false;
+    try {
+      await _plugin.show(id, title, body, _details, payload: payload);
+      return true;
+    } catch (e) {
+      debugPrint('showNow($id): $e');
+      return false;
+    }
   }
 
   NotificationDetails get _details => const NotificationDetails(
@@ -129,13 +150,14 @@ class AppNotifications {
       return false;
     }
     final now = DateTime.now();
-    if (!when.isAfter(now.add(const Duration(seconds: 15)))) {
+    if (!when.isAfter(now.add(const Duration(seconds: 10)))) {
       debugPrint('schedule($id): time in the past ($when vs $now)');
       return false;
     }
-    // ساخت صریح زمان محلی — از from خودداری می‌کنیم تا اختلاف timezone خراب نکند
-    final tzWhen = tz.TZDateTime(
-      tz.local,
+    // زمان محلی پایدار
+    final loc = tz.local;
+    var tzWhen = tz.TZDateTime(
+      loc,
       when.year,
       when.month,
       when.day,
@@ -143,23 +165,20 @@ class AppNotifications {
       when.minute,
       when.second,
     );
-    debugPrint('schedule($id): at $tzWhen (local=${tz.local.name})');
-    // اول exact، در شکست → inexact (روش متفاوت)
-    try {
-      await _plugin.zonedSchedule(
-        id,
-        title,
-        body,
-        tzWhen,
-        _details,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        payload: payload,
-      );
-      return true;
-    } catch (e) {
-      debugPrint('schedule exact($id): $e — fallback inexact');
+    // اگر به هر دلیل نسبت به «الان» در tz گذشته شد، کمی جلو ببر
+    final tzNow = tz.TZDateTime.now(loc);
+    if (!tzWhen.isAfter(tzNow.add(const Duration(seconds: 10)))) {
+      debugPrint('schedule($id): tzWhen $tzWhen <= tzNow $tzNow — bump');
+      tzWhen = tzNow.add(const Duration(seconds: 90));
+    }
+    debugPrint('schedule($id): at $tzWhen (loc=${loc.name})');
+
+    final modes = <AndroidScheduleMode>[
+      AndroidScheduleMode.alarmClock,
+      AndroidScheduleMode.exactAllowWhileIdle,
+      AndroidScheduleMode.inexactAllowWhileIdle,
+    ];
+    for (final mode in modes) {
       try {
         await _plugin.zonedSchedule(
           id,
@@ -167,17 +186,18 @@ class AppNotifications {
           body,
           tzWhen,
           _details,
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          androidScheduleMode: mode,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
           payload: payload,
         );
+        debugPrint('schedule($id): OK mode=$mode');
         return true;
-      } catch (e2) {
-        debugPrint('schedule failed($id): $e2');
-        return false;
+      } catch (e) {
+        debugPrint('schedule($id) mode=$mode failed: $e');
       }
     }
+    return false;
   }
 
   Future<void> cancel(int id) async {

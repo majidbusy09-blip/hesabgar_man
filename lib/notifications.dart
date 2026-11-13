@@ -21,9 +21,10 @@ class AppNotifications {
   static String? pendingPayload;
   void Function(String payload)? onNotificationTap;
 
-  static const _channelId = 'hesabgar_reminders';
-  static const _channelName = 'یادآوری حسابگر من';
-  static const _channelDesc = 'اقساط تسهیلات و رویدادهای تقویم';
+  // شناسه جدید: تنظیمات کانال قدیمی اندروید عوض نمی‌شود
+  static const _channelId = 'hesabgar_alarms_v2';
+  static const _channelName = 'آلارم اقساط';
+  static const _channelDesc = 'زنگ یادآوری اقساط و چک‌ها با صدا';
 
   /// آخرین خطای زمان‌بندی (برای نمایش به کاربر)
   String? lastScheduleError;
@@ -56,7 +57,10 @@ class AppNotifications {
           _channelId,
           _channelName,
           description: _channelDesc,
-          importance: Importance.high,
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+          showBadge: true,
         ),
       );
 
@@ -125,8 +129,11 @@ class AppNotifications {
             _channelId,
             _channelName,
             channelDescription: _channelDesc,
-            importance: Importance.high,
-            priority: Priority.high,
+            importance: Importance.max,
+            priority: Priority.max,
+            category: AndroidNotificationCategory.alarm,
+            playSound: true,
+            enableVibration: true,
           ),
         ),
         payload: payload,
@@ -178,14 +185,20 @@ class AppNotifications {
     // الگوی رسمی مستندات: now(local) + delay
     final tzWhen = tz.TZDateTime.now(tz.local).add(delay);
 
-    // جزئیات ساده — بدون style اضافه
+    // مثل زنگ ساعت: صدا + ویبره + اولویت حداکثر + دسته alarm
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDesc,
-        importance: Importance.high,
-        priority: Priority.high,
+        importance: Importance.max,
+        priority: Priority.max,
+        category: AndroidNotificationCategory.alarm,
+        playSound: true,
+        enableVibration: true,
+        fullScreenIntent: true,
+        visibility: NotificationVisibility.public,
+        ticker: 'یادآوری قسط',
       ),
     );
 
@@ -194,8 +207,9 @@ class AppNotifications {
 
     Object? lastErr;
     for (final mode in <AndroidScheduleMode>[
-      AndroidScheduleMode.inexactAllowWhileIdle,
+      AndroidScheduleMode.alarmClock,
       AndroidScheduleMode.exactAllowWhileIdle,
+      AndroidScheduleMode.inexactAllowWhileIdle,
     ]) {
       try {
         await _plugin.zonedSchedule(

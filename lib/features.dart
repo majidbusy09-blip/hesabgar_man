@@ -3087,10 +3087,12 @@ class _LoanTabState extends State<_LoanTab> {
 
     // اعلان سیستم‌عامل برای اقساط آینده (پرداخت‌نشده)
     var scheduled = 0;
+    var skippedPast = 0;
+    var permissionOk = false;
     try {
-      final ok = await AppNotifications.instance
+      permissionOk = await AppNotifications.instance
           .ensurePermissionForReminders(context: mounted ? context : null);
-      if (!ok) {
+      if (!permissionOk) {
         debugPrint('loan notif: notification permission denied');
       }
       final allDates = <DateTime>[
@@ -3110,18 +3112,31 @@ class _LoanTabState extends State<_LoanTab> {
               .cancel(AppNotifications.loanNotifId(loan.id, i, daysBefore: d));
         }
       }
-      if (ok && days.isNotEmpty) {
+      if (permissionOk && days.isNotEmpty) {
+        final now = DateTime.now();
         for (var i = 0; i < allDates.length; i++) {
           if (loan.isPaid(i)) continue;
           final day = allDates[i];
           for (final d in days) {
-            final when = DateTime(day.year, day.month, day.day, hour, 0)
+            var when = DateTime(day.year, day.month, day.day, hour, 0)
                 .subtract(Duration(days: d));
             final remain = d == 0
                 ? 'امروز موعد قسط ${i + 1}'
                 : d == 1
                     ? 'فردا موعد قسط ${i + 1}'
                     : '$d روز تا قسط ${i + 1}';
+            // اگر همان روز سررسید است و ساعت گذشته، یک یادآوری فوری (~۹۰ثانیه بعد)
+            // تا کاربر بفهمد آلارم کار می‌کند و قسط امروز فراموش نشود.
+            if (when.isBefore(now.add(const Duration(seconds: 30)))) {
+              final dueDay = DateTime(day.year, day.month, day.day);
+              final today = DateTime(now.year, now.month, now.day);
+              if (d == 0 && dueDay == today) {
+                when = now.add(const Duration(seconds: 90));
+              } else {
+                skippedPast++;
+                continue;
+              }
+            }
             final done = await AppNotifications.instance.schedule(
               id: AppNotifications.loanNotifId(loan.id, i, daysBefore: d),
               title: 'قسط: ${loan.title}',
@@ -3130,28 +3145,52 @@ class _LoanTabState extends State<_LoanTab> {
               when: when,
               payload: 'loan:${loan.id}:$i',
             );
-            if (done) scheduled++;
+            if (done) {
+              scheduled++;
+            } else {
+              skippedPast++;
+            }
           }
         }
       }
-      debugPrint('loan notif scheduled: $scheduled');
+      debugPrint('loan notif scheduled: $scheduled past: $skippedPast ok: $permissionOk');
     } catch (e) {
       debugPrint('loan notif: $e');
     }
 
-    if (mounted && scheduled > 0) {
-      // پیام کوتاه در صورت موفقیت اعلان
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
-        content: Text('آلارم: $scheduled اعلان زمان‌بندی شد',
-            style: const TextStyle(fontFamily: 'Vazirmatn')),
-        duration: const Duration(seconds: 2),
-      ));
-    } else if (mounted && loan.reminderDays.isNotEmpty) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
-        content: Text('اعلان زمان‌بندی نشد — مجوز یا تاریخ آینده را بررسی کنید',
-            style: TextStyle(fontFamily: 'Vazirmatn')),
-        duration: Duration(seconds: 3),
-      ));
+    if (mounted) {
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger != null) {
+        if (scheduled > 0) {
+          messenger.showSnackBar(SnackBar(
+            content: Text(
+              scheduled == 1
+                  ? 'آلارم ثبت شد (اگر ساعت گذشته بود، حدود ۱٫۵ دقیقه دیگر اعلام می‌شود)'
+                  : 'آلارم: $scheduled اعلان زمان‌بندی شد',
+              style: const TextStyle(fontFamily: 'Vazirmatn'),
+            ),
+            duration: const Duration(seconds: 4),
+          ));
+        } else if (!permissionOk && loan.reminderDays.isNotEmpty) {
+          messenger.showSnackBar(const SnackBar(
+            content: Text(
+              'اجازه اعلان داده نشد. از تنظیمات گوشی → برنامه‌ها → حسابگر من → اعلان‌ها را روشن کنید.',
+              style: TextStyle(fontFamily: 'Vazirmatn'),
+            ),
+            duration: Duration(seconds: 5),
+          ));
+        } else if (loan.reminderDays.isNotEmpty) {
+          messenger.showSnackBar(SnackBar(
+            content: Text(
+              skippedPast > 0
+                  ? 'ساعت یادآوری گذشته بود و سررسید بعدی در آینده نیست. روز/ساعت آینده انتخاب کنید.'
+                  : 'اعلان ثبت نشد. یادآوری را روشن کنید و ساعت آینده بگذارید.',
+              style: const TextStyle(fontFamily: 'Vazirmatn'),
+            ),
+            duration: const Duration(seconds: 5),
+          ));
+        }
+      }
     }
     return created.length;
   }

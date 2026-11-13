@@ -3086,49 +3086,73 @@ class _LoanTabState extends State<_LoanTab> {
     cal.revision.value++;
 
     // اعلان سیستم‌عامل برای اقساط آینده (پرداخت‌نشده)
+    var scheduled = 0;
     try {
-      await AppNotifications.instance.ensurePermissionForReminders();
+      final ok = await AppNotifications.instance
+          .ensurePermissionForReminders(context: mounted ? context : null);
+      if (!ok) {
+        debugPrint('loan notif: notification permission denied');
+      }
       final allDates = <DateTime>[
         for (var i = 0; i < loan.months; i++) loan.dueDateForIndex(i),
       ];
       final hour = loan.reminderHour.clamp(0, 23);
       final days = loan.reminderDays.isNotEmpty
-          ? loan.reminderDays
+          ? List<int>.from(loan.reminderDays)
           : <int>[
               if (loan.remindSameDay) 0,
               if (loan.remindDayBefore) 1,
             ];
+      // لغو همه اعلان‌های قبلی این وام
       for (var i = 0; i < loan.months; i++) {
         for (var d = 0; d <= 30; d++) {
           await AppNotifications.instance
               .cancel(AppNotifications.loanNotifId(loan.id, i, daysBefore: d));
         }
       }
-      for (var i = 0; i < allDates.length; i++) {
-        if (loan.isPaid(i)) continue;
-        final day = allDates[i];
-        for (final d in days) {
-          final when = DateTime(day.year, day.month, day.day, hour)
-              .subtract(Duration(days: d));
-          final remain = d == 0
-              ? 'امروز موعد قسط ${i + 1}'
-              : d == 1
-                  ? 'فردا موعد قسط ${i + 1}'
-                  : '$d روز تا قسط ${i + 1}';
-          await AppNotifications.instance.schedule(
-            id: AppNotifications.loanNotifId(loan.id, i, daysBefore: d),
-            title: 'قسط: ${loan.title}',
-            body:
-                '$remain · ${NumFmt.format(loan.monthlyPayment.round())} تومان',
-            when: when,
-            payload: 'loan:${loan.id}:$i',
-          );
+      if (ok && days.isNotEmpty) {
+        for (var i = 0; i < allDates.length; i++) {
+          if (loan.isPaid(i)) continue;
+          final day = allDates[i];
+          for (final d in days) {
+            final when = DateTime(day.year, day.month, day.day, hour, 0)
+                .subtract(Duration(days: d));
+            final remain = d == 0
+                ? 'امروز موعد قسط ${i + 1}'
+                : d == 1
+                    ? 'فردا موعد قسط ${i + 1}'
+                    : '$d روز تا قسط ${i + 1}';
+            final done = await AppNotifications.instance.schedule(
+              id: AppNotifications.loanNotifId(loan.id, i, daysBefore: d),
+              title: 'قسط: ${loan.title}',
+              body:
+                  '$remain · ${NumFmt.format(loan.monthlyPayment.round())} تومان',
+              when: when,
+              payload: 'loan:${loan.id}:$i',
+            );
+            if (done) scheduled++;
+          }
         }
       }
+      debugPrint('loan notif scheduled: $scheduled');
     } catch (e) {
       debugPrint('loan notif: $e');
     }
 
+    if (mounted && scheduled > 0) {
+      // پیام کوتاه در صورت موفقیت اعلان
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        content: Text('آلارم: $scheduled اعلان زمان‌بندی شد',
+            style: const TextStyle(fontFamily: 'Vazirmatn')),
+        duration: const Duration(seconds: 2),
+      ));
+    } else if (mounted && loan.reminderDays.isNotEmpty) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+        content: Text('اعلان زمان‌بندی نشد — مجوز یا تاریخ آینده را بررسی کنید',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+        duration: Duration(seconds: 3),
+      ));
+    }
     return created.length;
   }
 
@@ -3396,6 +3420,167 @@ class _LoanTabState extends State<_LoanTab> {
     return list;
   }
 
+
+  List<Widget> _buildSortedInstallmentTiles({
+    required _TrackedLoan current,
+    required BuildContext ctx,
+    required void Function(void Function()) setL,
+  }) {
+    final rows = <Map<String, dynamic>>[];
+    for (var i = 0; i < current.months; i++) {
+      final payDt = current.dueDateForIndex(i);
+      rows.add({'i': i, 'date': payDt, 'paid': current.isPaid(i)});
+    }
+    int cmp(Map<String, dynamic> a, Map<String, dynamic> b) {
+      final ap = a['paid'] == true;
+      final bp = b['paid'] == true;
+      if (ap != bp) return ap ? 1 : -1;
+      return (a['date'] as DateTime).compareTo(b['date'] as DateTime);
+    }
+    rows.sort(cmp);
+    final unpaid = rows.where((e) => e['paid'] != true).toList();
+    final paid = rows.where((e) => e['paid'] == true).toList();
+    final scheme = Theme.of(ctx).colorScheme;
+    final out = <Widget>[];
+    if (unpaid.isNotEmpty) {
+      out.add(Padding(
+        padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+        child: Text(
+          'پرداخت‌نشده · ${unpaid.length}',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+      ));
+      for (final row in unpaid) {
+        out.add(_installmentPayTile(current, row, ctx, setL));
+      }
+    }
+    if (paid.isNotEmpty) {
+      out.add(Padding(
+        padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+        child: Text(
+          'پرداخت‌شده · ${paid.length}',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+      ));
+      for (final row in paid) {
+        out.add(_installmentPayTile(current, row, ctx, setL));
+      }
+    }
+    return out;
+  }
+
+  Widget _installmentPayTile(
+    _TrackedLoan current,
+    Map<String, dynamic> row,
+    BuildContext ctx,
+    void Function(void Function()) setL,
+  ) {
+    final i = row['i'] as int;
+    final payDt = row['date'] as DateTime;
+    final isPaid = row['paid'] as bool;
+    final j = Jalali.fromDateTime(payDt);
+    final dateLabel = '${j.day} ${j.monthName} ${j.year}';
+    final scheme = Theme.of(ctx).colorScheme;
+    return Card(
+      key: ValueKey('inst_${current.id}_$i'),
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      color: isPaid
+          ? scheme.surfaceContainerHighest.withValues(alpha: 0.45)
+          : scheme.primaryContainer.withValues(alpha: 0.28),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 14,
+                  backgroundColor:
+                      isPaid ? scheme.outlineVariant : scheme.primary,
+                  child: Text(
+                    '${i + 1}',
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: isPaid ? scheme.onSurface : scheme.onPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'قسط ${i + 1}',
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w800,
+                          decoration:
+                              isPaid ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      Text(
+                        '$dateLabel · ${NumFmt.format(current.monthlyPayment.round())} تومان',
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 12,
+                          color: scheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (!isPaid)
+              FilledButton.tonalIcon(
+                onPressed: () async {
+                  await _togglePaid(current, i);
+                  setL(() {});
+                  setState(() {});
+                },
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('پرداخت شد',
+                    style: TextStyle(fontFamily: 'Vazirmatn')),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(42),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await _togglePaid(current, i);
+                  setL(() {});
+                  setState(() {});
+                },
+                icon: const Icon(Icons.undo, size: 18),
+                label: const Text('برگشت به پرداخت‌نشده',
+                    style: TextStyle(fontFamily: 'Vazirmatn')),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showInstallmentSheet(_TrackedLoan loan) {
     showModalBottomSheet(
       context: context,
@@ -3451,167 +3636,11 @@ class _LoanTabState extends State<_LoanTab> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ...(() {
-                    final rows = <Map<String, dynamic>>[];
-                    for (var i = 0; i < current.months; i++) {
-                      final payDt = current.dueDateForIndex(i);
-                      rows.add({
-                        'i': i,
-                        'date': payDt,
-                        'paid': current.isPaid(i),
-                      });
-                    }
-                    final unpaid = rows.where((e) => e['paid'] != true).toList()
-                      ..sort((a, b) => (a['date'] as DateTime)
-                          .compareTo(b['date'] as DateTime));
-                    final paidRows = rows.where((e) => e['paid'] == true).toList()
-                      ..sort((a, b) => (a['date'] as DateTime)
-                          .compareTo(b['date'] as DateTime));
-                    Widget tile(Map<String, dynamic> row) {
-                      final i = row['i'] as int;
-                      final payDt = row['date'] as DateTime;
-                      final isPaid = row['paid'] as bool;
-                      final j = Jalali.fromDateTime(payDt);
-                      final dateLabel = '${j.day} ${j.monthName} ${j.year}';
-                      final scheme = Theme.of(ctx).colorScheme;
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        elevation: 0,
-                        color: isPaid
-                            ? scheme.surfaceContainerHighest.withValues(alpha: 0.45)
-                            : scheme.primaryContainer.withValues(alpha: 0.25),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 14,
-                                    backgroundColor: isPaid
-                                        ? scheme.outlineVariant
-                                        : scheme.primary,
-                                    child: Text(
-                                      '${i + 1}',
-                                      style: TextStyle(
-                                        fontFamily: 'Vazirmatn',
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w800,
-                                        color: isPaid
-                                            ? scheme.onSurface
-                                            : scheme.onPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'قسط ${i + 1}',
-                                          style: TextStyle(
-                                            fontFamily: 'Vazirmatn',
-                                            fontWeight: FontWeight.w800,
-                                            decoration: isPaid
-                                                ? TextDecoration.lineThrough
-                                                : null,
-                                          ),
-                                        ),
-                                        Text(
-                                          '$dateLabel · ${NumFmt.format(current.monthlyPayment.round())} تومان',
-                                          style: TextStyle(
-                                            fontFamily: 'Vazirmatn',
-                                            fontSize: 12,
-                                            color: scheme.onSurface
-                                                .withValues(alpha: 0.6),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              if (!isPaid)
-                                FilledButton.tonalIcon(
-                                  onPressed: () async {
-                                    await _togglePaid(current, i);
-                                    setL(() {});
-                                    setState(() {});
-                                  },
-                                  icon: const Icon(Icons.check_circle_outline),
-                                  label: const Text(
-                                    'پرداخت شد',
-                                    style: TextStyle(fontFamily: 'Vazirmatn'),
-                                  ),
-                                  style: FilledButton.styleFrom(
-                                    minimumSize: const Size.fromHeight(42),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                )
-                              else
-                                OutlinedButton.icon(
-                                  onPressed: () async {
-                                    await _togglePaid(current, i);
-                                    setL(() {});
-                                    setState(() {});
-                                  },
-                                  icon: const Icon(Icons.undo, size: 18),
-                                  label: const Text(
-                                    'برگشت به پرداخت‌نشده',
-                                    style: TextStyle(fontFamily: 'Vazirmatn'),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    return [
-                      if (unpaid.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
-                          child: Text(
-                            'پرداخت‌نشده · ${unpaid.length}',
-                            style: TextStyle(
-                              fontFamily: 'Vazirmatn',
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13,
-                              color: Theme.of(ctx)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.55),
-                            ),
-                          ),
-                        ),
-                      for (final row in unpaid) tile(row),
-                      if (paidRows.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
-                          child: Text(
-                            'پرداخت‌شده · ${paidRows.length}',
-                            style: TextStyle(
-                              fontFamily: 'Vazirmatn',
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13,
-                              color: Theme.of(ctx)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.55),
-                            ),
-                          ),
-                        ),
-                      for (final row in paidRows) tile(row),
-                    ];
-                  }())
+..._buildSortedInstallmentTiles(
+                    current: current,
+                    ctx: ctx,
+                    setL: setL,
+                  )
 
                 ],
               );

@@ -86,6 +86,12 @@ class AppNotifications {
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     final granted = await android?.requestNotificationsPermission() ?? false;
+    // اندروید ۱۲+ : مجوز آلارم دقیق (بدون آن ممکن است اعلان نیاید)
+    try {
+      await android?.requestExactAlarmsPermission();
+    } catch (e) {
+      debugPrint('exact alarm permission: $e');
+    }
     if (!granted && context != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text(

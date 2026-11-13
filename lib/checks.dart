@@ -213,6 +213,8 @@ class BankCheck {
   final String status;
   final bool remindersEnabled;
   final List<int> reminderDays;
+  /// ساعت آلارم محلی (۰–۲۳)، پیش‌فرض ۹
+  final int reminderHour;
   final List<CheckStatusChange> history;
   final String? linkedExpenseId;
   final DateTime createdAt;
@@ -235,6 +237,7 @@ class BankCheck {
     this.status = CheckStatus.pending,
     this.remindersEnabled = true,
     this.reminderDays = const [7, 3, 1, 0],
+    this.reminderHour = 9,
     this.history = const [],
     this.linkedExpenseId,
     DateTime? createdAt,
@@ -304,6 +307,7 @@ class BankCheck {
     String? status,
     bool? remindersEnabled,
     List<int>? reminderDays,
+    int? reminderHour,
     List<CheckStatusChange>? history,
     String? linkedExpenseId,
     bool clearLinked = false,
@@ -326,6 +330,7 @@ class BankCheck {
         status: status ?? this.status,
         remindersEnabled: remindersEnabled ?? this.remindersEnabled,
         reminderDays: reminderDays ?? this.reminderDays,
+        reminderHour: reminderHour ?? this.reminderHour,
         history: history ?? this.history,
         linkedExpenseId:
             clearLinked ? null : (linkedExpenseId ?? this.linkedExpenseId),
@@ -350,6 +355,7 @@ class BankCheck {
         'status': status,
         'remindersEnabled': remindersEnabled,
         'reminderDays': reminderDays,
+        'reminderHour': reminderHour,
         'history': history.map((e) => e.toJson()).toList(),
         'linkedExpenseId': linkedExpenseId,
         'createdAt': createdAt.toIso8601String(),
@@ -398,6 +404,7 @@ class BankCheck {
       imagePathBack: j['imagePathBack'] as String?,
       status: j['status'] as String? ?? CheckStatus.pending,
       remindersEnabled: j['remindersEnabled'] as bool? ?? true,
+      reminderHour: (j['reminderHour'] as num?)?.toInt() ?? 9,
       reminderDays: days.isEmpty ? const [7, 3, 1, 0] : days,
       history: hist,
       linkedExpenseId: j['linkedExpenseId'] as String?,
@@ -613,7 +620,8 @@ class CheckStore {
     if (!c.remindersEnabled || CheckStatus.isFinal(c.status)) return;
     final ok = await AppNotifications.instance.ensurePermissionForReminders();
     if (!ok) return;
-    final due = DateTime(c.dueDate.year, c.dueDate.month, c.dueDate.day, 9);
+    final hour = c.reminderHour.clamp(0, 23);
+    final due = DateTime(c.dueDate.year, c.dueDate.month, c.dueDate.day, hour);
     final dueLabel = jalaliLabel(c.dueDate);
     final amountLabel = NumFmt.format(c.amount.round());
     for (final daysBefore in c.reminderDays) {
@@ -1264,6 +1272,7 @@ class _CheckFormPageState extends State<CheckFormPage> {
   DateTime? _issue;
   bool _reminders = true;
   final Set<int> _remDays = {7, 3, 1, 0};
+  int _remHour = 9;
   String? _imagePath;
   String? _imagePathBack;
   bool _saving = false;
@@ -1291,6 +1300,7 @@ class _CheckFormPageState extends State<CheckFormPage> {
       _due = e.dueDate;
       _issue = e.issueDate;
       _reminders = e.remindersEnabled;
+      _remHour = e.reminderHour.clamp(7, 21);
       _remDays
         ..clear()
         ..addAll(e.reminderDays);
@@ -1464,6 +1474,7 @@ class _CheckFormPageState extends State<CheckFormPage> {
         status: base?.status ?? CheckStatus.pending,
         remindersEnabled: _reminders,
         reminderDays: _remDays.toList()..sort((a, b) => b.compareTo(a)),
+        reminderHour: _remHour,
         history: base?.history ?? const [],
         linkedExpenseId: base?.linkedExpenseId,
         createdAt: base?.createdAt,
@@ -1626,7 +1637,7 @@ class _CheckFormPageState extends State<CheckFormPage> {
             value: _reminders,
             onChanged: (v) => setState(() => _reminders = v),
           ),
-          if (_reminders)
+          if (_reminders) ...[
             Wrap(
               spacing: 6,
               children: [
@@ -1645,6 +1656,42 @@ class _CheckFormPageState extends State<CheckFormPage> {
                   ),
               ],
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('ساعت آلارم:',
+                    style: TextStyle(fontFamily: 'Vazirmatn')),
+                const SizedBox(width: 12),
+                DropdownButton<int>(
+                  value: _remHour.clamp(7, 21),
+                  items: [
+                    for (var h = 7; h <= 21; h++)
+                      DropdownMenuItem(
+                        value: h,
+                        child: Text(
+                          '${h.toString().padLeft(2, '0')}:00',
+                          style: const TextStyle(fontFamily: 'Vazirmatn'),
+                        ),
+                      ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _remHour = v);
+                  },
+                ),
+              ],
+            ),
+            Text(
+              'اعلان در ساعت انتخاب‌شده (مجوز اعلان لازم است).',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 11,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.5),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           const Text('تصویر چک',
               style: TextStyle(

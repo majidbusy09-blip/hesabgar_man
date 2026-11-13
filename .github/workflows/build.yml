@@ -263,65 +263,55 @@ jobs:
 
       - name: Disable lintVital (image_picker AGP bug)
         run: |
-          # باگ lint در image_picker_android (ExifDataCopier / removeLast) بیلد release را می‌شکند
           mkdir -p android
-          # gradle.properties
           touch android/gradle.properties
-          grep -q 'android.lint.checkReleaseBuilds' android/gradle.properties || \
-            echo 'android.lint.checkReleaseBuilds=false' >> android/gradle.properties
-          grep -q 'android.experimental.lint.missingBaselineIsEmpty=true' android/gradle.properties || \
-            echo 'android.experimental.lint.missingBaselineIsEmpty=true' >> android/gradle.properties
-
-          # app build.gradle / kts — lint block
-          python3 << 'PY'
-          from pathlib import Path
-          for name in ["android/app/build.gradle.kts", "android/app/build.gradle"]:
-              p = Path(name)
-              if not p.exists():
-                  continue
-              t = p.read_text()
-              if "checkReleaseBuilds" in t:
-                  print(f"already patched {name}")
-                  continue
-              if name.endswith(".kts"):
-                  block = """
-    lint {
-        checkReleaseBuilds = false
-        abortOnError = false
-    }
-"""
-              else:
-                  block = """
-    lint {
-        checkReleaseBuilds false
-        abortOnError false
-    }
-"""
-              if "android {" in t:
-                  t = t.replace("android {", "android {" + block, 1)
-                  p.write_text(t)
-                  print(f"patched {name}")
-          # disable lintVital tasks for all subprojects
-          for root_name in ["android/build.gradle.kts", "android/build.gradle"]:
-              rp = Path(root_name)
-              if not rp.exists():
-                  continue
-              extra = """
-
-subprojects {
-    tasks.configureEach {
-        if (name.contains("lintVital")) {
-            enabled = false
-        }
-    }
-}
-"""
-              rt = rp.read_text()
-              if "lintVital" not in rt:
-                  rp.write_text(rt + extra)
-                  print(f"subprojects lintVital disabled in {root_name}")
-          PY
-          echo "---- lint config ----"
+          grep -q 'android.lint.checkReleaseBuilds' android/gradle.properties || echo 'android.lint.checkReleaseBuilds=false' >> android/gradle.properties
+          # پچ lint در app build.gradle / kts بدون heredoc تو در تو
+          for f in android/app/build.gradle.kts android/app/build.gradle; do
+            [ -f "$f" ] || continue
+            if grep -q 'checkReleaseBuilds' "$f"; then
+              echo "already patched $f"
+              continue
+            fi
+            if echo "$f" | grep -q '\.kts$'; then
+              awk '
+                /^android \{/ && !done {
+                  print
+                  print "    lint {"
+                  print "        checkReleaseBuilds = false"
+                  print "        abortOnError = false"
+                  print "    }"
+                  done=1
+                  next
+                }
+                { print }
+              ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+            else
+              awk '
+                /^android \{/ && !done {
+                  print
+                  print "    lint {"
+                  print "        checkReleaseBuilds false"
+                  print "        abortOnError false"
+                  print "    }"
+                  done=1
+                  next
+                }
+                { print }
+              ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+            fi
+            echo "patched $f"
+          done
+          # غیرفعال‌سازی تسک lintVital در همه ساب‌پروژه‌ها
+          for root in android/build.gradle.kts android/build.gradle; do
+            [ -f "$root" ] || continue
+            if grep -q 'lintVital' "$root"; then
+              echo "root already has lintVital rule: $root"
+              continue
+            fi
+            echo 'subprojects { tasks.configureEach { if (name.contains("lintVital")) { enabled = false } } }' >> "$root"
+            echo "appended lintVital disable to $root"
+          done
           grep -n "checkReleaseBuilds\|lintVital" android/app/build.gradle* android/build.gradle* android/gradle.properties 2>/dev/null || true
 
 

@@ -870,78 +870,100 @@ class DuaCatalog {
   static const items = <Map<String, String>>[
     {
       'title': 'ذکر صبح',
-      'ar': 'أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ',
-      'fa': 'صبح کردیم و فرمانروایی از آنِ خداست.',
+      'ar':
+          'أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ. رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذَا الْيَوْمِ وَخَيْرَ مَا بَعْدَهُ، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذَا الْيَوْمِ وَشَرِّ مَا بَعْدَهُ.',
+      'fa':
+          'صبح کردیم و فرمانروایی از آنِ خداست، و ستایش از آنِ خداست. معبودی جز خدای یکتا نیست، شریکی ندارد؛ فرمانروایی و ستایش از آنِ اوست و او بر هر چیز تواناست. پروردگارا، خیر این روز و پس از آن را از تو می‌خواهم و از شرّ این روز و پس از آن به تو پناه می‌برم.',
     },
     {
       'title': 'ذکر شب',
-      'ar': 'أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ',
-      'fa': 'شب کردیم و فرمانروایی از آنِ خداست.',
+      'ar':
+          'أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ. رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذِهِ اللَّيْلَةِ وَخَيْرَ مَا بَعْدَهَا، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذِهِ اللَّيْلَةِ وَشَرِّ مَا بَعْدَهَا.',
+      'fa':
+          'شب کردیم و فرمانروایی از آنِ خداست، و ستایش از آنِ خداست. معبودی جز خدای یکتا نیست. پروردگارا، خیر این شب و پس از آن را از تو می‌خواهم و از شرّ آن به تو پناه می‌برم.',
+    },
+    {
+      'title': 'آیه الکرسی',
+      'ar':
+          'اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَّهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَن ذَا الَّذِي يَشْفَعُ عِندَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِّنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ.',
+      'fa':
+          'خداوند یکتاست؛ زنده و پاینده است. او را نه چرتی فراگیرد و نه خوابی. آنچه در آسمان‌ها و زمین است از آنِ اوست. کیست که نزد او جز به اذن او شفاعت کند؟ آنچه پیش رو و پشت سرشان است می‌داند، و به چیزی از علم او جز آنچه بخواهد احاطه نمی‌یابند. کرسی‌اش آسمان‌ها و زمین را در بر گرفته و نگهداری آن دو بر او گران نیست؛ و اوست بلندمرتبه و بزرگ.',
     },
     {
       'title': 'قبل از غذا',
-      'ar': 'بِسْمِ اللَّهِ',
-      'fa': 'به نام خداوند.',
+      'ar': 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+      'fa': 'به نام خداوند بخشنده مهربان.',
     },
     {
       'title': 'بعد از غذا',
-      'ar': 'الْحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنَا وَسَقَانَا',
-      'fa': 'ستایش خدایی را که به ما خوراک و نوشیدنی داد.',
+      'ar':
+          'الْحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنَا وَسَقَانَا وَجَعَلَنَا مُسْلِمِينَ',
+      'fa': 'ستایش خدایی را که به ما خوراک و نوشیدنی داد و ما را مسلمان قرار داد.',
     },
     {
       'title': 'خروج از خانه',
-      'ar': 'بِسْمِ اللَّهِ تَوَكَّلْتُ عَلَى اللَّهِ',
-      'fa': 'به نام خدا، بر خدا توکل کردم.',
+      'ar':
+          'بِسْمِ اللَّهِ، تَوَكَّلْتُ عَلَى اللَّهِ، وَلَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللَّهِ',
+      'fa': 'به نام خدا، بر خدا توکل کردم، و هیچ نیرو و توانی جز به خدا نیست.',
     },
     {
       'title': 'ورود به خانه',
-      'ar': 'بِسْمِ اللَّهِ وَلَجْنَا، وَبِسْمِ اللَّهِ خَرَجْنَا',
-      'fa': 'به نام خدا وارد شدیم و به نام خدا بیرون آمدیم.',
+      'ar':
+          'بِسْمِ اللَّهِ وَلَجْنَا، وَبِسْمِ اللَّهِ خَرَجْنَا، وَعَلَىٰ رَبِّنَا تَوَكَّلْنَا',
+      'fa': 'به نام خدا وارد شدیم و به نام خدا بیرون آمدیم و بر پروردگارمان توکل کردیم.',
     },
     {
       'title': 'سفر',
-      'ar': 'سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا',
-      'fa': 'پاک است آن‌که این را برای ما رام کرد.',
-    },
-    {
-      'title': 'آیه الکرسی (آغاز)',
-      'ar': 'اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ',
-      'fa': 'خداوند یکتاست؛ زنده و پاینده است.',
+      'ar':
+          'سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَٰذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ، وَإِنَّا إِلَىٰ رَبِّنَا لَمُنقَلِبُونَ',
+      'fa': 'پاک است آن‌که این را برای ما رام کرد و گرنه ما توان آن را نداشتیم، و ما به‌سوی پروردگارمان بازمی‌گردیم.',
     },
     {
       'title': 'طلب آمرزش',
-      'ar': 'أَسْتَغْفِرُ اللَّهَ وَأَتُوبُ إِلَيْهِ',
-      'fa': 'از خدا آمرزش می‌خواهم و به سوی او بازمی‌گردم.',
+      'ar':
+          'أَسْتَغْفِرُ اللَّهَ الْعَظِيمَ الَّذِي لَا إِلَٰهَ إِلَّا هُوَ الْحَيَّ الْقَيُّومَ وَأَتُوبُ إِلَيْهِ',
+      'fa': 'از خداوند بزرگ که معبودی جز او نیست، زنده و پاینده، آمرزش می‌خواهم و به سوی او بازمی‌گردم.',
     },
     {
       'title': 'صلوات',
-      'ar': 'اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَآلِ مُحَمَّدٍ',
-      'fa': 'خدایا بر محمد و خاندان محمد درود فرست.',
+      'ar':
+          'اللَّهُمَّ صَلِّ عَلَىٰ مُحَمَّدٍ وَعَلَىٰ آلِ مُحَمَّدٍ، كَمَا صَلَّيْتَ عَلَىٰ إِبْرَاهِيمَ وَعَلَىٰ آلِ إِبْرَاهِيمَ، إِنَّكَ حَمِيدٌ مَجِيدٌ',
+      'fa': 'خدایا بر محمد و خاندان محمد درود فرست، چنان‌که بر ابراهیم و خاندان ابراهیم درود فرستادی؛ همانا تو ستوده و بزرگواری.',
     },
     {
-      'title': 'رفع غم',
-      'ar': 'لَا إِلَٰهَ إِلَّا أَنْتَ سُبْحَانَكَ إِنِّي كُنْتُ مِنَ الظَّالِمِينَ',
-      'fa': 'معبودی جز تو نیست؛ من از ستمکاران بودم. (ذکر یونس)',
+      'title': 'رفع غم (ذکر یونس)',
+      'ar':
+          'لَا إِلَٰهَ إِلَّا أَنتَ سُبْحَانَكَ إِنِّي كُنتُ مِنَ الظَّالِمِينَ',
+      'fa': 'معبودی جز تو نیست؛ منزهی تو؛ به‌راستی من از ستمکاران بودم.',
+    },
+    {
+      'title': 'حسبی الله',
+      'ar': 'حَسْبِيَ اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ عَلَيْهِ تَوَكَّلْتُ وَهُوَ رَبُّ الْعَرْشِ الْعَظِيمِ',
+      'fa': 'خدا مرا بس است؛ معبودی جز او نیست؛ بر او توکل کردم و او پروردگار عرش بزرگ است.',
     },
     {
       'title': 'سلامتی',
-      'ar': 'اللَّهُمَّ عَافِنِي فِي بَدَنِي',
-      'fa': 'خدایا بدنم را عافیت ده.',
+      'ar':
+          'اللَّهُمَّ عَافِنِي فِي بَدَنِي، اللَّهُمَّ عَافِنِي فِي سَمْعِي، اللَّهُمَّ عَافِنِي فِي بَصَرِي، لَا إِلَٰهَ إِلَّا أَنتَ',
+      'fa': 'خدایا بدنم، شنوایی‌ام و بینایی‌ام را عافیت ده؛ معبودی جز تو نیست.',
     },
     {
       'title': 'رزق',
-      'ar': 'اللَّهُمَّ إِنِّي أَسْأَلُكَ رِزْقًا طَيِّبًا',
-      'fa': 'خدایا از تو روزی پاک می‌خواهم.',
+      'ar':
+          'اللَّهُمَّ إِنِّي أَسْأَلُكَ رِزْقًا طَيِّبًا، وَعِلْمًا نَافِعًا، وَعَمَلًا مُتَقَبَّلًا',
+      'fa': 'خدایا از تو روزی پاک، دانش سودمند و کردار پذیرفته می‌خواهم.',
     },
     {
       'title': 'خواب',
-      'ar': 'بِاسْمِكَ اللَّهُمَّ أَمُوتُ وَأَحْيَا',
-      'fa': 'به نام تو می‌میرم و زنده می‌شوم.',
+      'ar':
+          'بِاسْمِكَ اللَّهُمَّ أَمُوتُ وَأَحْيَا، اللَّهُمَّ قِنِي عَذَابَكَ يَوْمَ تَبْعَثُ عِبَادَكَ',
+      'fa': 'به نام تو می‌میرم و زنده می‌شوم. خدایا در روزی که بندگانت را برمی‌انگیزی، از عذابت نگاهم دار.',
     },
     {
       'title': 'بیداری',
-      'ar': 'الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا',
-      'fa': 'ستایش خدایی را که پس از خواب ما را زنده کرد.',
+      'ar':
+          'الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا وَإِلَيْهِ النُّشُورُ',
+      'fa': 'ستایش خدایی را که پس از خواب ما را زنده کرد و بازگشت به‌سوی اوست.',
     },
   ];
 
@@ -953,7 +975,7 @@ class DuaCatalog {
     {'name': 'صلوات', 'target': 100},
     {'name': 'استغفرالله', 'target': 100},
     {'name': 'یا لطیف', 'target': 129},
-    {'name': 'حسبی الله', 'target': 7},
+    {'name': 'حسبی الله', 'target': 140},
   ];
 }
 
@@ -1260,10 +1282,9 @@ class _CalendarScreenState extends State<CalendarScreen>
       onHorizontalDragEnd: (details) {
         final v = details.primaryVelocity ?? 0;
         if (v.abs() < 200) return;
-        // کشیدن به چپ (velocity منفی در LTR) → ماه بعد؛ به راست → ماه قبل
-        // در RTL هم primaryVelocity همین معنا را دارد
+        // در تقویم فارسی RTL: کشیدن به چپ → ماه قبل؛ به راست → ماه بعد
         setState(() {
-          _focused = _focused.addMonths(v < 0 ? 1 : -1);
+          _focused = _focused.addMonths(v < 0 ? -1 : 1);
         });
       },
       child: Column(
@@ -1273,10 +1294,10 @@ class _CalendarScreenState extends State<CalendarScreen>
           child: Row(
             children: [
               IconButton.filledTonal(
-                tooltip: 'ماه قبل',
+                tooltip: 'ماه بعد',
                 onPressed: () =>
-                    setState(() => _focused = _focused.addMonths(-1)),
-                icon: const Icon(Icons.chevron_right_rounded),
+                    setState(() => _focused = _focused.addMonths(1)),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
               ),
               Expanded(
                 child: Column(
@@ -1321,10 +1342,10 @@ class _CalendarScreenState extends State<CalendarScreen>
                 ),
               ),
               IconButton.filledTonal(
-                tooltip: 'ماه بعد',
+                tooltip: 'ماه قبل',
                 onPressed: () =>
-                    setState(() => _focused = _focused.addMonths(1)),
-                icon: const Icon(Icons.chevron_left_rounded),
+                    setState(() => _focused = _focused.addMonths(-1)),
+                icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
               ),
             ],
           ),
@@ -3168,6 +3189,17 @@ class _CalendarScreenState extends State<CalendarScreen>
                     fontFamily: 'Vazirmatn',
                     fontWeight: FontWeight.w900,
                     fontSize: 18)),
+            Text(
+              'برای متن کامل روی هر مورد بزنید',
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 12,
+                color: Theme.of(ctx)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.55),
+              ),
+            ),
             const SizedBox(height: 8),
             Expanded(
               child: ListView.builder(
@@ -3186,43 +3218,43 @@ class _CalendarScreenState extends State<CalendarScreen>
                             .withValues(alpha: 0.4),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(d['title']!,
-                              style: TextStyle(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => _openDuaDetail(d, season),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(d['title']!,
+                                      style: TextStyle(
+                                        fontFamily: 'Vazirmatn',
+                                        fontWeight: FontWeight.w800,
+                                        color: season.primary,
+                                      )),
+                                ),
+                                Icon(Icons.chevron_left,
+                                    color: season.primary.withValues(alpha: 0.7)),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              d['ar']!,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              textDirection: TextDirection.rtl,
+                              style: const TextStyle(
                                 fontFamily: 'Vazirmatn',
-                                fontWeight: FontWeight.w800,
-                                color: season.primary,
-                              )),
-                          const SizedBox(height: 8),
-                          Text(
-                            d['ar']!,
-                            textAlign: TextAlign.center,
-                            textDirection: TextDirection.rtl,
-                            style: const TextStyle(
-                              fontFamily: 'Vazirmatn',
-                              fontSize: 18,
-                              height: 1.6,
-                              fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                                height: 1.6,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            d['fa']!,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: 'Vazirmatn',
-                              fontSize: 13,
-                              color: Theme.of(ctx)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   );
@@ -3234,6 +3266,99 @@ class _CalendarScreenState extends State<CalendarScreen>
       ),
     );
   }
+
+  void _openDuaDetail(Map<String, String> d, SeasonTheme season) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return Container(
+          height: MediaQuery.of(ctx).size.height * 0.9,
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: scheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Text(
+                  d['title']!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                    color: season.primary,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: season.soft.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: SelectableText(
+                          d['ar']!,
+                          textAlign: TextAlign.center,
+                          textDirection: TextDirection.rtl,
+                          style: const TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 20,
+                            height: 1.9,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'ترجمه',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onSurface.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SelectableText(
+                        d['fa']!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 15.5,
+                          height: 1.7,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
 
   void _showPersonalOcc() {
     showModalBottomSheet(

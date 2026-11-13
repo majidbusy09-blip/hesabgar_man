@@ -3451,50 +3451,168 @@ class _LoanTabState extends State<_LoanTab> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  for (var i = 0; i < current.months; i++) ...[
-                    Builder(builder: (_) {
-                      final startJ = Jalali.fromDateTime(current.start);
-                      final firstDt =
-                          _firstJalaliPayment(current.start, current.paymentDay);
-                      final firstJ = Jalali.fromDateTime(firstDt);
-                      final baseOffset = (firstJ.year - startJ.year) * 12 +
-                          (firstJ.month - startJ.month);
-                      final payDt = _jalaliPaymentDateTime(
-                          startJ, current.paymentDay, baseOffset + i);
+                  ...(() {
+                    final rows = <Map<String, dynamic>>[];
+                    for (var i = 0; i < current.months; i++) {
+                      final payDt = current.dueDateForIndex(i);
+                      rows.add({
+                        'i': i,
+                        'date': payDt,
+                        'paid': current.isPaid(i),
+                      });
+                    }
+                    final unpaid = rows.where((e) => e['paid'] != true).toList()
+                      ..sort((a, b) => (a['date'] as DateTime)
+                          .compareTo(b['date'] as DateTime));
+                    final paidRows = rows.where((e) => e['paid'] == true).toList()
+                      ..sort((a, b) => (a['date'] as DateTime)
+                          .compareTo(b['date'] as DateTime));
+                    Widget tile(Map<String, dynamic> row) {
+                      final i = row['i'] as int;
+                      final payDt = row['date'] as DateTime;
+                      final isPaid = row['paid'] as bool;
                       final j = Jalali.fromDateTime(payDt);
-                      final dateLabel =
-                          '${j.day} ${j.monthName} ${j.year}';
-                      return CheckboxListTile(
-                        value: current.isPaid(i),
-                        onChanged: (_) async {
-                          await _togglePaid(current, i);
-                          setL(() {});
-                          setState(() {});
-                        },
-                        title: Text(
-                          'قسط ${i + 1}',
-                          style: TextStyle(
-                            fontFamily: 'Vazirmatn',
-                            decoration: current.isPaid(i)
-                                ? TextDecoration.lineThrough
-                                : null,
-                          ),
+                      final dateLabel = '${j.day} ${j.monthName} ${j.year}';
+                      final scheme = Theme.of(ctx).colorScheme;
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        elevation: 0,
+                        color: isPaid
+                            ? scheme.surfaceContainerHighest.withValues(alpha: 0.45)
+                            : scheme.primaryContainer.withValues(alpha: 0.25),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        subtitle: Text(
-                          '${NumFmt.format(current.monthlyPayment.round())} تومان · $dateLabel',
-                          style: const TextStyle(
-                              fontFamily: 'Vazirmatn', fontSize: 12),
-                        ),
-                        secondary: Text(
-                          '${i + 1}',
-                          style: const TextStyle(
-                            fontFamily: 'Vazirmatn',
-                            fontWeight: FontWeight.w700,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 14,
+                                    backgroundColor: isPaid
+                                        ? scheme.outlineVariant
+                                        : scheme.primary,
+                                    child: Text(
+                                      '${i + 1}',
+                                      style: TextStyle(
+                                        fontFamily: 'Vazirmatn',
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: isPaid
+                                            ? scheme.onSurface
+                                            : scheme.onPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'قسط ${i + 1}',
+                                          style: TextStyle(
+                                            fontFamily: 'Vazirmatn',
+                                            fontWeight: FontWeight.w800,
+                                            decoration: isPaid
+                                                ? TextDecoration.lineThrough
+                                                : null,
+                                          ),
+                                        ),
+                                        Text(
+                                          '$dateLabel · ${NumFmt.format(current.monthlyPayment.round())} تومان',
+                                          style: TextStyle(
+                                            fontFamily: 'Vazirmatn',
+                                            fontSize: 12,
+                                            color: scheme.onSurface
+                                                .withValues(alpha: 0.6),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              if (!isPaid)
+                                FilledButton.tonalIcon(
+                                  onPressed: () async {
+                                    await _togglePaid(current, i);
+                                    setL(() {});
+                                    setState(() {});
+                                  },
+                                  icon: const Icon(Icons.check_circle_outline),
+                                  label: const Text(
+                                    'پرداخت شد',
+                                    style: TextStyle(fontFamily: 'Vazirmatn'),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(42),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                )
+                              else
+                                OutlinedButton.icon(
+                                  onPressed: () async {
+                                    await _togglePaid(current, i);
+                                    setL(() {});
+                                    setState(() {});
+                                  },
+                                  icon: const Icon(Icons.undo, size: 18),
+                                  label: const Text(
+                                    'برگشت به پرداخت‌نشده',
+                                    style: TextStyle(fontFamily: 'Vazirmatn'),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       );
-                    }),
-                  ],
+                    }
+                    return [
+                      if (unpaid.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+                          child: Text(
+                            'پرداخت‌نشده · ${unpaid.length}',
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              color: Theme.of(ctx)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.55),
+                            ),
+                          ),
+                        ),
+                      for (final row in unpaid) tile(row),
+                      if (paidRows.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+                          child: Text(
+                            'پرداخت‌شده · ${paidRows.length}',
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              color: Theme.of(ctx)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.55),
+                            ),
+                          ),
+                        ),
+                      for (final row in paidRows) tile(row),
+                    ];
+                  }())
+
                 ],
               );
             },
@@ -4735,24 +4853,63 @@ class _LoanTabState extends State<_LoanTab> {
                   Builder(builder: (ctx) {
                     final jNow = Jalali.fromDateTime(DateTime.now());
                     final idx = loan.installmentIndexForJalaliMonth(jNow);
-                    if (idx == null) return const SizedBox.shrink();
+                    if (idx == null) {
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Text(
+                          'این ماه در بازه اقساط نیست',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 12,
+                            color: Theme.of(ctx)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.45),
+                          ),
+                        ),
+                      );
+                    }
                     final paid = loan.isPaid(idx);
-                    return CheckboxListTile(
-                      dense: true,
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 8),
-                      value: paid,
-                      onChanged: (_) => _toggleThisMonthPaid(loan),
-                      title: Text(
-                        paid
-                            ? 'قسط این ماه پرداخت شد'
-                            : 'پرداخت کردم این ماه',
-                        style: const TextStyle(
-                            fontFamily: 'Vazirmatn', fontSize: 13),
-                      ),
-                      controlAffinity: ListTileControlAffinity.leading,
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                      child: paid
+                          ? OutlinedButton.icon(
+                              onPressed: () => _toggleThisMonthPaid(loan),
+                              icon: const Icon(Icons.check_circle, size: 20),
+                              label: const Text(
+                                'پرداخت شده — برای برگشت بزنید',
+                                style: TextStyle(fontFamily: 'Vazirmatn'),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(46),
+                                foregroundColor:
+                                    Theme.of(ctx).colorScheme.primary,
+                                side: BorderSide(
+                                    color: Theme.of(ctx).colorScheme.primary),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                            )
+                          : FilledButton.icon(
+                              onPressed: () => _toggleThisMonthPaid(loan),
+                              icon: const Icon(Icons.payments_outlined),
+                              label: const Text(
+                                'قسط این ماه پرداخت شد',
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size.fromHeight(48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                            ),
                     );
-                  }),
+                  })
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(

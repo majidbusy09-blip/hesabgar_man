@@ -3114,7 +3114,7 @@ class _LoanTabState extends State<_LoanTab> {
       }
       if (permissionOk && days.isNotEmpty) {
         final now = DateTime.now();
-        final jToday = Jalali.now();
+        final jToday = Jalali.fromDateTime(DateTime.now());
         for (var i = 0; i < allDates.length; i++) {
           if (loan.isPaid(i)) continue;
           final day = allDates[i];

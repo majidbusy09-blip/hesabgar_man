@@ -273,6 +273,63 @@ jobs:
           rm -f test/widget_test.dart
           flutter test --reporter expanded test/calculator_logic_test.dart test/finance_logic_test.dart test/expense_model_test.dart test/accounting_logic_test.dart test/report_logic_test.dart test/category_store_test.dart test/calendar_recurrence_test.dart test/calendar_storage_test.dart test/checks_model_test.dart test/checks_finance_test.dart
 
+
+      - name: Fix R8/Gson for scheduled notifications
+        run: |
+          # خطای معروف: Missing type parameter در zonedSchedule (Gson + R8)
+          mkdir -p android/app
+          cat > android/app/proguard-rules.pro << 'PROGUARD'
+          ## Gson — لازم برای flutter_local_notifications
+          -keepattributes Signature
+          -keepattributes *Annotation*
+          -dontwarn sun.misc.**
+          -keep class com.google.gson.stream.** { *; }
+          -keep class * extends com.google.gson.TypeAdapter
+          -keep class * implements com.google.gson.TypeAdapterFactory
+          -keep class * implements com.google.gson.JsonSerializer
+          -keep class * implements com.google.gson.JsonDeserializer
+          -keepclassmembers,allowobfuscation class * {
+            @com.google.gson.annotations.SerializedName <fields>;
+          }
+          -keep,allowobfuscation,allowshrinking class com.google.gson.reflect.TypeToken
+          -keep,allowobfuscation,allowshrinking class * extends com.google.gson.reflect.TypeToken
+
+          ## پلاگین اعلان
+          -keep class com.dexterous.flutterlocalnotifications.** { *; }
+          PROGUARD
+          # حذف تورفتگی اضافه از heredoc بالا
+          sed -i 's/^          //' android/app/proguard-rules.pro
+
+          # R8 full mode گاهی TypeToken را خراب می‌کند
+          touch android/gradle.properties
+          grep -q 'android.enableR8.fullMode' android/gradle.properties \
+            || echo 'android.enableR8.fullMode=false' >> android/gradle.properties
+
+          # اتصال proguard به release در build.gradle.kts یا .gradle
+          if [ -f android/app/build.gradle.kts ]; then
+            FILE=android/app/build.gradle.kts
+            if ! grep -q 'proguard-rules.pro' "$FILE"; then
+              if grep -q 'release {' "$FILE"; then
+                sed -i '/release {/a\            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")' "$FILE"
+              fi
+            fi
+            echo "=== release block (kts) ==="
+            grep -n -A8 'release {' "$FILE" | head -20
+          elif [ -f android/app/build.gradle ]; then
+            FILE=android/app/build.gradle
+            if ! grep -q 'proguard-rules.pro' "$FILE"; then
+              if grep -q 'release {' "$FILE"; then
+                sed -i '/release {/a\            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"' "$FILE"
+              fi
+            fi
+            echo "=== release block (gradle) ==="
+            grep -n -A8 'release {' "$FILE" | head -20
+          fi
+          echo "=== proguard-rules.pro ==="
+          cat android/app/proguard-rules.pro
+          echo "=== gradle.properties R8 ==="
+          grep R8 android/gradle.properties || true
+
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons || true
 

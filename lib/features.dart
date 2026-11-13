@@ -4677,8 +4677,39 @@ class _LoanTabState extends State<_LoanTab> {
   List<Widget> _buildMyLoans(
       ColorScheme scheme, Widget Function(String) sectionTitle) {
     final monthTotal = _thisMonthInstallmentsTotal;
+    final jNow = Jalali.fromDateTime(DateTime.now());
     final sortedLoans = [..._loans]
-      ..sort((a, b) => a.paymentDay.compareTo(b.paymentDay));
+      ..sort((a, b) {
+        // پرداخت‌نشده‌های باقی‌مانده اول
+        final aLeft = a.remainingCount;
+        final bLeft = b.remainingCount;
+        final aDone = aLeft <= 0;
+        final bDone = bLeft <= 0;
+        if (aDone != bDone) return aDone ? 1 : -1;
+        // قسط این ماه پرداخت‌نشده اول‌تر
+        final aIdx = a.installmentIndexForJalaliMonth(jNow);
+        final bIdx = b.installmentIndexForJalaliMonth(jNow);
+        final aUnpaidMonth =
+            aIdx != null && !a.isPaid(aIdx);
+        final bUnpaidMonth =
+            bIdx != null && !b.isPaid(bIdx);
+        if (aUnpaidMonth != bUnpaidMonth) {
+          return aUnpaidMonth ? -1 : 1;
+        }
+        // بعد بر اساس نزدیک‌ترین سررسید پرداخت‌نشده
+        DateTime? nextDue(_TrackedLoan L) {
+          for (var i = 0; i < L.months; i++) {
+            if (!L.isPaid(i)) return L.dueDateForIndex(i);
+          }
+          return null;
+        }
+        final ad = nextDue(a);
+        final bd = nextDue(b);
+        if (ad != null && bd != null) return ad.compareTo(bd);
+        if (ad != null) return -1;
+        if (bd != null) return 1;
+        return a.paymentDay.compareTo(b.paymentDay);
+      });
     return [
       Text(
         'تسهیلات را ثبت کنید تا اقساط در تقویم بیاید و جمع این ماه را ببینید.',
@@ -4922,9 +4953,9 @@ class _LoanTabState extends State<_LoanTab> {
                             )
                           : FilledButton.icon(
                               onPressed: () => _toggleThisMonthPaid(loan),
-                              icon: const Icon(Icons.payments_outlined),
+                              icon: const Icon(Icons.check_circle),
                               label: const Text(
-                                'قسط این ماه پرداخت شد',
+                                'قسط این ماه رو پرداخت کردم',
                                 style: TextStyle(
                                   fontFamily: 'Vazirmatn',
                                   fontWeight: FontWeight.w800,
@@ -13832,7 +13863,7 @@ class GuideSection {
 /// راهنمای داخل اپ — با هر قابلیت جدید بخش‌ها را به‌روز کن
 class AppGuide {
   static const String title = 'راهنمای حسابگر من';
-  static const String versionLabel = '۱.۰.۷';
+  static const String versionLabel = '۱.۰.۹';
 
   /// متن ساده برای سازگاری با کدهای قدیمی (در صورت ارجاع)
   static String get body =>

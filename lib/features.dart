@@ -2424,21 +2424,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
           Row(
             children: [
               Expanded(
-                child: _FinanceMainTile(
-                  icon: Icons.handshake_outlined,
-                  title: 'تسهیلات من',
-                  onTap: () => _openTool(
-                    context,
-                    'تسهیلات من',
-                    const _LoanTab(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _FinanceMainTile(
+                child: _FinanceHeroCard(
                   icon: Icons.receipt_long_outlined,
                   title: 'چک‌های من',
+                  subtitle: 'ثبت، یادآوری و پیگیری چک',
                   onTap: () => _openTool(
                     context,
                     'چک‌های من',
@@ -2446,15 +2435,16 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
-                child: _FinanceMainTile(
-                  icon: Icons.monetization_on_outlined,
-                  title: 'محاسبه طلا',
+                child: _FinanceHeroCard(
+                  icon: Icons.handshake_outlined,
+                  title: 'تسهیلات من',
+                  subtitle: 'اقساط، یادآوری و مدیریت وام',
                   onTap: () => _openTool(
                     context,
-                    'محاسبه طلا',
-                    const _GoldTab(),
+                    'تسهیلات من',
+                    const _LoanTab(),
                   ),
                 ),
               ),
@@ -2464,6 +2454,17 @@ class _FinanceScreenState extends State<FinanceScreen> {
           _sectionTitle(context, 'محاسبات سریع'),
           _FinanceListGroup(
             children: [
+              _FinanceListRow(
+                icon: Icons.monetization_on_outlined,
+                title: 'محاسبه طلا',
+                subtitle: 'نرخ روز، وزن، اجرت و مالیات',
+                enabled: true,
+                onTap: () => _openTool(
+                  context,
+                  'محاسبه طلا',
+                  const _GoldTab(),
+                ),
+              ),
               _FinanceListRow(
                 icon: Icons.account_balance_outlined,
                 title: 'سود سپرده',
@@ -2601,6 +2602,88 @@ class _FinanceScreenState extends State<FinanceScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+/// کارت بزرگ ابزار اصلی (دو ستونه)
+class _FinanceHeroCard extends StatelessWidget {
+  const _FinanceHeroCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surface,
+      elevation: 0,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 120),
+          padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.4),
+            ),
+            gradient: LinearGradient(
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+              colors: [
+                scheme.primary.withValues(alpha: 0.08),
+                scheme.surface,
+              ],
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, size: 28, color: scheme.primary),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 12,
+                  height: 1.3,
+                  color: scheme.onSurface.withValues(alpha: 0.55),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

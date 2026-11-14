@@ -628,6 +628,71 @@ class NumFmt {
 
 
 // ---------- core/providers/theme_provider.dart ----------
+
+// ---------- اندازه نمایش ماشین‌حساب ----------
+class CalcUiProvider extends ChangeNotifier {
+  static const _key = 'calc_display_size_v1';
+  /// 0=کوچک 1=متوسط 2=بزرگ
+  int _size = 1;
+  bool _loaded = false;
+
+  int get size => _size;
+  bool get loaded => _loaded;
+
+  /// ضریب فونت نسبت به اندازه پایه UI
+  double get scale {
+    switch (_size) {
+      case 0:
+        return 0.88;
+      case 2:
+        return 1.14;
+      default:
+        return 1.0;
+    }
+  }
+
+  String get label {
+    switch (_size) {
+      case 0:
+        return 'کوچک';
+      case 2:
+        return 'بزرگ';
+      default:
+        return 'متوسط';
+    }
+  }
+
+  CalcUiProvider() {
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final store = await LocalStore.instance;
+      final v = store.getInt(_key);
+      if (v != null && v >= 0 && v <= 2) {
+        _size = v;
+      } else {
+        _size = 1;
+      }
+    } catch (_) {
+      _size = 1;
+    }
+    _loaded = true;
+    notifyListeners();
+  }
+
+  Future<void> setSize(int v) async {
+    if (v < 0 || v > 2) v = 1;
+    _size = v;
+    notifyListeners();
+    try {
+      final store = await LocalStore.instance;
+      await store.setInt(_key, v);
+    } catch (_) {}
+  }
+}
+
 class ThemeProvider extends ChangeNotifier {
   static const _keyPreset = 'theme_preset_id';
   static const _keyCustomSeed = 'theme_custom_seed';

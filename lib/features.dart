@@ -14,6 +14,8 @@ import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -976,6 +978,14 @@ class _CalcButtonState extends State<CalcButton>
       textColor = isDark ? Colors.white : Colors.black87;
     }
 
+    double uiScale = 1.0;
+    try {
+      uiScale = context.watch<CalcUiProvider>().scale;
+    } catch (_) {}
+    final base = widget.isScientific || widget.isMemory
+        ? 18.0
+        : (widget.isOperator || widget.isEqual ? 34.0 : 32.0);
+
     return ScaleTransition(
       scale: _scale,
       child: Material(
@@ -998,9 +1008,7 @@ class _CalcButtonState extends State<CalcButton>
                   widget.label,
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
-                    fontSize: widget.isScientific || widget.isMemory
-                        ? 18
-                        : (widget.isOperator || widget.isEqual ? 34 : 32),
+                    fontSize: base * uiScale,
                     fontWeight: FontWeight.w800,
                     color: textColor,
                     height: 1.0,
@@ -14429,13 +14437,203 @@ class _GuideScreenState extends State<GuideScreen> {
 
 
 
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
+
+  Widget _sectionTitle(BuildContext context, String text) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontFamily: 'Vazirmatn',
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: scheme.primary,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _backupAndShare(BuildContext context) async {
+    try {
+      final json = await FinancialDataPort.buildBackupJson();
+      final name =
+          'hesabgar_backup_${DateTime.now().millisecondsSinceEpoch}.json';
+      final file = await FinancialDataPort.writeToDocuments(name, json);
+      try {
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          subject: 'پشتیبان حسابگر من',
+          text: 'نسخه پشتیبان اطلاعات حسابگر من',
+        );
+      } catch (_) {
+        await Clipboard.setData(ClipboardData(text: json));
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            'پشتیبان ذخیره شد:\n${file.path}',
+            style: const TextStyle(fontFamily: 'Vazirmatn'),
+          ),
+          duration: const Duration(seconds: 5),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('خطا در پشتیبان: $e',
+              style: const TextStyle(fontFamily: 'Vazirmatn')),
+        ));
+      }
+    }
+  }
+
+  Future<void> _restoreFromRaw(BuildContext context, String raw) async {
+    raw = raw.trim();
+    if (raw.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('محتوای خالی است',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+      ));
+      return;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        throw const FormatException('ساختار JSON نامعتبر است');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('فایل یا متن نامعتبر است. اطلاعات فعلی تغییر نکرد.\n$e',
+              style: const TextStyle(fontFamily: 'Vazirmatn')),
+        ));
+      }
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تأیید بازیابی',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+        content: const Text(
+          'اطلاعات مالی فعلی با پشتیبان جایگزین می‌شود. قبل از بازیابی یک نسخه ایمنی خودکار ذخیره می‌شود.',
+          style: TextStyle(fontFamily: 'Vazirmatn'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('انصراف',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('بازیابی',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await FinancialDataPort.restoreFromJson(raw);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('بازیابی با موفقیت انجام شد',
+              style: TextStyle(fontFamily: 'Vazirmatn')),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('بازیابی ناموفق بود؛ اطلاعات قبلی حفظ شده است.\n$e',
+              style: const TextStyle(fontFamily: 'Vazirmatn')),
+        ));
+      }
+    }
+  }
+
+  Future<void> _restoreFromFile(BuildContext context) async {
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+      );
+      if (res == null || res.files.isEmpty) return;
+      final f = res.files.single;
+      String? raw = f.bytes != null ? utf8.decode(f.bytes!) : null;
+      if (raw == null && f.path != null) {
+        raw = await File(f.path!).readAsString();
+      }
+      if (raw == null || raw.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('خواندن فایل ممکن نشد',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ));
+        }
+        return;
+      }
+      if (context.mounted) await _restoreFromRaw(context, raw);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('خطا در انتخاب فایل: $e',
+              style: const TextStyle(fontFamily: 'Vazirmatn')),
+        ));
+      }
+    }
+  }
+
+  Future<void> _restoreFromPaste(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('چسباندن JSON',
+            style: TextStyle(fontFamily: 'Vazirmatn')),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: ctrl,
+            maxLines: 8,
+            style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
+            decoration: const InputDecoration(
+              hintText: 'محتوای فایل JSON را اینجا بچسبانید',
+              hintStyle: TextStyle(fontFamily: 'Vazirmatn'),
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('انصراف',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('ادامه',
+                style: TextStyle(fontFamily: 'Vazirmatn')),
+          ),
+        ],
+      ),
+    );
+    final raw = ctrl.text;
+    ctrl.dispose();
+    if (ok != true || !context.mounted) return;
+    await _restoreFromRaw(context, raw);
+  }
 
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final feedback = context.watch<FeedbackProvider>();
+    final calcUi = context.watch<CalcUiProvider>();
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -14443,6 +14641,7 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _sectionTitle(context, 'ظاهر و شخصی‌سازی'),
           Card(
             clipBehavior: Clip.antiAlias,
             child: InkWell(
@@ -14506,9 +14705,43 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: Icon(Icons.format_size, color: scheme.primary),
+              title: const Text('اندازه اعداد ماشین‌حساب',
+                  style: TextStyle(fontFamily: 'Vazirmatn')),
+              subtitle: Text(
+                calcUi.label,
+                style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12),
+              ),
+            ),
+          ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(
+                      value: 0,
+                      label: Text('کوچک',
+                          style: TextStyle(fontFamily: 'Vazirmatn'))),
+                  ButtonSegment(
+                      value: 1,
+                      label: Text('متوسط',
+                          style: TextStyle(fontFamily: 'Vazirmatn'))),
+                  ButtonSegment(
+                      value: 2,
+                      label: Text('بزرگ',
+                          style: TextStyle(fontFamily: 'Vazirmatn'))),
+                ],
+                selected: {calcUi.size},
+                onSelectionChanged: (s) => calcUi.setSize(s.first),
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
-
-          // صدا و ویبره
+          _sectionTitle(context, 'رفتار و تجربه کاربری'),
           Card(
             child: Column(
               children: [
@@ -14543,165 +14776,79 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-
+          _sectionTitle(context, 'مدیریت اطلاعات'),
           Card(
             child: Column(
               children: [
                 ListTile(
-                  leading: Icon(Icons.backup_outlined, color: scheme.primary),
-                  title: const Text('پشتیبان‌گیری اطلاعات مالی',
+                  leading:
+                      Icon(Icons.backup_outlined, color: scheme.primary),
+                  title: const Text('تهیه نسخه پشتیبان',
                       style: TextStyle(fontFamily: 'Vazirmatn')),
-                  subtitle: const Text('ذخیره JSON در حافظه برنامه + کپی',
-                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
-                  onTap: () async {
-                    try {
-                      final json = await FinancialDataPort.buildBackupJson();
-                      final file = await FinancialDataPort.writeToDocuments(
-                        'hesabgar_backup.json',
-                        json,
-                      );
-                      await Clipboard.setData(ClipboardData(text: json));
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(
-                            'پشتیبان ساخته و کپی شد: ${file.path}',
-                            style: const TextStyle(fontFamily: 'Vazirmatn'),
-                          ),
-                          duration: const Duration(seconds: 4),
-                        ));
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text('خطا در پشتیبان: $e',
-                              style: const TextStyle(fontFamily: 'Vazirmatn')),
-                        ));
-                      }
-                    }
-                  },
+                  subtitle: const Text(
+                      'ذخیره فایل JSON و اشتراک‌گذاری',
+                      style:
+                          TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                  onTap: () => _backupAndShare(context),
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.restore, color: scheme.primary),
-                  title: const Text('بازیابی از پشتیبان',
+                  leading: Icon(Icons.folder_open, color: scheme.primary),
+                  title: const Text('بازیابی از فایل',
                       style: TextStyle(fontFamily: 'Vazirmatn')),
-                  subtitle: const Text('جای‌گذاری متن JSON پشتیبان',
-                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
-                  onTap: () async {
-                    final ctrl = TextEditingController();
-                    final ok = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('بازیابی',
-                            style: TextStyle(fontFamily: 'Vazirmatn')),
-                        content: SizedBox(
-                          width: double.maxFinite,
-                          child: TextField(
-                            controller: ctrl,
-                            maxLines: 8,
-                            style: const TextStyle(
-                                fontFamily: 'Vazirmatn', fontSize: 12),
-                            decoration: const InputDecoration(
-                              hintText: 'محتوای فایل JSON را اینجا بچسبانید',
-                              hintStyle: TextStyle(fontFamily: 'Vazirmatn'),
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('انصراف',
-                                style: TextStyle(fontFamily: 'Vazirmatn')),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('بازیابی',
-                                style: TextStyle(
-                                    fontFamily: 'Vazirmatn',
-                                    color: Colors.red)),
-                          ),
-                        ],
-                      ),
-                    );
-                    final raw = ctrl.text.trim();
-                    ctrl.dispose();
-                    if (ok != true || raw.isEmpty) return;
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('تأیید بازیابی',
-                            style: TextStyle(fontFamily: 'Vazirmatn')),
-                        content: const Text(
-                          'اطلاعات مالی فعلی با پشتیبان جایگزین می‌شود. قبل از بازیابی یک نسخه ایمنی خودکار ذخیره می‌شود.',
-                          style: TextStyle(fontFamily: 'Vazirmatn'),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('انصراف',
-                                style: TextStyle(fontFamily: 'Vazirmatn')),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('ادامه',
-                                style: TextStyle(fontFamily: 'Vazirmatn')),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirm != true) return;
-                    try {
-                      await FinancialDataPort.restoreFromJson(raw);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'بازیابی انجام شد. یک‌بار برنامه را ببندید و دوباره باز کنید.',
-                              style: TextStyle(fontFamily: 'Vazirmatn'),
-                            ),
-                          ),
-                        );
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text('بازیابی ناموفق: $e',
-                              style: const TextStyle(fontFamily: 'Vazirmatn')),
-                        ));
-                      }
-                    }
-                  },
+                  subtitle: const Text(
+                      'انتخاب فایل JSON از حافظه گوشی',
+                      style:
+                          TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                  onTap: () => _restoreFromFile(context),
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.table_view_outlined, color: scheme.primary),
+                  leading: Icon(Icons.paste, color: scheme.primary),
+                  title: const Text('بازیابی با چسباندن JSON',
+                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                  subtitle: const Text('روش پیشرفته / کمکی',
+                      style:
+                          TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                  onTap: () => _restoreFromPaste(context),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(Icons.table_view_outlined,
+                      color: scheme.primary),
                   title: const Text('خروجی CSV تراکنش‌ها',
                       style: TextStyle(fontFamily: 'Vazirmatn')),
                   subtitle: const Text('قابل باز شدن در Excel',
-                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                      style:
+                          TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
                   onTap: () async {
                     try {
-                      final csv = await FinancialDataPort.buildTransactionsCsv();
+                      final csv =
+                          await FinancialDataPort.buildTransactionsCsv();
                       final file = await FinancialDataPort.writeToDocuments(
                         'hesabgar_transactions.csv',
                         csv,
                       );
-                      await Clipboard.setData(ClipboardData(text: csv));
+                      try {
+                        await Share.shareXFiles([XFile(file.path)],
+                            subject: 'تراکنش‌های حسابگر من');
+                      } catch (_) {
+                        await Clipboard.setData(ClipboardData(text: csv));
+                      }
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text(
-                            'CSV ذخیره و کپی شد: ${file.path}',
+                            'CSV ذخیره شد: ${file.path}',
                             style: const TextStyle(fontFamily: 'Vazirmatn'),
                           ),
-                          duration: const Duration(seconds: 4),
                         ));
                       }
                     } catch (e) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text('خطا: $e',
-                              style: const TextStyle(fontFamily: 'Vazirmatn')),
+                              style:
+                                  const TextStyle(fontFamily: 'Vazirmatn')),
                         ));
                       }
                     }
@@ -14711,7 +14858,7 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-
+          _sectionTitle(context, 'راهنما و درباره برنامه'),
           Card(
             child: ListTile(
               leading: Icon(Icons.menu_book_outlined, color: scheme.primary),
@@ -14727,15 +14874,15 @@ class SettingsScreen extends StatelessWidget {
               },
             ),
           ),
-          const SizedBox(height: 12),
-
+          const SizedBox(height: 8),
           Card(
             child: ListTile(
               leading: Icon(Icons.info_outline, color: scheme.primary),
               title: const Text('درباره اپ',
                   style: TextStyle(fontFamily: 'Vazirmatn')),
               subtitle: Text('نسخه ${AppGuide.versionLabel}',
-                  style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 12)),
+                  style: const TextStyle(
+                      fontFamily: 'Vazirmatn', fontSize: 12)),
               trailing: const Icon(Icons.chevron_left),
               onTap: () {
                 showDialog(
@@ -14745,7 +14892,8 @@ class SettingsScreen extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(24)),
                     child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+                      padding:
+                          EdgeInsets.symmetric(vertical: 32, horizontal: 20),
                       child: BrandSignature(),
                     ),
                   ),
@@ -14753,6 +14901,7 @@ class SettingsScreen extends StatelessWidget {
               },
             ),
           ),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -15661,20 +15810,28 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               textDirection: TextDirection.ltr,
             ),
             const Spacer(),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: Text(
-                _acc.mainDisplay,
-                style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 48,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-                maxLines: 1,
-                textDirection: TextDirection.ltr,
-              ),
+            Builder(
+              builder: (context) {
+                double uiScale = 1.0;
+                try {
+                  uiScale = context.watch<CalcUiProvider>().scale;
+                } catch (_) {}
+                return FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    _acc.mainDisplay,
+                    style: TextStyle(
+                      fontFamily: 'Vazirmatn',
+                      fontSize: 48 * uiScale,
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    maxLines: 1,
+                    textDirection: TextDirection.ltr,
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -15972,6 +16129,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             // بعد از = : عبارت کوچک + نتیجه درشت
             Builder(
               builder: (context) {
+                double uiScale = 1.0;
+                try {
+                  uiScale = context.watch<CalcUiProvider>().scale;
+                } catch (_) {}
                 final expr = _logic.expression.isEmpty
                     ? ''
                     : _logic.expressionDisplay;
@@ -15992,8 +16153,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   children: [
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        var fontSize = primaryIsExpr ? 42.0 : 16.0;
-                        final minSize = primaryIsExpr ? 18.0 : 12.0;
+                        var fontSize = (primaryIsExpr ? 42.0 : 16.0) * uiScale;
+                        final minSize = (primaryIsExpr ? 18.0 : 12.0) * uiScale;
                         final color = primaryIsExpr
                             ? (isDark ? Colors.white : Colors.black87)
                             : (isDark
@@ -16051,7 +16212,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                             preview,
                             style: TextStyle(
                               fontFamily: 'Vazirmatn',
-                              fontSize: 26,
+                              fontSize: 26 * uiScale,
                               fontWeight: FontWeight.w600,
                               color: isDark
                                   ? Colors.grey[400]
@@ -16073,7 +16234,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                             resRaw,
                             style: TextStyle(
                               fontFamily: 'Vazirmatn',
-                              fontSize: 48,
+                              fontSize: 48 * uiScale,
                               fontWeight: FontWeight.w800,
                               color: isDark ? Colors.white : Colors.black87,
                             ),

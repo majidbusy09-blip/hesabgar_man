@@ -51,6 +51,7 @@ class HesabgarManApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => FeedbackProvider()),
+        ChangeNotifierProvider(create: (_) => CalcUiProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {

@@ -15967,97 +15967,141 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               ],
             ),
             const Spacer(),
-            // حین ورود عملیات: عبارت درشت، نتیجه/پیش‌نمایش کوچک
-            // بعد از = : عبارت کوچک، نتیجه درشت
-            LayoutBuilder(
-              builder: (context, constraints) {
+            // عدد اول / عبارت در حال ورود: درشت
+            // پیش‌نمایش زنده: عبارت درشت + نتیجه کوچک
+            // بعد از = : عبارت کوچک + نتیجه درشت
+            Builder(
+              builder: (context) {
                 final expr = _logic.expression.isEmpty
                     ? ''
                     : _logic.expressionDisplay;
-                final midOp = showPreview;
-                var fontSize = midOp ? 40.0 : 16.0;
-                final minSize = midOp ? 18.0 : 12.0;
-                final color = midOp
-                    ? (isDark ? Colors.white : Colors.black87)
-                    : (isDark ? Colors.grey[500]! : Colors.grey[600]!);
-                if (expr.isNotEmpty) {
-                  while (fontSize > minSize) {
-                    final tp = TextPainter(
-                      text: TextSpan(
-                        text: expr,
-                        style: TextStyle(
-                          fontFamily: 'Vazirmatn',
-                          fontSize: fontSize,
-                          fontWeight:
-                              midOp ? FontWeight.w700 : FontWeight.w500,
-                          color: color,
+                final resRaw =
+                    _logic.result.isEmpty ? '0' : _logic.result;
+                // بعد از مساوی معمولاً عبارت و نتیجه یکی می‌شوند
+                final afterEquals = !showPreview &&
+                    expr.isNotEmpty &&
+                    expr.replaceAll(',', '') ==
+                        resRaw.replaceAll(',', '');
+                // ورود عدد اول یا وسط عملیات
+                final inputFocus =
+                    expr.isNotEmpty && (showPreview || !afterEquals);
+                final primaryIsExpr = inputFocus;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        var fontSize = primaryIsExpr ? 42.0 : 16.0;
+                        final minSize = primaryIsExpr ? 18.0 : 12.0;
+                        final color = primaryIsExpr
+                            ? (isDark ? Colors.white : Colors.black87)
+                            : (isDark
+                                ? Colors.grey[500]!
+                                : Colors.grey[600]!);
+                        if (expr.isNotEmpty) {
+                          while (fontSize > minSize) {
+                            final tp = TextPainter(
+                              text: TextSpan(
+                                text: expr,
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: fontSize,
+                                  fontWeight: primaryIsExpr
+                                      ? FontWeight.w800
+                                      : FontWeight.w500,
+                                  color: color,
+                                ),
+                              ),
+                              maxLines: 2,
+                              textDirection: TextDirection.ltr,
+                            )..layout(maxWidth: constraints.maxWidth);
+                            if (!tp.didExceedMaxLines) break;
+                            fontSize -= 1;
+                          }
+                        }
+                        return Text(
+                          expr,
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: fontSize,
+                            fontWeight: primaryIsExpr
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                            color: color,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.fade,
+                          softWrap: true,
+                          textDirection: TextDirection.ltr,
+                          textAlign: TextAlign.left,
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    // خط دوم: پیش‌نمایش کوچک، یا نتیجه نهایی درشت؛ هنگام ورود عدد اول «۰» درشت نشان نده
+                    if (showPreview)
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: GestureDetector(
+                          onLongPress: () =>
+                              _copyToClipboard(context, preview),
+                          child: Text(
+                            preview,
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 26,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? Colors.grey[400]
+                                  : Colors.grey[600],
+                            ),
+                            maxLines: 1,
+                            textDirection: TextDirection.ltr,
+                          ),
+                        ),
+                      )
+                    else if (!inputFocus)
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: GestureDetector(
+                          onLongPress: () =>
+                              _copyToClipboard(context, resRaw),
+                          child: Text(
+                            resRaw,
+                            style: TextStyle(
+                              fontFamily: 'Vazirmatn',
+                              fontSize: 48,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                            maxLines: 1,
+                            textDirection: TextDirection.ltr,
+                          ),
+                        ),
+                      )
+                    else
+                      const SizedBox(height: 4),
+                    if (!showPreview && afterEquals)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'لمس طولانی برای کپی',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 10,
+                            color: isDark
+                                ? Colors.grey[600]
+                                : Colors.grey[500],
+                          ),
                         ),
                       ),
-                      maxLines: 2,
-                      textDirection: TextDirection.ltr,
-                    )..layout(maxWidth: constraints.maxWidth);
-                    if (!tp.didExceedMaxLines) break;
-                    fontSize -= 1;
-                  }
-                }
-                return Text(
-                  expr,
-                  style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: fontSize,
-                    fontWeight: midOp ? FontWeight.w700 : FontWeight.w500,
-                    color: color,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.fade,
-                  softWrap: true,
-                  textDirection: TextDirection.ltr,
-                  textAlign: TextAlign.left,
+                  ],
                 );
               },
             ),
-            const SizedBox(height: 6),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onLongPress: () {
-                  final text = showPreview
-                      ? preview
-                      : (_logic.result.isEmpty ? '0' : _logic.result);
-                  _copyToClipboard(context, text);
-                },
-                child: Text(
-                  showPreview
-                      ? preview
-                      : (_logic.result.isEmpty ? '0' : _logic.result),
-                  style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: showPreview ? 26 : 48,
-                    fontWeight:
-                        showPreview ? FontWeight.w600 : FontWeight.w800,
-                    color: showPreview
-                        ? (isDark ? Colors.grey[400] : Colors.grey[600])
-                        : (isDark ? Colors.white : Colors.black87),
-                  ),
-                  maxLines: 1,
-                  textDirection: TextDirection.ltr,
-                ),
-              ),
-            ),
-            // راهنمای کپی فقط وقتی نتیجه نهایی درشت است
-            if (!showPreview && _logic.result.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  'لمس طولانی برای کپی',
-                  style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontSize: 10,
-                    color: isDark ? Colors.grey[600] : Colors.grey[500],
-                  ),
-                ),
-              ),
           ],
         ),
       ),

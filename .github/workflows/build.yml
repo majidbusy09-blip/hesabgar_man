@@ -125,6 +125,41 @@ jobs:
             exit 1
           fi
 
+
+      - name: Bump compileSdk for file_picker (API 36+)
+        run: |
+          # file_picker → flutter_plugin_android_lifecycle نیاز به compileSdk >= 36 دارد
+          bump_sdk() {
+            local f="$1"
+            [ -f "$f" ] || return 0
+            # شکل‌های رایج Flutter / AGP
+            sed -i -E 's/compileSdk\s*=\s*[0-9]+/compileSdk = 36/' "$f" || true
+            sed -i -E 's/compileSdkVersion\s*=\s*[0-9]+/compileSdkVersion = 36/' "$f" || true
+            sed -i -E 's/compileSdkVersion\s+[0-9]+/compileSdkVersion 36/' "$f" || true
+            sed -i -E 's/compileSdk\s+[0-9]+/compileSdk 36/' "$f" || true
+            sed -i -E 's/targetSdk\s*=\s*[0-9]+/targetSdk = 36/' "$f" || true
+            sed -i -E 's/targetSdkVersion\s*=\s*[0-9]+/targetSdkVersion = 36/' "$f" || true
+            sed -i -E 's/targetSdkVersion\s+[0-9]+/targetSdkVersion 36/' "$f" || true
+            sed -i -E 's/targetSdk\s+[0-9]+/targetSdk 36/' "$f" || true
+            # اگر با flutter.compileSdkVersion است
+            if grep -q 'compileSdk\s*=\s*flutter\.' "$f" 2>/dev/null; then
+              sed -i -E 's/compileSdk\s*=\s*flutter\.[A-Za-z0-9_]+/compileSdk = 36/' "$f" || true
+            fi
+            if grep -q 'targetSdk\s*=\s*flutter\.' "$f" 2>/dev/null; then
+              sed -i -E 's/targetSdk\s*=\s*flutter\.[A-Za-z0-9_]+/targetSdk = 36/' "$f" || true
+            fi
+            echo "=== $f (sdk) ==="
+            grep -nE 'compileSdk|targetSdk' "$f" || true
+          }
+          bump_sdk android/app/build.gradle.kts
+          bump_sdk android/app/build.gradle
+          # local.properties / gradle.properties اختیاری
+          if [ -f android/local.properties ]; then
+            grep -q 'flutter.compileSdkVersion' android/local.properties \
+              && sed -i 's/flutter.compileSdkVersion=.*/flutter.compileSdkVersion=36/' android/local.properties \
+              || echo 'flutter.compileSdkVersion=36' >> android/local.properties
+          fi
+
       - name: Setup Android NDK (pinned)
         uses: nttld/setup-ndk@v1
         id: setup-ndk

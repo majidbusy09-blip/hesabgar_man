@@ -24,6 +24,8 @@ dependencies:
   flutter_timezone: ^4.0.0
   flutter_compass: ^0.8.1
   flutter_svg: ^2.0.10
+  file_picker: ^8.1.4
+  share_plus: ^10.1.2
 
 dev_dependencies:
   flutter_test:

@@ -2447,35 +2447,38 @@ class _FinanceScreenState extends State<FinanceScreen> {
           ),
           const SizedBox(height: 18),
           _sectionTitle(context, 'ابزارهای اصلی'),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: _FinanceHeroCard(
-                  icon: Icons.handshake_outlined,
-                  title: 'تسهیلات من',
-                  subtitle: 'اقساط، یادآوری و مدیریت وام',
-                  onTap: () => _openTool(
-                    context,
-                    'تسهیلات من',
-                    const _LoanTab(),
+          // ارتفاع ثابت تا در ListView خطای unbounded ارتفاع ندهد
+          SizedBox(
+            height: 140,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _FinanceHeroCard(
+                    icon: Icons.handshake_outlined,
+                    title: 'تسهیلات من',
+                    subtitle: 'اقساط، یادآوری و مدیریت وام',
+                    onTap: () => _openTool(
+                      context,
+                      'تسهیلات من',
+                      const _LoanTab(),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _FinanceHeroCard(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'چک‌های من',
-                  subtitle: 'ثبت، یادآوری و پیگیری چک',
-                  onTap: () => _openTool(
-                    context,
-                    'چک‌های من',
-                    const ChecksScreen(),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _FinanceHeroCard(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'چک‌های من',
+                    subtitle: 'ثبت، یادآوری و پیگیری چک',
+                    onTap: () => _openTool(
+                      context,
+                      'چک‌های من',
+                      const ChecksScreen(),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 22),
           _sectionTitle(context, 'محاسبات سریع'),
@@ -2660,7 +2663,7 @@ class _FinanceHeroCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Container(
-          height: 132,
+          height: double.infinity,
           padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),

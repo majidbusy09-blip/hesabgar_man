@@ -172,6 +172,7 @@ class CalculatorLogic {
   double _memory = 0;
   bool _isDegree = true;
   int _openParens = 0;
+  bool _justEvaluated = false;
   final List<Map<String, String>> _history = [];
   static const _historyKey = 'calc_history_v1';
 
@@ -248,6 +249,29 @@ class CalculatorLogic {
     if (value == '=') {
       calculate();
       return;
+    }
+    if (_justEvaluated) {
+      final isDigit = RegExp(r'^[0-9]$').hasMatch(value) || value == '.';
+      final isOp = _isOperator(value) || value == '%';
+      if (isDigit) {
+        _expression = '';
+        _result = '0';
+        _livePreview = '';
+        _lastValue = null;
+        _openParens = 0;
+        _justEvaluated = false;
+      } else if (isOp) {
+        // ادامه روی نتیجه: 12 = سپس + 3
+        _justEvaluated = false;
+      } else {
+        // توابع و غیره → شروع تازه
+        _expression = '';
+        _result = '0';
+        _livePreview = '';
+        _lastValue = null;
+        _openParens = 0;
+        _justEvaluated = false;
+      }
     }
     if (value == '()') {
       toggleParen();
@@ -798,6 +822,7 @@ class CalculatorLogic {
     _expression = calculatedResult;
     _livePreview = '';
     _openParens = 0;
+    _justEvaluated = true;
   }
 
   String _diagnoseError(String expr) {
@@ -843,6 +868,7 @@ class CalculatorLogic {
     _lastError = null;
     _lastValue = null;
     _openParens = 0;
+    _justEvaluated = false;
   }
 
   void clearHistory() {
@@ -2422,20 +2448,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
           const SizedBox(height: 18),
           _sectionTitle(context, 'ابزارهای اصلی'),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: _FinanceHeroCard(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'چک‌های من',
-                  subtitle: 'ثبت، یادآوری و پیگیری چک',
-                  onTap: () => _openTool(
-                    context,
-                    'چک‌های من',
-                    const ChecksScreen(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
               Expanded(
                 child: _FinanceHeroCard(
                   icon: Icons.handshake_outlined,
@@ -2445,6 +2459,19 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     context,
                     'تسهیلات من',
                     const _LoanTab(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _FinanceHeroCard(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'چک‌های من',
+                  subtitle: 'ثبت، یادآوری و پیگیری چک',
+                  onTap: () => _openTool(
+                    context,
+                    'چک‌های من',
+                    const ChecksScreen(),
                   ),
                 ),
               ),
@@ -2633,8 +2660,8 @@ class _FinanceHeroCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 120),
-          padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
+          height: 132,
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
@@ -2660,9 +2687,11 @@ class _FinanceHeroCard extends StatelessWidget {
                 ),
                 child: Icon(icon, size: 28, color: scheme.primary),
               ),
-              const SizedBox(height: 14),
+              const Spacer(),
               Text(
                 title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontFamily: 'Vazirmatn',
                   fontSize: 16,
@@ -14545,20 +14574,43 @@ class SettingsScreen extends StatelessWidget {
       final json = await FinancialDataPort.buildBackupJson();
       final name =
           'hesabgar_backup_${DateTime.now().millisecondsSinceEpoch}.json';
-      final file = await FinancialDataPort.writeToDocuments(name, json);
+      final bytes = utf8.encode(json);
+      String? pickedPath;
+      try {
+        pickedPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'ذخیره پشتیبان حسابگر من',
+          fileName: name,
+          type: FileType.custom,
+          allowedExtensions: const ['json'],
+          bytes: bytes,
+        );
+      } catch (_) {}
+
+      late final File file;
+      if (pickedPath != null && pickedPath.isNotEmpty) {
+        file = File(pickedPath);
+        if (!await file.exists() || await file.length() == 0) {
+          await file.writeAsBytes(bytes, flush: true);
+        }
+      } else {
+        file = await FinancialDataPort.writeToDownloads(name, bytes);
+      }
+
       try {
         await Share.shareXFiles(
           [XFile(file.path)],
           subject: 'پشتیبان حسابگر من',
           text: 'نسخه پشتیبان اطلاعات حسابگر من',
         );
-      } catch (_) {
-        await Clipboard.setData(ClipboardData(text: json));
-      }
+      } catch (_) {}
+
       if (context.mounted) {
+        final tag = file.path.toLowerCase().contains('download')
+            ? 'دانلودها'
+            : 'مسیر انتخابی/اسناد';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-            'پشتیبان ذخیره شد:\n${file.path}',
+            'پشتیبان در $tag ذخیره شد:\n${file.path}',
             style: const TextStyle(fontFamily: 'Vazirmatn'),
           ),
           duration: const Duration(seconds: 5),

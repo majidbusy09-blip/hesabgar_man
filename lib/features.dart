@@ -998,8 +998,9 @@ class _CalcButtonState extends State<CalcButton>
                   widget.label,
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
-                    fontSize:
-                        widget.isScientific || widget.isMemory ? 12 : 20,
+                    fontSize: widget.isScientific || widget.isMemory
+                        ? 14
+                        : (widget.isOperator || widget.isEqual ? 26 : 24),
                     fontWeight: FontWeight.bold,
                     color: textColor,
                   ),
@@ -15666,7 +15667,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                 _acc.mainDisplay,
                 style: TextStyle(
                   fontFamily: 'Vazirmatn',
-                  fontSize: 36,
+                  fontSize: 40,
                   fontWeight: FontWeight.w800,
                   color: isDark ? Colors.white : Colors.black87,
                 ),
@@ -15965,16 +15966,48 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               ],
             ),
             const Spacer(),
-            Text(
-              _logic.expression.isEmpty ? '' : _logic.expressionDisplay,
-              style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 16,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600]),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textDirection: TextDirection.ltr,
-              textAlign: TextAlign.left,
+            // عبارت: تا ۲ خط؛ در صورت کمبود فضا فونت تا حداقل ۱۲ کم می‌شود (بدون ellipsis)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final expr = _logic.expression.isEmpty
+                    ? ''
+                    : _logic.expressionDisplay;
+                var fontSize = 17.0;
+                const minSize = 12.0;
+                if (expr.isNotEmpty) {
+                  final color =
+                      isDark ? Colors.grey[400]! : Colors.grey[600]!;
+                  while (fontSize > minSize) {
+                    final tp = TextPainter(
+                      text: TextSpan(
+                        text: expr,
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: fontSize,
+                          color: color,
+                        ),
+                      ),
+                      maxLines: 2,
+                      textDirection: TextDirection.ltr,
+                    )..layout(maxWidth: constraints.maxWidth);
+                    if (!tp.didExceedMaxLines) break;
+                    fontSize -= 1;
+                  }
+                }
+                return Text(
+                  expr,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: fontSize,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.fade,
+                  softWrap: true,
+                  textDirection: TextDirection.ltr,
+                  textAlign: TextAlign.left,
+                );
+              },
             ),
             const SizedBox(height: 4),
             // نتیجه اصلی یا پیش‌نمایش زنده
@@ -15994,7 +16027,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                       : (_logic.result.isEmpty ? '0' : _logic.result),
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
-                    fontSize: 36,
+                    fontSize: 40,
                     fontWeight: FontWeight.w800,
                     color: showPreview
                         ? (isDark ? Colors.tealAccent[100] : Colors.teal[700])

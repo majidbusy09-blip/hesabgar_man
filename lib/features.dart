@@ -988,21 +988,22 @@ class _CalcButtonState extends State<CalcButton>
           onTapUp: (_) => _release(),
           onTapCancel: () => _controller.reverse(),
           child: Container(
-            margin: const EdgeInsets.all(1.5),
+            margin: const EdgeInsets.all(0.5),
             alignment: Alignment.center,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 1),
                 child: Text(
                   widget.label,
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: widget.isScientific || widget.isMemory
-                        ? 16
-                        : (widget.isOperator || widget.isEqual ? 30 : 28),
-                    fontWeight: FontWeight.bold,
+                        ? 18
+                        : (widget.isOperator || widget.isEqual ? 34 : 32),
+                    fontWeight: FontWeight.w800,
                     color: textColor,
+                    height: 1.0,
                   ),
                 ),
               ),
@@ -15794,7 +15795,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         {'label': '6'},
         {'label': '×', 'isOp': true},
         {'label': 'abs', 'isSci': true},
-        {'label': '%', 'isSci': true},
+        {'label': '%', 'isOp': true},
       ],
       [
         {'label': '1'},
@@ -15966,17 +15967,20 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               ],
             ),
             const Spacer(),
-            // عبارت: تا ۲ خط؛ در صورت کمبود فضا فونت تا حداقل ۱۲ کم می‌شود (بدون ellipsis)
+            // حین ورود عملیات: عبارت درشت، نتیجه/پیش‌نمایش کوچک
+            // بعد از = : عبارت کوچک، نتیجه درشت
             LayoutBuilder(
               builder: (context, constraints) {
                 final expr = _logic.expression.isEmpty
                     ? ''
                     : _logic.expressionDisplay;
-                var fontSize = 20.0;
-                const minSize = 13.0;
+                final midOp = showPreview;
+                var fontSize = midOp ? 40.0 : 16.0;
+                final minSize = midOp ? 18.0 : 12.0;
+                final color = midOp
+                    ? (isDark ? Colors.white : Colors.black87)
+                    : (isDark ? Colors.grey[500]! : Colors.grey[600]!);
                 if (expr.isNotEmpty) {
-                  final color =
-                      isDark ? Colors.grey[400]! : Colors.grey[600]!;
                   while (fontSize > minSize) {
                     final tp = TextPainter(
                       text: TextSpan(
@@ -15984,6 +15988,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                         style: TextStyle(
                           fontFamily: 'Vazirmatn',
                           fontSize: fontSize,
+                          fontWeight:
+                              midOp ? FontWeight.w700 : FontWeight.w500,
                           color: color,
                         ),
                       ),
@@ -15999,7 +16005,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: fontSize,
-                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    fontWeight: midOp ? FontWeight.w700 : FontWeight.w500,
+                    color: color,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.fade,
@@ -16009,8 +16016,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                 );
               },
             ),
-            const SizedBox(height: 4),
-            // نتیجه اصلی یا پیش‌نمایش زنده
+            const SizedBox(height: 6),
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
@@ -16027,10 +16033,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                       : (_logic.result.isEmpty ? '0' : _logic.result),
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
-                    fontSize: 48,
-                    fontWeight: FontWeight.w800,
+                    fontSize: showPreview ? 26 : 48,
+                    fontWeight:
+                        showPreview ? FontWeight.w600 : FontWeight.w800,
                     color: showPreview
-                        ? (isDark ? Colors.tealAccent[100] : Colors.teal[700])
+                        ? (isDark ? Colors.grey[400] : Colors.grey[600])
                         : (isDark ? Colors.white : Colors.black87),
                   ),
                   maxLines: 1,
@@ -16038,11 +16045,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                 ),
               ),
             ),
-            if (showPreview)
+            // راهنمای کپی فقط وقتی نتیجه نهایی درشت است
+            if (!showPreview && _logic.result.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
-                  'پیش‌نمایش — لمس طولانی برای کپی',
+                  'لمس طولانی برای کپی',
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: 10,
@@ -16079,7 +16087,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   static const List<Map<String, dynamic>> _accountingButtons = [
     {'label': 'C', 'isOp': true},
     {'label': '⌫', 'isOp': true},
-    {'label': '%', 'isSci': true},
+    {'label': '%', 'isOp': true},
     {'label': '÷', 'isOp': true},
     {'label': '7'},
     {'label': '8'},
@@ -16118,7 +16126,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '+', 'isOp': true},
     {'label': '0'},
     {'label': '.'},
-    {'label': '%', 'isSci': true},
+    {'label': '%', 'isOp': true},
     {'label': '=', 'isEq': true},
   ];
 
@@ -16168,7 +16176,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {'label': '.'},
     {'label': '⌫', 'isOp': true},
     {'label': '+', 'isOp': true},
-    {'label': '%', 'isSci': true},
+    {'label': '%', 'isOp': true},
     {'label': '()', 'isOp': true},
     {'label': 'n!', 'isSci': true},
     {'label': '=', 'isEq': true},

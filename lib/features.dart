@@ -999,8 +999,8 @@ class _CalcButtonState extends State<CalcButton>
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
                     fontSize: widget.isScientific || widget.isMemory
-                        ? 14
-                        : (widget.isOperator || widget.isEqual ? 26 : 24),
+                        ? 16
+                        : (widget.isOperator || widget.isEqual ? 30 : 28),
                     fontWeight: FontWeight.bold,
                     color: textColor,
                   ),
@@ -15582,7 +15582,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
 
   Widget _buildPortraitLayout(bool isDark) {
-    final displayH = _isAccounting ? 150.0 : (_isScientific ? 108.0 : 140.0);
+    final displayH = _isAccounting ? 168.0 : (_isScientific ? 128.0 : 164.0);
 
     return Column(
       children: [
@@ -15667,7 +15667,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                 _acc.mainDisplay,
                 style: TextStyle(
                   fontFamily: 'Vazirmatn',
-                  fontSize: 40,
+                  fontSize: 48,
                   fontWeight: FontWeight.w800,
                   color: isDark ? Colors.white : Colors.black87,
                 ),
@@ -15926,7 +15926,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   _logic.memoryDisplay,
                   style: const TextStyle(
                       fontFamily: 'Vazirmatn',
-                      fontSize: 13,
+                      fontSize: 15,
                       color: Colors.amber,
                       fontWeight: FontWeight.bold),
                 ),
@@ -15972,8 +15972,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                 final expr = _logic.expression.isEmpty
                     ? ''
                     : _logic.expressionDisplay;
-                var fontSize = 17.0;
-                const minSize = 12.0;
+                var fontSize = 20.0;
+                const minSize = 13.0;
                 if (expr.isNotEmpty) {
                   final color =
                       isDark ? Colors.grey[400]! : Colors.grey[600]!;
@@ -16027,7 +16027,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                       : (_logic.result.isEmpty ? '0' : _logic.result),
                   style: TextStyle(
                     fontFamily: 'Vazirmatn',
-                    fontSize: 40,
+                    fontSize: 48,
                     fontWeight: FontWeight.w800,
                     color: showPreview
                         ? (isDark ? Colors.tealAccent[100] : Colors.teal[700])

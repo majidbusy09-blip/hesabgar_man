@@ -3959,6 +3959,7 @@ class _LoanTabState extends State<_LoanTab> {
     final dayC = TextEditingController();
     final noteC = TextEditingController();
     final paidAlreadyC = TextEditingController();
+    final bankC = TextEditingController();
     var remindDay = true;
     var remindBefore = true;
     final remDays = <int>{0, 1};
@@ -3966,16 +3967,58 @@ class _LoanTabState extends State<_LoanTab> {
     var autoExpense = false;
     DateTime start = DateTime.now();
 
+    Future<bool> confirmLeave() async {
+      final dirty = titleC.text.trim().isNotEmpty ||
+          amountC.text.trim().isNotEmpty ||
+          payC.text.trim().isNotEmpty ||
+          monthsC.text.trim().isNotEmpty ||
+          bankC.text.trim().isNotEmpty ||
+          noteC.text.trim().isNotEmpty;
+      if (!dirty) return true;
+      final r = await showDialog<bool>(
+        context: context,
+        builder: (d) => AlertDialog(
+          title: const Text('خروج از فرم؟',
+              style: TextStyle(fontFamily: 'Vazirmatn')),
+          content: const Text(
+            'اطلاعات واردشده ذخیره نشده. خارج شوید؟',
+            style: TextStyle(fontFamily: 'Vazirmatn'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(d, false),
+                child: const Text('ماندن',
+                    style: TextStyle(fontFamily: 'Vazirmatn'))),
+            FilledButton(
+                onPressed: () => Navigator.pop(d, true),
+                child: const Text('خروج',
+                    style: TextStyle(fontFamily: 'Vazirmatn'))),
+          ],
+        ),
+      );
+      return r == true;
+    }
+
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return StatefulBuilder(builder: (ctx, setL) {
           final j = Jalali.fromDateTime(start);
-          return Padding(
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) async {
+              if (didPop) return;
+              if (await confirmLeave()) {
+                if (ctx.mounted) Navigator.pop(ctx, false);
+              }
+            },
+            child: Padding(
             padding: EdgeInsets.fromLTRB(
                 16, 16, 16, 16 + MediaQuery.of(ctx).viewInsets.bottom),
             child: SingleChildScrollView(
@@ -4001,6 +4044,24 @@ class _LoanTabState extends State<_LoanTab> {
                       labelText: 'عنوان (مثلاً وام بانک ملی)',
                       labelStyle: TextStyle(fontFamily: 'Vazirmatn'),
                       border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: bankC,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    onChanged: (_) => setL(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'نام بانک (اختیاری)',
+                      labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
+                      border: const OutlineInputBorder(),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: BankVisual.logo(bankC.text, size: 28),
+                      ),
+                      prefixIconConstraints:
+                          const BoxConstraints(minWidth: 48, minHeight: 40),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -4187,8 +4248,18 @@ class _LoanTabState extends State<_LoanTab> {
                         style: TextStyle(fontFamily: 'Vazirmatn')),
                   ),
                   const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () async {
+                      if (await confirmLeave()) {
+                        if (ctx.mounted) Navigator.pop(ctx, false);
+                      }
+                    },
+                    child: const Text('انصراف',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                  ),
                 ],
               ),
+            ),
             ),
           );
         });
@@ -4203,6 +4274,7 @@ class _LoanTabState extends State<_LoanTab> {
       dayC.dispose();
       noteC.dispose();
       paidAlreadyC.dispose();
+      bankC.dispose();
       return;
     }
 
@@ -4225,6 +4297,8 @@ class _LoanTabState extends State<_LoanTab> {
     dayC.dispose();
     noteC.dispose();
     paidAlreadyC.dispose();
+    final bankName = bankC.text.trim();
+    bankC.dispose();
 
     if (amount <= 0 || pay <= 0) {
       if (!mounted) return;
@@ -4256,6 +4330,7 @@ class _LoanTabState extends State<_LoanTab> {
       note: note,
       paidIndices: paidSet,
       autoAddExpenses: autoExpense,
+      bankName: bankName.isEmpty ? null : bankName,
     );
 
     var calCount = 0;
@@ -4290,6 +4365,7 @@ class _LoanTabState extends State<_LoanTab> {
     final dayC = TextEditingController(text: '${existing.paymentDay}');
     final paidAlreadyC =
         TextEditingController(text: '${existing.paidCount}');
+    final bankC = TextEditingController(text: existing.bankName ?? '');
     var remindDay = existing.remindSameDay;
     var remindBefore = existing.remindDayBefore;
     final remDays = <int>{
@@ -4299,17 +4375,53 @@ class _LoanTabState extends State<_LoanTab> {
     };
     var remHour = existing.reminderHour.clamp(7, 22);
     var autoExpense = existing.autoAddExpenses;
-    final start = existing.start;
+    var start = existing.start;
+
+    Future<bool> confirmLeave() async {
+      final r = await showDialog<bool>(
+        context: context,
+        builder: (d) => AlertDialog(
+          title: const Text('خروج از ویرایش؟',
+              style: TextStyle(fontFamily: 'Vazirmatn')),
+          content: const Text(
+            'تغییرات ذخیره نشده‌اند. خارج شوید؟',
+            style: TextStyle(fontFamily: 'Vazirmatn'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(d, false),
+                child: const Text('ماندن',
+                    style: TextStyle(fontFamily: 'Vazirmatn'))),
+            FilledButton(
+                onPressed: () => Navigator.pop(d, true),
+                child: const Text('خروج',
+                    style: TextStyle(fontFamily: 'Vazirmatn'))),
+          ],
+        ),
+      );
+      return r == true;
+    }
 
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return StatefulBuilder(builder: (ctx, setL) {
-          return Padding(
+          final jStart = Jalali.fromDateTime(start);
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) async {
+              if (didPop) return;
+              if (await confirmLeave()) {
+                if (ctx.mounted) Navigator.pop(ctx, false);
+              }
+            },
+            child: Padding(
             padding: EdgeInsets.fromLTRB(
                 16, 16, 16, 16 + MediaQuery.of(ctx).viewInsets.bottom),
             child: SingleChildScrollView(
@@ -4332,6 +4444,45 @@ class _LoanTabState extends State<_LoanTab> {
                         labelText: 'عنوان', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 10),
+                  TextField(
+                    controller: bankC,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'Vazirmatn'),
+                    onChanged: (_) => setL(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'نام بانک (اختیاری)',
+                      labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
+                      border: const OutlineInputBorder(),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: BankVisual.logo(bankC.text, size: 28),
+                      ),
+                      prefixIconConstraints:
+                          const BoxConstraints(minWidth: 48, minHeight: 40),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      'تاریخ شروع / اولین قسط: ${jStart.day} ${jStart.monthName} ${jStart.year}',
+                      style: const TextStyle(fontFamily: 'Vazirmatn', fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'با تغییر تاریخ، اقساط بعدی بر اساس آن جابه‌جا می‌شوند',
+                      style: TextStyle(fontFamily: 'Vazirmatn', fontSize: 11),
+                    ),
+                    trailing: TextButton(
+                      child: const Text('تغییر',
+                          style: TextStyle(fontFamily: 'Vazirmatn')),
+                      onPressed: () async {
+                        final p = await showJalaliDatePicker(
+                            context: ctx, initial: jStart);
+                        if (p != null) setL(() => start = p.toDateTime());
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 6),
                   TextField(
                     controller: amountC,
                     textAlign: TextAlign.center,
@@ -4457,8 +4608,18 @@ class _LoanTabState extends State<_LoanTab> {
                     child: const Text('ذخیره تغییرات',
                         style: TextStyle(fontFamily: 'Vazirmatn')),
                   ),
+                  TextButton(
+                    onPressed: () async {
+                      if (await confirmLeave()) {
+                        if (ctx.mounted) Navigator.pop(ctx, false);
+                      }
+                    },
+                    child: const Text('انصراف',
+                        style: TextStyle(fontFamily: 'Vazirmatn')),
+                  ),
                 ],
               ),
+            ),
             ),
           );
         });
@@ -4472,6 +4633,7 @@ class _LoanTabState extends State<_LoanTab> {
       monthsC.dispose();
       dayC.dispose();
       paidAlreadyC.dispose();
+      bankC.dispose();
       return;
     }
     final amount = NumFmt.parse(amountC.text);
@@ -4488,6 +4650,8 @@ class _LoanTabState extends State<_LoanTab> {
     monthsC.dispose();
     dayC.dispose();
     paidAlreadyC.dispose();
+    final bankName = bankC.text.trim();
+    bankC.dispose();
 
     final p = amount > 0 ? amount : existing.principal;
     final pm = pay > 0 ? pay : existing.monthlyPayment;
@@ -4508,6 +4672,7 @@ class _LoanTabState extends State<_LoanTab> {
       paidIndices: paidSet,
       note: existing.note,
       autoAddExpenses: autoExpense,
+      bankName: bankName.isEmpty ? null : bankName,
     );
     var calCount = 0;
     try {
@@ -4906,17 +5071,73 @@ class _LoanTabState extends State<_LoanTab> {
         if (bd != null) return 1;
         return a.paymentDay.compareTo(b.paymentDay);
       });
+    // آمار کلی
+    final totalPrincipal =
+        _loans.fold<double>(0, (s, e) => s + e.principal);
+    final totalPaid =
+        _loans.fold<double>(0, (s, e) => s + e.paidAmount);
+    final totalRemain =
+        _loans.fold<double>(0, (s, e) => s + e.remainingToPay);
+    final totalInterest =
+        _loans.fold<double>(0, (s, e) => s + e.totalInterest);
+    final activeCount = _loans.where((e) => e.remainingCount > 0).length;
+    final doneCount = _loans.where((e) => e.remainingCount == 0).length;
+
     return [
-      Text(
-        'تسهیلات را ثبت کنید تا اقساط در تقویم بیاید و جمع این ماه را ببینید.',
-        style: TextStyle(
-          fontFamily: 'Vazirmatn',
-          fontSize: 12.5,
-          height: 1.45,
-          color: scheme.onSurface.withValues(alpha: 0.55),
+      if (_loans.isNotEmpty) ...[
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+                color: scheme.outlineVariant.withValues(alpha: 0.4)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'آمار کلی تسهیلات',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _statChip(scheme, 'تعداد', '${_loans.length}'),
+                    _statChip(scheme, 'فعال', '$activeCount'),
+                    _statChip(scheme, 'تسویه‌شده', '$doneCount'),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _statRow(scheme, 'مجموع اصل وام‌ها', totalPrincipal),
+                _statRow(scheme, 'پرداخت‌شده تا کنون', totalPaid),
+                _statRow(scheme, 'مانده اقساط', totalRemain),
+                _statRow(scheme, 'مجموع سود قراردادها', totalInterest),
+              ],
+            ),
+          ),
         ),
-      ),
-      const SizedBox(height: 12),
+        const SizedBox(height: 12),
+      ] else
+        Text(
+          'تسهیلات را ثبت کنید تا اقساط در تقویم بیاید و آمار کلی را ببینید.',
+          style: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 12.5,
+            height: 1.45,
+            color: scheme.onSurface.withValues(alpha: 0.55),
+          ),
+        ),
+      const SizedBox(height: 4),
       Card(
         elevation: 0,
         color: scheme.primaryContainer.withValues(alpha: 0.4),
@@ -5076,6 +5297,7 @@ class _LoanTabState extends State<_LoanTab> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ListTile(
+                    leading: BankVisual.logo(loan.bankName, size: 40),
                     title: Text(
                       loan.title,
                       style: const TextStyle(
@@ -5085,6 +5307,8 @@ class _LoanTabState extends State<_LoanTab> {
                     ),
                     subtitle: Text(
                       [
+                        if (loan.bankName != null && loan.bankName!.isNotEmpty)
+                          'بانک: ${loan.bankName}',
                         'اصل: ${NumFmt.format(loan.principal.round())} · قسط ${NumFmt.format(loan.monthlyPayment.round())}',
                         'روز پرداخت: ${loan.paymentDay} · ${loan.months} قسط',
                         'پرداخت ${loan.paidCount}/${loan.months} · مانده ${NumFmt.format(loan.remainingToPay.round())}',
@@ -5197,6 +5421,32 @@ class _LoanTabState extends State<_LoanTab> {
                       ),
                       TextButton.icon(
                         onPressed: () async {
+                          final conf = await showDialog<bool>(
+                            context: context,
+                            builder: (d) => AlertDialog(
+                              title: const Text('حذف تسهیلات؟',
+                                  style: TextStyle(fontFamily: 'Vazirmatn')),
+                              content: Text(
+                                '«${loan.title}» و یادآوری‌های تقویم آن حذف می‌شود. این کار برگشت‌پذیر نیست.',
+                                style: const TextStyle(fontFamily: 'Vazirmatn'),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(d, false),
+                                  child: const Text('انصراف',
+                                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(d, true),
+                                  style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red),
+                                  child: const Text('حذف',
+                                      style: TextStyle(fontFamily: 'Vazirmatn')),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (conf != true) return;
                           await _removeLoanCalendarEvents(loan.id);
                           setState(() =>
                               _loans.removeWhere((e) => e.id == loan.id));
@@ -5214,6 +5464,56 @@ class _LoanTabState extends State<_LoanTab> {
             ),
           ),
     ];
+  }
+
+
+  Widget _statChip(ColorScheme scheme, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Text(value,
+              style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  color: scheme.primary)),
+          Text(label,
+              style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 11,
+                  color: scheme.onSurface.withValues(alpha: 0.55))),
+        ],
+      ),
+    );
+  }
+
+  Widget _statRow(ColorScheme scheme, String label, double amount) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label,
+                style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: 12.5,
+                    color: scheme.onSurface.withValues(alpha: 0.65))),
+          ),
+          Text(
+            '${NumFmt.format(amount.round())} تومان',
+            style: const TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _field(
@@ -5296,6 +5596,8 @@ class _TrackedLoan {
   final Set<int> paidIndices;
   final String? note;
   final bool autoAddExpenses;
+  /// نام بانک (اختیاری) — مثل چک‌ها برای نمایش آیکون
+  final String? bankName;
 
   _TrackedLoan({
     required this.id,
@@ -5313,6 +5615,7 @@ class _TrackedLoan {
     Set<int>? paidIndices,
     this.note,
     this.autoAddExpenses = false,
+    this.bankName,
   })  : paidIndices = paidIndices ?? {},
         reminderDays = reminderDays ??
             [
@@ -5324,6 +5627,9 @@ class _TrackedLoan {
   int get remainingCount => (months - paidCount).clamp(0, months);
   double get remainingToPay => remainingCount * monthlyPayment;
   double get progress => months <= 0 ? 0 : (paidCount / months).clamp(0.0, 1.0);
+  double get totalContract => monthlyPayment * months;
+  double get totalInterest => (totalContract - principal).clamp(0, double.infinity);
+  double get paidAmount => paidCount * monthlyPayment;
 
   bool isPaid(int index) => paidIndices.contains(index);
 
@@ -5384,6 +5690,8 @@ class _TrackedLoan {
     String? note,
     bool clearNote = false,
     bool? autoAddExpenses,
+    String? bankName,
+    bool clearBank = false,
   }) =>
       _TrackedLoan(
         id: id,
@@ -5401,6 +5709,7 @@ class _TrackedLoan {
         paidIndices: paidIndices ?? this.paidIndices,
         note: clearNote ? null : (note ?? this.note),
         autoAddExpenses: autoAddExpenses ?? this.autoAddExpenses,
+        bankName: clearBank ? null : (bankName ?? this.bankName),
       );
 
   Map<String, dynamic> toJson() => {
@@ -5419,6 +5728,7 @@ class _TrackedLoan {
         'paidIndices': paidIndices.toList()..sort(),
         'note': note,
         'autoAddExpenses': autoAddExpenses,
+        'bankName': bankName,
       };
 
   factory _TrackedLoan.fromJson(Map<String, dynamic> j) {
@@ -5454,6 +5764,7 @@ class _TrackedLoan {
       paidIndices: paid,
       note: j['note'] as String?,
       autoAddExpenses: j['autoAddExpenses'] as bool? ?? false,
+      bankName: j['bankName'] as String?,
     );
   }
 }

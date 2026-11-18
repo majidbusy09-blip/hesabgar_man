@@ -5083,48 +5083,107 @@ class _LoanTabState extends State<_LoanTab> {
     final activeCount = _loans.where((e) => e.remainingCount > 0).length;
     final doneCount = _loans.where((e) => e.remainingCount == 0).length;
 
+    // نزدیک‌ترین سررسید پرداخت‌نشده
+    DateTime? nearestNextDue;
+    for (final loan in _loans) {
+      for (var i = 0; i < loan.months; i++) {
+        if (loan.isPaid(i)) continue;
+        final d = loan.dueDateForIndex(i);
+        final dayOnly = DateTime(d.year, d.month, d.day);
+        if (nearestNextDue == null || dayOnly.isBefore(nearestNextDue)) {
+          nearestNextDue = dayOnly;
+        }
+      }
+    }
+    String? nearestNextLabel;
+    if (nearestNextDue != null) {
+      final nj = Jalali.fromDateTime(nearestNextDue);
+      nearestNextLabel = '${nj.day} ${nj.monthName} ${nj.year}';
+    }
+
     return [
       if (_loans.isNotEmpty) ...[
-        Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(
-                color: scheme.outlineVariant.withValues(alpha: 0.4)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'آمار کلی تسهیلات',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Vazirmatn',
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                    color: scheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _statChip(scheme, 'تعداد', '${_loans.length}'),
-                    _statChip(scheme, 'فعال', '$activeCount'),
-                    _statChip(scheme, 'تسویه‌شده', '$doneCount'),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _statRow(scheme, 'مجموع اصل وام‌ها', totalPrincipal),
-                _statRow(scheme, 'پرداخت‌شده تا کنون', totalPaid),
-                _statRow(scheme, 'مانده اقساط', totalRemain),
-                _statRow(scheme, 'مجموع سود قراردادها', totalInterest),
-              ],
+        // —— داشبورد آمار ——
+        Row(
+          children: [
+            Expanded(
+              child: _dashMini(
+                scheme,
+                icon: Icons.folder_open_outlined,
+                label: 'تعداد',
+                value: '${_loans.length}',
+                bg: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _dashMini(
+                scheme,
+                icon: Icons.play_circle_outline,
+                label: 'فعال',
+                value: '$activeCount',
+                bg: const Color(0xFFE3F2FD),
+                accent: const Color(0xFF1565C0),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _dashMini(
+                scheme,
+                icon: Icons.verified_outlined,
+                label: 'تسویه',
+                value: '$doneCount',
+                bg: const Color(0xFFE8F5E9),
+                accent: const Color(0xFF2E7D32),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // مانده کل — برجسته
+        _dashBig(
+          scheme,
+          icon: Icons.account_balance_wallet_outlined,
+          label: 'مانده کلی اقساط',
+          amount: totalRemain,
+          bg: const Color(0xFFFFF3E0),
+          accent: const Color(0xFFE65100),
+          emphasize: true,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _dashBig(
+                scheme,
+                icon: Icons.savings_outlined,
+                label: 'مجموع اصل تسهیلات',
+                amount: totalPrincipal,
+                bg: scheme.primaryContainer.withValues(alpha: 0.35),
+                accent: scheme.primary,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _dashBig(
+                scheme,
+                icon: Icons.trending_up,
+                label: 'مجموع سود تسهیلات',
+                amount: totalInterest,
+                bg: const Color(0xFFF3E5F5),
+                accent: const Color(0xFF7B1FA2),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _dashBig(
+          scheme,
+          icon: Icons.check_circle_outline,
+          label: 'پرداخت‌شده تاکنون',
+          amount: totalPaid,
+          bg: const Color(0xFFE8F5E9),
+          accent: const Color(0xFF2E7D32),
         ),
         const SizedBox(height: 12),
       ] else
@@ -5138,43 +5197,94 @@ class _LoanTabState extends State<_LoanTab> {
           ),
         ),
       const SizedBox(height: 4),
+      // —— مجموع اقساط این ماه ——
       Card(
         elevation: 0,
-        color: scheme.primaryContainer.withValues(alpha: 0.4),
+        color: monthTotal > 0
+            ? const Color(0xFFFFF8E1)
+            : const Color(0xFFE8F5E9),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Text(
-                'مجموع اقساط این ماه',
-                style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 13,
-                  color: scheme.onSurface.withValues(alpha: 0.6),
+          child: monthTotal > 0
+              ? Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.event_note,
+                            size: 18, color: Colors.orange.shade800),
+                        const SizedBox(width: 6),
+                        Text(
+                          'مجموع اقساط این ماه',
+                          style: TextStyle(
+                            fontFamily: 'Vazirmatn',
+                            fontSize: 13,
+                            color: Colors.orange.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      NumFmt.format(monthTotal.round()),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.orange.shade900,
+                      ),
+                    ),
+                    Text(
+                      'تومان',
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 12,
+                        color: Colors.orange.shade800.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  children: [
+                    Icon(Icons.verified, color: Colors.green.shade700, size: 28),
+                    const SizedBox(height: 8),
+                    Text(
+                      'اقساط این ماه پرداخت شده است',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.green.shade800,
+                      ),
+                    ),
+                    if (nearestNextLabel != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'نزدیک‌ترین قسط: $nearestNextLabel',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 12.5,
+                          color: Colors.green.shade900.withValues(alpha: 0.75),
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'قسط فعالی باقی نمانده است',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Vazirmatn',
+                          fontSize: 12.5,
+                          color: Colors.green.shade900.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                NumFmt.format(monthTotal.round()),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: scheme.primary,
-                ),
-              ),
-              Text(
-                'تومان',
-                style: TextStyle(
-                  fontFamily: 'Vazirmatn',
-                  fontSize: 12,
-                  color: scheme.onSurface.withValues(alpha: 0.5),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
       if (_duesNext7Days.isNotEmpty) ...[
@@ -5287,63 +5397,272 @@ class _LoanTabState extends State<_LoanTab> {
             ],
           ),
         )
+
       else
         for (final loan in sortedLoans)
           Card(
-            margin: const EdgeInsets.only(bottom: 10),
+            margin: const EdgeInsets.only(bottom: 12),
+            elevation: 0,
+            color: loan.remainingCount <= 0
+                ? scheme.surfaceContainerHighest.withValues(alpha: 0.35)
+                : scheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: BorderSide(
+                color: scheme.outlineVariant.withValues(alpha: 0.35),
+              ),
+            ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ListTile(
-                    leading: BankVisual.logo(loan.bankName, size: 40),
-                    title: Text(
-                      loan.title,
-                      style: const TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontWeight: FontWeight.w700,
+                  // هدر: عنوان + لوگو + حذف
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      BankVisual.logo(loan.bankName, size: 40),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              loan.title,
+                              style: const TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
+                            ),
+                            if (loan.bankName != null &&
+                                loan.bankName!.trim().isNotEmpty)
+                              Text(
+                                'بانک ${loan.bankName}',
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: 12,
+                                  color: scheme.onSurface
+                                      .withValues(alpha: 0.55),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                    subtitle: Text(
-                      [
-                        if (loan.bankName != null && loan.bankName!.isNotEmpty)
-                          'بانک: ${loan.bankName}',
-                        'اصل: ${NumFmt.format(loan.principal.round())} · قسط ${NumFmt.format(loan.monthlyPayment.round())}',
-                        'روز پرداخت: ${loan.paymentDay} · ${loan.months} قسط',
-                        'پرداخت ${loan.paidCount}/${loan.months} · مانده ${NumFmt.format(loan.remainingToPay.round())}',
-                        'نرخ: ${_rateLabel(loan.ratePercent)}',
-                        if (loan.note != null && loan.note!.isNotEmpty) loan.note!,
-                      ].join('\n'),
-                      style: const TextStyle(
-                          fontFamily: 'Vazirmatn', fontSize: 12),
-                    ),
-                    isThreeLine: true,
+                      IconButton(
+                        tooltip: 'حذف',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () async {
+                          final conf = await showDialog<bool>(
+                            context: context,
+                            builder: (d) => AlertDialog(
+                              title: const Text('حذف تسهیلات؟',
+                                  style:
+                                      TextStyle(fontFamily: 'Vazirmatn')),
+                              content: Text(
+                                '«${loan.title}» و یادآوری‌های تقویم آن حذف می‌شود. این کار برگشت‌پذیر نیست.',
+                                style: const TextStyle(
+                                    fontFamily: 'Vazirmatn'),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(d, false),
+                                  child: const Text('انصراف',
+                                      style: TextStyle(
+                                          fontFamily: 'Vazirmatn')),
+                                ),
+                                FilledButton(
+                                  onPressed: () =>
+                                      Navigator.pop(d, true),
+                                  style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red),
+                                  child: const Text('حذف',
+                                      style: TextStyle(
+                                          fontFamily: 'Vazirmatn')),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (conf != true) return;
+                          await _removeLoanCalendarEvents(loan.id);
+                          setState(() => _loans
+                              .removeWhere((e) => e.id == loan.id));
+                          await _saveLoans();
+                        },
+                        icon: Icon(Icons.delete_outline,
+                            color: Colors.red.shade400, size: 22),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 12),
+                  // دو ستون: قسط ماهانه | مانده
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 12, horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: scheme.primaryContainer
+                                .withValues(alpha: 0.45),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                'قسط ماهانه',
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: 11,
+                                  color: scheme.onSurface
+                                      .withValues(alpha: 0.55),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                NumFmt.format(
+                                    loan.monthlyPayment.round()),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  color: scheme.primary,
+                                ),
+                              ),
+                              Text(
+                                'تومان',
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: 10,
+                                  color: scheme.onSurface
+                                      .withValues(alpha: 0.45),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 12, horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3E0),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                'مانده بدهی',
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: 11,
+                                  color: Colors.orange.shade900
+                                      .withValues(alpha: 0.7),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                NumFmt.format(
+                                    loan.remainingToPay.round()),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.orange.shade900,
+                                ),
+                              ),
+                              Text(
+                                'تومان',
+                                style: TextStyle(
+                                  fontFamily: 'Vazirmatn',
+                                  fontSize: 10,
+                                  color: Colors.orange.shade800
+                                      .withValues(alpha: 0.55),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // چیپ‌ها
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _loanChip(scheme, Icons.payments_outlined,
+                          'اصل ${NumFmt.format(loan.principal.round())}'),
+                      _loanChip(scheme, Icons.calendar_today_outlined,
+                          'روز ${loan.paymentDay} هر ماه'),
+                      _loanChip(scheme, Icons.percent,
+                          'نرخ ${_rateLabel(loan.ratePercent)}'),
+                      if (loan.note != null && loan.note!.isNotEmpty)
+                        _loanChip(scheme, Icons.notes, loan.note!),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // پیشرفت
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: LinearProgressIndicator(
-                        value: loan.progress,
-                        minHeight: 6,
-                      ),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: loan.progress,
+                            minHeight: 8,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Text(
+                              'پرداخت ${loan.paidCount} از ${loan.months}',
+                              style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontSize: 11.5,
+                                color: scheme.onSurface
+                                    .withValues(alpha: 0.55),
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${(loan.progress * 100).round()}٪ تسویه',
+                              style: TextStyle(
+                                fontFamily: 'Vazirmatn',
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: scheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  // دکمه پرداخت این ماه
                   Builder(builder: (ctx) {
                     final jNow = Jalali.fromDateTime(DateTime.now());
-                    final idx = loan.installmentIndexForJalaliMonth(jNow);
+                    final idx =
+                        loan.installmentIndexForJalaliMonth(jNow);
                     if (idx == null) {
                       return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
                           'این ماه در بازه اقساط نیست',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'Vazirmatn',
                             fontSize: 12,
-                            color: Theme.of(ctx)
-                                .colorScheme
-                                .onSurface
+                            color: scheme.onSurface
                                 .withValues(alpha: 0.45),
                           ),
                         ),
@@ -5351,28 +5670,33 @@ class _LoanTabState extends State<_LoanTab> {
                     }
                     final paid = loan.isPaid(idx);
                     return Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: paid
                           ? OutlinedButton.icon(
-                              onPressed: () => _toggleThisMonthPaid(loan),
-                              icon: const Icon(Icons.check_circle, size: 20),
+                              onPressed: () =>
+                                  _toggleThisMonthPaid(loan),
+                              icon: const Icon(Icons.check_circle,
+                                  size: 20),
                               label: const Text(
                                 'پرداخت شده — برای برگشت بزنید',
-                                style: TextStyle(fontFamily: 'Vazirmatn'),
+                                style:
+                                    TextStyle(fontFamily: 'Vazirmatn'),
                               ),
                               style: OutlinedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(46),
-                                foregroundColor:
-                                    Theme.of(ctx).colorScheme.primary,
+                                minimumSize:
+                                    const Size.fromHeight(46),
+                                foregroundColor: scheme.primary,
                                 side: BorderSide(
-                                    color: Theme.of(ctx).colorScheme.primary),
+                                    color: scheme.primary),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius:
+                                      BorderRadius.circular(14),
                                 ),
                               ),
                             )
                           : FilledButton.icon(
-                              onPressed: () => _toggleThisMonthPaid(loan),
+                              onPressed: () =>
+                                  _toggleThisMonthPaid(loan),
                               icon: const Icon(Icons.check_circle),
                               label: const Text(
                                 'قسط این ماه رو پرداخت کردم',
@@ -5382,80 +5706,56 @@ class _LoanTabState extends State<_LoanTab> {
                                 ),
                               ),
                               style: FilledButton.styleFrom(
-                                minimumSize: const Size.fromHeight(48),
+                                minimumSize:
+                                    const Size.fromHeight(48),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius:
+                                      BorderRadius.circular(14),
                                 ),
                               ),
                             ),
                     );
                   }),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'روز پرداخت: ${loan.paymentDay} هر ماه',
-                      style: TextStyle(
-                        fontFamily: 'Vazirmatn',
-                        fontSize: 12,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.55),
-                      ),
-                    ),
-                  ),
+                  // دکمه‌های عملیات (بدون حذف)
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      TextButton.icon(
-                        onPressed: () => _showInstallmentSheet(loan),
-                        icon: const Icon(Icons.checklist_rtl, size: 18),
-                        label: const Text('اقساط',
-                            style: TextStyle(fontFamily: 'Vazirmatn')),
-                      ),
-                      TextButton.icon(
-                        onPressed: () => _editTrackedLoan(loan),
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                        label: const Text('ویرایش',
-                            style: TextStyle(fontFamily: 'Vazirmatn')),
-                      ),
-                      TextButton.icon(
-                        onPressed: () async {
-                          final conf = await showDialog<bool>(
-                            context: context,
-                            builder: (d) => AlertDialog(
-                              title: const Text('حذف تسهیلات؟',
-                                  style: TextStyle(fontFamily: 'Vazirmatn')),
-                              content: Text(
-                                '«${loan.title}» و یادآوری‌های تقویم آن حذف می‌شود. این کار برگشت‌پذیر نیست.',
-                                style: const TextStyle(fontFamily: 'Vazirmatn'),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(d, false),
-                                  child: const Text('انصراف',
-                                      style: TextStyle(fontFamily: 'Vazirmatn')),
-                                ),
-                                FilledButton(
-                                  onPressed: () => Navigator.pop(d, true),
-                                  style: FilledButton.styleFrom(
-                                      backgroundColor: Colors.red),
-                                  child: const Text('حذف',
-                                      style: TextStyle(fontFamily: 'Vazirmatn')),
-                                ),
-                              ],
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              _showInstallmentSheet(loan),
+                          icon: const Icon(Icons.checklist_rtl,
+                              size: 18),
+                          label: const Text('اقساط',
+                              style:
+                                  TextStyle(fontFamily: 'Vazirmatn')),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(12),
                             ),
-                          );
-                          if (conf != true) return;
-                          await _removeLoanCalendarEvents(loan.id);
-                          setState(() =>
-                              _loans.removeWhere((e) => e.id == loan.id));
-                          await _saveLoans();
-                        },
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        label: const Text('حذف',
-                            style: TextStyle(
-                                fontFamily: 'Vazirmatn', color: Colors.red)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _editTrackedLoan(loan),
+                          icon: const Icon(Icons.edit_outlined,
+                              size: 18),
+                          label: const Text('ویرایش',
+                              style:
+                                  TextStyle(fontFamily: 'Vazirmatn')),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -5466,6 +5766,118 @@ class _LoanTabState extends State<_LoanTab> {
     ];
   }
 
+
+  Widget _dashMini(
+    ColorScheme scheme, {
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color bg,
+    Color? accent,
+  }) {
+    final a = accent ?? scheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 18, color: a),
+          const SizedBox(height: 4),
+          Text(value,
+              style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                  color: a)),
+          Text(label,
+              style: TextStyle(
+                  fontFamily: 'Vazirmatn',
+                  fontSize: 11,
+                  color: scheme.onSurface.withValues(alpha: 0.55))),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashBig(
+    ColorScheme scheme, {
+    required IconData icon,
+    required String label,
+    required double amount,
+    required Color bg,
+    required Color accent,
+    bool emphasize = false,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+          vertical: emphasize ? 14 : 12, horizontal: 12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: accent, size: emphasize ? 26 : 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: TextStyle(
+                        fontFamily: 'Vazirmatn',
+                        fontSize: 12,
+                        color: accent.withValues(alpha: 0.85))),
+                const SizedBox(height: 2),
+                Text(
+                  '${NumFmt.format(amount.round())} تومان',
+                  style: TextStyle(
+                    fontFamily: 'Vazirmatn',
+                    fontSize: emphasize ? 18 : 14,
+                    fontWeight: FontWeight.w900,
+                    color: accent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _loanChip(ColorScheme scheme, IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: scheme.primary),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
+            child: Text(
+              text,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Vazirmatn',
+                fontSize: 11,
+                color: scheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _statChip(ColorScheme scheme, String label, String value) {
     return Container(

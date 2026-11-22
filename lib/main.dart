@@ -75,7 +75,7 @@ class HesabgarManApp extends StatelessWidget {
               GlobalCupertinoLocalizations.delegate,
             ],
             theme: themeProvider.theme,
-            home: const BrandSplash(child: MainScaffold()),
+            home: const MainScaffold(),
           );
         },
       ),

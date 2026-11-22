@@ -9280,17 +9280,19 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                       padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
                       child: Row(
                         children: [
-                          IconButton(
+                          // هم‌راستا با تقویم اصلی: راست=ماه بعد، چپ=ماه قبل
+                          IconButton.filledTonal(
+                            tooltip: 'ماه بعد',
                             onPressed: () {
                               setState(() {
-                                _filterMonth--;
-                                if (_filterMonth < 1) {
-                                  _filterMonth = 12;
-                                  _filterYear--;
+                                _filterMonth++;
+                                if (_filterMonth > 12) {
+                                  _filterMonth = 1;
+                                  _filterYear++;
                                 }
                               });
                             },
-                            icon: const Icon(Icons.chevron_right),
+                            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
                           ),
                           Expanded(
                             child: Text(
@@ -9303,17 +9305,18 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                               ),
                             ),
                           ),
-                          IconButton(
+                          IconButton.filledTonal(
+                            tooltip: 'ماه قبل',
                             onPressed: () {
                               setState(() {
-                                _filterMonth++;
-                                if (_filterMonth > 12) {
-                                  _filterMonth = 1;
-                                  _filterYear++;
+                                _filterMonth--;
+                                if (_filterMonth < 1) {
+                                  _filterMonth = 12;
+                                  _filterYear--;
                                 }
                               });
                             },
-                            icon: const Icon(Icons.chevron_left),
+                            icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
                           ),
                         ],
                       ),
@@ -12057,9 +12060,10 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           const SizedBox(height: 10),
           Row(
             children: [
-              IconButton(
-                onPressed: () => setState(() => _reportYear--),
-                icon: const Icon(Icons.chevron_right),
+              IconButton.filledTonal(
+                tooltip: 'سال بعد',
+                onPressed: () => setState(() => _reportYear++),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
               ),
               Expanded(
                 child: Text(
@@ -12072,9 +12076,10 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                   ),
                 ),
               ),
-              IconButton(
-                onPressed: () => setState(() => _reportYear++),
-                icon: const Icon(Icons.chevron_left),
+              IconButton.filledTonal(
+                tooltip: 'سال قبل',
+                onPressed: () => setState(() => _reportYear--),
+                icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
               ),
             ],
           ),
@@ -13292,11 +13297,13 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
             ),
           ),
           const SizedBox(height: 12),
+          // هم‌راستا با تقویم اصلی: راست=ماه بعد، چپ=ماه قبل (RTL)
           Row(
             children: [
-              IconButton(
-                onPressed: () => _shiftMonth(-1),
-                icon: const Icon(Icons.chevron_right),
+              IconButton.filledTonal(
+                tooltip: 'ماه بعد',
+                onPressed: () => _shiftMonth(1),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
               ),
               Expanded(
                 child: Column(
@@ -13339,9 +13346,10 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: () => _shiftMonth(1),
-                icon: const Icon(Icons.chevron_left),
+              IconButton.filledTonal(
+                tooltip: 'ماه قبل',
+                onPressed: () => _shiftMonth(-1),
+                icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
               ),
             ],
           ),
@@ -13366,7 +13374,8 @@ class _JalaliPickerSheetState extends State<_JalaliPickerSheet> {
             onHorizontalDragEnd: (details) {
               final v = details.primaryVelocity ?? 0;
               if (v.abs() < 200) return;
-              _shiftMonth(v < 0 ? 1 : -1);
+              // مثل تقویم اصلی: کشیدن به چپ → ماه قبل؛ به راست → ماه بعد
+              _shiftMonth(v < 0 ? -1 : 1);
             },
             child: GridView.count(
               shrinkWrap: true,

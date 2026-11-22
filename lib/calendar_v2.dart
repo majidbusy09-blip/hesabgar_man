@@ -1692,12 +1692,13 @@ class _CalendarScreenState extends State<CalendarScreen>
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
           child: Row(
             children: [
-              IconButton(
-                tooltip: 'هفته قبل',
+              // هم‌راستا با تقویم اصلی: راست=بعد، چپ=قبل
+              IconButton.filledTonal(
+                tooltip: 'هفته بعد',
                 onPressed: () => setState(() {
-                  _selectedG = base.subtract(const Duration(days: 7));
+                  _selectedG = base.add(const Duration(days: 7));
                 }),
-                icon: const Icon(Icons.chevron_right),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
               ),
               Expanded(
                 child: Text(
@@ -1709,12 +1710,12 @@ class _CalendarScreenState extends State<CalendarScreen>
                   ),
                 ),
               ),
-              IconButton(
-                tooltip: 'هفته بعد',
+              IconButton.filledTonal(
+                tooltip: 'هفته قبل',
                 onPressed: () => setState(() {
-                  _selectedG = base.add(const Duration(days: 7));
+                  _selectedG = base.subtract(const Duration(days: 7));
                 }),
-                icon: const Icon(Icons.chevron_left),
+                icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
               ),
             ],
           ),

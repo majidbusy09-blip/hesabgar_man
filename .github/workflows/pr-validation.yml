@@ -1,0 +1,84 @@
+name: PR Validation — حسابگر من
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  flutter-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze active app source and focused tests
+        shell: bash
+        run: |
+          set +e
+          flutter analyze \
+            lib/main.dart \
+            lib/core.dart \
+            lib/features.dart \
+            lib/calendar_v2.dart \
+            lib/checks.dart \
+            lib/notifications.dart \
+            test/accounting_logic_test.dart \
+            test/calculator_logic_test.dart \
+            test/calendar_recurrence_test.dart \
+            test/calendar_storage_test.dart \
+            test/category_store_test.dart \
+            test/checks_finance_test.dart \
+            test/checks_model_test.dart \
+            test/expense_model_test.dart \
+            test/finance_logic_test.dart \
+            test/report_logic_test.dart \
+            > analyze.log 2>&1
+          code=$?
+          set -e
+          cat analyze.log
+          if grep -Eq '^[[:space:]]*error [•-]' analyze.log; then
+            echo "Flutter analyzer reported error-level diagnostics."
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "Analyzer returned non-zero without an error-level diagnostic; treating this as a tool/infrastructure failure."
+            exit "$code"
+          fi
+
+      - name: Run focused regression suite
+        run: |
+          flutter test --reporter expanded \
+            test/calculator_logic_test.dart \
+            test/finance_logic_test.dart \
+            test/expense_model_test.dart \
+            test/accounting_logic_test.dart \
+            test/report_logic_test.dart \
+            test/category_store_test.dart \
+            test/calendar_recurrence_test.dart \
+            test/calendar_storage_test.dart \
+            test/checks_model_test.dart \
+            test/checks_finance_test.dart

@@ -1,6 +1,8 @@
 name: PR Validation — حسابگر من
 
 on:
+  push:
+    branches: [ docs/agent-memory-baseline-20261123 ]
   pull_request:
     branches: [ main ]
     types: [opened, synchronize, reopened, ready_for_review]
@@ -9,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-validation-${{ github.event.pull_request.number }}
+  group: pr-validation-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

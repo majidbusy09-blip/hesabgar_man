@@ -1,0 +1,94 @@
+name: PR Validation — حسابگر من
+
+on:
+  push:
+    branches: [ docs/agent-memory-baseline-20261123 ]
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Download required Vazirmatn font assets
+        run: |
+          set -euo pipefail
+          mkdir -p assets/fonts
+          curl -fL --retry 3 -o vazir.zip https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip
+          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Regular.ttf" -d assets/fonts/
+          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Medium.ttf" -d assets/fonts/
+          unzip -j vazir.zip "fonts/ttf/Vazirmatn-Bold.ttf" -d assets/fonts/
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze active app source and focused tests (error-level diagnostics block)
+        shell: bash
+        run: |
+          set +e
+          flutter analyze \
+            lib/main.dart \
+            lib/core.dart \
+            lib/features.dart \
+            lib/calendar_v2.dart \
+            lib/checks.dart \
+            lib/notifications.dart \
+            test/accounting_logic_test.dart \
+            test/calculator_logic_test.dart \
+            test/calendar_recurrence_test.dart \
+            test/calendar_storage_test.dart \
+            test/category_store_test.dart \
+            test/checks_finance_test.dart \
+            test/checks_model_test.dart \
+            test/expense_model_test.dart \
+            test/finance_logic_test.dart \
+            test/report_logic_test.dart \
+            > analyze.log 2>&1
+          code=$?
+          set -e
+          cat analyze.log
+          if grep -Eq '^[[:space:]]*error [•-]' analyze.log; then
+            echo "Flutter analyzer reported error-level diagnostics."
+            exit 1
+          fi
+          warnings=$(grep -cE '^[[:space:]]*warning [•-]' analyze.log || true)
+          infos=$(grep -cE '^[[:space:]]*info [•-]' analyze.log || true)
+          echo "No analyzer errors. Existing warnings: $warnings; infos: $infos; analyzer exit code: $code."
+
+      - name: Run focused regression suite
+        run: |
+          flutter test --reporter expanded \
+            test/calculator_logic_test.dart \
+            test/finance_logic_test.dart \
+            test/expense_model_test.dart \
+            test/accounting_logic_test.dart \
+            test/report_logic_test.dart \
+            test/category_store_test.dart \
+            test/calendar_recurrence_test.dart \
+            test/calendar_storage_test.dart \
+            test/checks_model_test.dart \
+            test/checks_finance_test.dart

@@ -77,14 +77,14 @@
 - Central PR #141 merged as `3e5409e5dd6991ec3f6921ae1996d53dd6849f8d`. The transport workflow validates the registered repository, artifact identity/name/size/expiry, workflow run and source SHA, safely reads one bounded task JSON entry, and re-fetches the live Issue to verify it is still open, still labeled `agent-task`, and its exact body/task payload has not changed.
 - Central workflow stores durable records on the dedicated `task-inbox` branch, not application source or `main`.
 - Target PR #22 passes `secrets: inherit` to the reusable intake workflow and pins it to the reviewed central commit. Its exact-head CI is pending.
-- Automatic transport requires one fine-grained token or GitHub App token stored as `JET_AI_CENTRAL_DISPATCH_TOKEN` in each target repository and `JET_AI_CROSS_REPO_READ_TOKEN` in the central repository. Required scopes: central `Contents: write`; each target `Actions: read` and `Issues: read`. Without the secrets, existing target artifact upload remains functional and central dispatch is skipped.
+- Automatic transport requires two separate least-privilege fine-grained tokens: `JET_AI_CENTRAL_DISPATCH_TOKEN` is scoped only to the central repository with `Contents: write`; `JET_AI_CROSS_REPO_READ_TOKEN` is scoped only to registered target repositories with `Actions: read` and `Issues: read`. Store the first as a secret in each target repository and the second as a secret in the central repository. Do not reuse one token across both trust boundaries.
 - No token was committed; no lease, agent, or model was invoked. Hesabgar remains `registered`, source-index strategy `none`, app version `1.0.9+10`; no app source or release change.
 
 
 ## 2026-11-25 — authenticated dispatch caller merged
 - Target PR #22 merged as `4195c58176bab1d0eab2d614d0125913c5e30f09`. It passes inherited secrets to the reusable central intake workflow and pins it to central commit `3e5409e5dd6991ec3f6921ae1996d53dd6849f8d`.
 - Exact-head target PR validation run `45685677330` passed. Post-merge validation run `45685997204` and APK/AAB build run `45685997149` were still in progress when this log entry was drafted.
-- End-to-end dispatch is still opt-in until the same narrowly scoped fine-grained token is added as target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` and central secret `JET_AI_CROSS_REPO_READ_TOKEN`. Required permissions: central Contents write; target Actions read and Issues read.
+- End-to-end dispatch is still opt-in until two separate fine-grained tokens are configured: target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` scoped only to central Contents write; central secret `JET_AI_CROSS_REPO_READ_TOKEN` scoped only to target Actions read + Issues read.
 - No secret was created or shared in chat. Until setup, target intake continues to upload its read-only artifact and emits a warning that central dispatch is skipped.
 
 
@@ -93,7 +93,7 @@
 - Target PR #22 merged as `4195c58176bab1d0eab2d614d0125913c5e30f09`, passing inherited secrets and pinning the reusable workflow to central commit `3e5409e5dd6991ec3f6921ae1996d53dd6849f8d`.
 - A fresh live test after PR #22 ran as `45687022313` and succeeded. Artifact `agent-task-17`: 1,005 bytes, SHA-256 `a59c8a2eb941a112255666e1b8b7c3582a82bc764688088eec372f46dd22d0e2`, artifact ID `15056447830`.
 - The reusable workflow's optional central dispatch step was skipped because target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` is not configured. The workflow emitted its expected warning; artifact upload and validation still succeeded. No central inbox record was created, no lease was claimed, and no model/agent was invoked.
-- Temporary Issue #17 was closed after the retest. To activate automatic transport, configure the same fine-grained token as target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` (central Contents write) and central secret `JET_AI_CROSS_REPO_READ_TOKEN` (target Actions read + Issues read). Never paste the token into chat or commit it.
+- Temporary Issue #17 was closed after the retest. To activate automatic transport, configure two separate fine-grained tokens: target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` (central Contents write only) and central secret `JET_AI_CROSS_REPO_READ_TOKEN` (target Actions read + Issues read only). Never paste either token into chat or commit them.
 - Post-merge target validation `45686596443` succeeded. Post-merge APK/AAB build `45686596413` was still running when this entry was drafted.
 
 
@@ -104,4 +104,4 @@
 - Final live Issue #17 retest run `45689900709` succeeded, including the explicit immutable central checkout. Artifact `agent-task-17`: 1,005 bytes, SHA-256 `69ed63eac70223e14cea671aa4171d2766e3df063234a8ce859022cf321d1634`, artifact ID `15058605893`.
 - Central dispatch was skipped because `JET_AI_CENTRAL_DISPATCH_TOKEN` is not configured. The target workflow emitted the expected warning; no central inbox record was created, no lease was claimed, and no agent/model was invoked. Temporary Issue #17 was closed again.
 - Post-PR #28 target main validation `45689865694` and APK/AAB build `45689865817` were still running when this log entry was written.
-- Remaining external setup: one fine-grained token with central `Contents: write` and target `Actions: read` + `Issues: read`, stored as target `JET_AI_CENTRAL_DISPATCH_TOKEN` and central `JET_AI_CROSS_REPO_READ_TOKEN`. Do not send credentials in chat or commit them.
+- Remaining external setup: two separate least-privilege fine-grained tokens. The target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` must be scoped only to central `Contents: write`; the central secret `JET_AI_CROSS_REPO_READ_TOKEN` must be scoped only to registered targets' `Actions: read` + `Issues: read`. Do not send credentials in chat or commit them.

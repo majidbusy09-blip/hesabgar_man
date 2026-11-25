@@ -19,3 +19,11 @@
 - App version remains `1.0.9+10`; no Release was published.
 - Post-merge main validation run `45642260366` and APK/AAB build run `45642260517` were started. Their outcomes must be checked before declaring the post-merge baseline fully green.
 - Central project manifest remains `lifecycle=registered` and `source_index.strategy=none`. Manual Android device acceptance and source-index strategy review remain outstanding.
+
+
+## 2026-11-25 — PR #12 and post-merge verification
+- PR #12 strengthened deterministic source-index freshness checks and exact repository/project/source binding checks; merged to main as `9b5b324e197d806afa7365abe360c972dbeaf13a`.
+- Post-merge Project Validation run `45665085754` succeeded on that exact SHA, including resolved-index generation, critical-path report generation, Task Intelligence smoke tests against the generated artifacts, static analysis, and Flutter tests.
+- Post-merge APK/AAB build run `45665085751` also succeeded on that SHA. APK artifact: 31,256,270 bytes, SHA-256 `65578700d44e2bfaf4b31ac7458105b9690b2904d90d857a0ceca2aa1da37b73`. AAB artifact: 64,207,679 bytes, SHA-256 `a41443b46c2770019d42cd526250c9efce2e22a6cd86ca5d3e3ebe1c75953ed5`.
+- Artifacts are GitHub Actions outputs; the manual GitHub Release job was skipped and no release was published.
+- Central lifecycle remains `registered` and source-index strategy remains `none`. CI generation/consumption is verified, but automatic runtime artifact provisioning and cross-project isolation remain open gates. Manual Android device acceptance is also pending.

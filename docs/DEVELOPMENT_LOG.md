@@ -95,3 +95,13 @@
 - The reusable workflow's optional central dispatch step was skipped because target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` is not configured. The workflow emitted its expected warning; artifact upload and validation still succeeded. No central inbox record was created, no lease was claimed, and no model/agent was invoked.
 - Temporary Issue #17 was closed after the retest. To activate automatic transport, configure the same fine-grained token as target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` (central Contents write) and central secret `JET_AI_CROSS_REPO_READ_TOKEN` (target Actions read + Issues read). Never paste the token into chat or commit it.
 - Post-merge target validation `45686596443` succeeded. Post-merge APK/AAB build `45686596413` was still running when this entry was drafted.
+
+
+## 2026-11-25 — corrected immutable reusable checkout and final live retest
+- Central PR #143's first nested-checkout pin used `github.workflow_sha`; live target run `45688896962` proved it resolved to the caller repository SHA and failed closed before intake. No artifact or task record was created.
+- Central PR #144 merged as `798537245da039217010ab750f95561060bd5f76`, pinning nested tooling checkout to explicit immutable central commit `053c1f6e3a695cc8675bc90a679c554ed0e83f18`. Exact-head tests, validation, memory audit, and lease/scope guard all passed.
+- Target PR #28 merged as `38057c24504d45829ad3df6f6006c6c04d300f2b`, updating the caller to central PR #144's corrected workflow. Exact-head target project validation run `45689597938` passed.
+- Final live Issue #17 retest run `45689900709` succeeded, including the explicit immutable central checkout. Artifact `agent-task-17`: 1,005 bytes, SHA-256 `69ed63eac70223e14cea671aa4171d2766e3df063234a8ce859022cf321d1634`, artifact ID `15058605893`.
+- Central dispatch was skipped because `JET_AI_CENTRAL_DISPATCH_TOKEN` is not configured. The target workflow emitted the expected warning; no central inbox record was created, no lease was claimed, and no agent/model was invoked. Temporary Issue #17 was closed again.
+- Post-PR #28 target main validation `45689865694` and APK/AAB build `45689865817` were still running when this log entry was written.
+- Remaining external setup: one fine-grained token with central `Contents: write` and target `Actions: read` + `Issues: read`, stored as target `JET_AI_CENTRAL_DISPATCH_TOKEN` and central `JET_AI_CROSS_REPO_READ_TOKEN`. Do not send credentials in chat or commit them.

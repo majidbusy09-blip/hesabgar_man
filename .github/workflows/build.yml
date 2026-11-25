@@ -4,19 +4,30 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'انتشار GitHub Release پس از تأیید انسانی'
+        required: true
+        default: false
+        type: boolean
 
 # هر push جدید روی main، بیلد قبلی همان شاخه را لغو می‌کند تا صف گیر نکند
 concurrency:
   group: build-main
   cancel-in-progress: true
 
-# لازم برای ساخت Release خودکار
+# Pushهای عادی فقط مجوز خواندن دارند؛ انتشار در Job مستقل و دستی انجام می‌شود.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      app_version: ${{ steps.ver.outputs.version }}
+      app_name: ${{ steps.ver.outputs.name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -471,16 +482,39 @@ jobs:
           name: hesabgar-aab
           path: dist/*.aab
 
+
+  publish-release:
+    name: Publish GitHub Release (manual approval)
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK and AAB artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: hesabgar-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify release files
+        run: |
+          set -euo pipefail
+          test -s dist/hesabgar-man-${{ needs.build.outputs.app_name }}.apk
+          test -s dist/hesabgar-man-${{ needs.build.outputs.app_name }}.aab
+          ls -lh dist/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.ver.outputs.name }}-b${{ github.run_number }}
-          name: "حسابگر من ${{ steps.ver.outputs.name }} (build ${{ github.run_number }})"
+          tag_name: v${{ needs.build.outputs.app_name }}-b${{ github.run_number }}
+          name: "حسابگر من ${{ needs.build.outputs.app_name }} (build ${{ github.run_number }})"
           body: |
-            ## حسابگر من ${{ steps.ver.outputs.name }}
+            ## حسابگر من ${{ needs.build.outputs.app_name }}
             - Build: `${{ github.run_number }}`
             - Commit: `${{ github.sha }}`
-            - نسخه pubspec: `${{ steps.ver.outputs.version }}`
+            - نسخه pubspec: `${{ needs.build.outputs.app_version }}`
 
             ### فایل‌ها
             - **APK** — نصب مستقیم روی گوشی / بازار / مایکت

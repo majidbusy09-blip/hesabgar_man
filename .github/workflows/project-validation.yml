@@ -87,11 +87,102 @@ jobs:
             --source-revision="$GITHUB_SHA"
           test -n "$(find "$GITHUB_WORKSPACE/docs/generated/projects/hesabgar-man/$EXPECTED_REPOSITORY_ID" -type f -path '*/indexes/resolved_index.json' -print -quit)"
 
-      - name: Preserve project-bound resolved source index
+      - name: Generate project-bound critical-path report
+        working-directory: .jet-ai/central/tools/project_memory/semantic
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/hesabgar-critical-paths.json" <<'JSON'
+          {
+            "paths": [
+              {
+                "id": "app-startup",
+                "title": "Application startup",
+                "description": "Flutter application startup and root widget initialization",
+                "entrypoints": [
+                  {
+                    "source_path": "lib/main.dart",
+                    "kind": "function",
+                    "owner": null,
+                    "name": "main"
+                  }
+                ]
+              }
+            ]
+          }
+          JSON
+          manifest="$GITHUB_WORKSPACE/.jet-ai/central/docs/projects/hesabgar-man/manifest.json"
+          dart run bin/critical_paths.dart --write \
+            --repository-root="$GITHUB_WORKSPACE" \
+            --project-manifest="$manifest" \
+            --source-revision="$GITHUB_SHA" \
+            --critical-paths-manifest="$RUNNER_TEMP/hesabgar-critical-paths.json"
+
+      - name: Smoke-test task intelligence against real Hesabgar artifacts
+        working-directory: .jet-ai/central
+        env:
+          TARGET_ROOT: ${{ github.workspace }}
+          EXPECTED_REPOSITORY_ID: ${{ github.repository_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from tools.task_orchestrator.context_selector import select_context
+          from tools.task_orchestrator.impact_analyzer import analyze_impact
+
+          root = Path(os.environ["TARGET_ROOT"])
+          revision = os.environ["GITHUB_SHA"]
+          repository_id = os.environ["EXPECTED_REPOSITORY_ID"]
+          manifest = root / ".jet-ai/central/docs/projects/hesabgar-man/manifest.json"
+          assert str(json.loads(manifest.read_text(encoding="utf-8"))["repository"]["repository_id"]) == repository_id
+
+          generated = root / "docs/generated/projects/hesabgar-man" / repository_id
+          matches = list(generated.glob(f"*/{revision}/indexes/resolved_index.json"))
+          if len(matches) != 1:
+              raise SystemExit(f"Expected exactly one project-bound resolved index, found {len(matches)}.")
+          resolved = matches[0]
+          critical = resolved.parent / "critical_paths.json"
+          index = json.loads(resolved.read_text(encoding="utf-8"))
+          binding = dict(index["project_binding"])
+          binding.pop("base_sha", None)
+          task = {
+              "task_id": "ci-hesabgar-task-intelligence-smoke",
+              "goal": "Trace Flutter application startup and root widget initialization.",
+              "capability_improved": "Select relevant application source and verify change impact.",
+              "repository": {"base_sha": revision},
+              "github_project_binding": binding,
+              "scope": {"allowed": ["lib/**"], "excluded": []},
+          }
+          selection = select_context(
+              root=root,
+              task_record=task,
+              query="main application startup initialization",
+              resolved_index_path=resolved,
+              critical_paths_path=critical,
+              limit=5,
+          )
+          impact = analyze_impact(
+              root=root,
+              task_record=task,
+              changed_paths=["lib/main.dart"],
+              resolved_index_path=resolved,
+              critical_paths_path=critical,
+          )
+          if not selection.get("suggestions"):
+              raise SystemExit("Task intelligence returned no context suggestions for the startup query.")
+          if impact.get("indexed_changed_paths") != ["lib/main.dart"]:
+              raise SystemExit("Impact analyzer did not verify lib/main.dart at the pinned revision.")
+          print(f"Task-intelligence smoke passed for {repository_id} at {revision}.")
+          print(f"Context suggestions: {len(selection['suggestions'])}; indexed changed paths: {impact['indexed_changed_paths']}.")
+          PY
+
+      - name: Preserve project-bound source and critical-path indexes
         uses: actions/upload-artifact@v4
         with:
           name: hesabgar-man-resolved-index
-          path: docs/generated/projects/hesabgar-man/${{ github.repository_id }}/**/indexes/resolved_index.json
+          path: docs/generated/projects/hesabgar-man/${{ github.repository_id }}/**/indexes/*.json
           if-no-files-found: error
           retention-days: 7
 

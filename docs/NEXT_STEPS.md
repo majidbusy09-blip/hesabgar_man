@@ -1,7 +1,7 @@
 # Next Steps — حسابگر من
 
 ## Priority 1 — finish multi-project onboarding gates
-1. Central PR #138 implements the local durable inbox importer. Next, wire authenticated cross-repository artifact transport: a narrowly scoped GitHub App installation token or fine-grained token must be able to dispatch to the central repository and read Actions artifacts from registered target repositories. Keep the importer fail-closed and preserve idempotency by immutable repository ID + Issue number/task ID.
+1. Central PR #138 (durable importer) and PR #141 (authenticated transport workflow) are merged. Merge target PR #22, then configure the narrowly scoped token secrets and run a live end-to-end Issue test. Confirm the central `task-inbox` branch contains exactly one record and repeat the same event to prove idempotence. Keep Hesabgar registered; no lease or implementation dispatch.
 2. Complete the central orchestrator integration so project-bound semantic indexes are generated or retrieved automatically for a pinned project/revision, then freshness- and identity-verified before use.
 3. Namespace/cache isolation across the actual JET VPN and Hesabgar manifests is covered by central PR #128. Complete the stronger end-to-end test across two checked-out repositories, including task records, context cache, indexes, impact reports, branch/lease identifiers, and distinct toolchain execution.
 4. Complete automatic source-index artifact provisioning/retrieval and freshness checks for a pinned project revision. Do not change Hesabgar `source_index.strategy=none` until this works at runtime.

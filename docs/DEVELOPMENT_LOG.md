@@ -60,5 +60,29 @@
 - The initial live attempt exposed duplicate `opened` and `labeled` event runs. The first test payload was rejected fail-closed because its manifest digest was incorrect; after correcting the canonical SHA-256 binding, the read-only intake succeeded.
 - Central PR #132 merged as `eb2ade7c18e5af3bafc67f7ee73613465d110e6d`, adding exact-payload regression coverage and safe mismatch-field diagnostics. Central PR #134 merged as `cd6c0f2f70927f67d11bdf00c3a84fcf187d4bab`, removing `opened` from first-party intake triggers. Target PR #18 merged as `530daceeaea180c9d2e4a3d333e3981a3dddbaad`, changed the target trigger to `labeled`/`edited`, and ensured intake-workflow changes trigger project validation.
 - Exact PR #18 validation run `45678323306` passed. A second live test of Issue #17 after the deduplication fix produced exactly one successful intake run `45678817592`; artifact `agent-task-17` was 1,005 bytes, SHA-256 `99734bab30303c3b3c1c9a19c3481a9bd18d180228baddc0111f19196ac524c4`, artifact ID `15053470675`. Issue #17 was closed again.
-- Post-PR #18 Project Validation run `45678762925` passed on main SHA `530daceeaea180c9d2e4a3d333e3981a3dddbaad`. The post-merge APK/AAB build run `45678762986` was still in progress when this entry was prepared; record its result after completion.
+- Post-PR #18 Project Validation run `45678762925` passed on main SHA `530daceeaea180c9d2e4a3d333e3981a3dddbaad`. APK/AAB build run `45678762986` completed successfully: APK 31,256,262 bytes (`sha256:a674589e10a9c1f740a0c73ab605f6a45f2adb6fa57a288bea37406211c2a5af`); AAB 64,207,679 bytes (`sha256:fcba275bdb9d53f01e60c540996bb7951c189d4c09a523e259caf283b00c8859`). Both are unexpired CI artifacts, not Releases.
 - The intake artifact is still only retained in the target repository's Actions artifact store. Automatic central ingestion into a durable task queue, runtime semantic-index provisioning/retrieval, lease/handoff activation gates, and manual Android device acceptance remain open. Manifest lifecycle stays `registered`; source-index strategy stays `none`; app version stays `1.0.9+10`.
+
+
+## 2026-11-25 — central inbox persistence work
+- PR #20 merged as `d1b850c8abbb8bb5f0131c3dc85522bd6e65a8b5`; it reconciles the current main baseline, records the verified live intake deduplication result, and prioritizes durable central ingestion. Exact-head validation run `45679600283` passed.
+- Post-PR #18 build run `45678762986` passed and produced unexpired APK/AAB artifacts with SHA-256 digests recorded in CURRENT_STATUS.md.
+- Central PR #138 is implementing the read-only durable inbox persistence primitive. It stores validated artifacts under `.agent/inbox/{repository_id}/{issue_number}.json`, uses atomic no-follow writes, revalidates manifest and repository identity, rejects conflicting updates, and deduplicates task IDs. Exact-head checks are pending.
+- Automatic artifact transport remains unimplemented. The target workflow's default `GITHUB_TOKEN` is restricted to the target repository and has read-only permissions; it cannot dispatch a workflow or write a durable record in the central repository. A narrowly scoped cross-repository GitHub App/PAT credential or equivalent broker is required. Do not put credentials in manifests or source files.
+- Lifecycle remains `registered`, source index strategy remains `none`, app version remains `1.0.9+10`; no lease, agent, model, app source change, or release.
+
+
+## 2026-11-25 — durable central inbox and authenticated transport
+- Central PR #138 merged as `6b465eec6b5c7c67cd2361146c78182e9b969139`. The central importer validates task protocol, repository/Issue identity, current manifest digest and lifecycle, and no-execution flags; it persists atomically under `.agent/inbox/{repository_id}/{issue_number}.json`, is idempotent for identical artifacts, and rejects conflicting records or duplicate task IDs.
+- Central PR #141 merged as `3e5409e5dd6991ec3f6921ae1996d53dd6849f8d`. The transport workflow validates the registered repository, artifact identity/name/size/expiry, workflow run and source SHA, safely reads one bounded task JSON entry, and re-fetches the live Issue to verify it is still open, still labeled `agent-task`, and its exact body/task payload has not changed.
+- Central workflow stores durable records on the dedicated `task-inbox` branch, not application source or `main`.
+- Target PR #22 passes `secrets: inherit` to the reusable intake workflow and pins it to the reviewed central commit. Its exact-head CI is pending.
+- Automatic transport requires one fine-grained token or GitHub App token stored as `JET_AI_CENTRAL_DISPATCH_TOKEN` in each target repository and `JET_AI_CROSS_REPO_READ_TOKEN` in the central repository. Required scopes: central `Contents: write`; each target `Actions: read` and `Issues: read`. Without the secrets, existing target artifact upload remains functional and central dispatch is skipped.
+- No token was committed; no lease, agent, or model was invoked. Hesabgar remains `registered`, source-index strategy `none`, app version `1.0.9+10`; no app source or release change.
+
+
+## 2026-11-25 — authenticated dispatch caller merged
+- Target PR #22 merged as `4195c58176bab1d0eab2d614d0125913c5e30f09`. It passes inherited secrets to the reusable central intake workflow and pins it to central commit `3e5409e5dd6991ec3f6921ae1996d53dd6849f8d`.
+- Exact-head target PR validation run `45685677330` passed. Post-merge validation run `45685997204` and APK/AAB build run `45685997149` were still in progress when this log entry was drafted.
+- End-to-end dispatch is still opt-in until the same narrowly scoped fine-grained token is added as target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` and central secret `JET_AI_CROSS_REPO_READ_TOKEN`. Required permissions: central Contents write; target Actions read and Issues read.
+- No secret was created or shared in chat. Until setup, target intake continues to upload its read-only artifact and emits a warning that central dispatch is skipped.

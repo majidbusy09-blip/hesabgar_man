@@ -79,3 +79,10 @@
 - Target PR #22 passes `secrets: inherit` to the reusable intake workflow and pins it to the reviewed central commit. Its exact-head CI is pending.
 - Automatic transport requires one fine-grained token or GitHub App token stored as `JET_AI_CENTRAL_DISPATCH_TOKEN` in each target repository and `JET_AI_CROSS_REPO_READ_TOKEN` in the central repository. Required scopes: central `Contents: write`; each target `Actions: read` and `Issues: read`. Without the secrets, existing target artifact upload remains functional and central dispatch is skipped.
 - No token was committed; no lease, agent, or model was invoked. Hesabgar remains `registered`, source-index strategy `none`, app version `1.0.9+10`; no app source or release change.
+
+
+## 2026-11-25 — authenticated dispatch caller merged
+- Target PR #22 merged as `4195c58176bab1d0eab2d614d0125913c5e30f09`. It passes inherited secrets to the reusable central intake workflow and pins it to central commit `3e5409e5dd6991ec3f6921ae1996d53dd6849f8d`.
+- Exact-head target PR validation run `45685677330` passed. Post-merge validation run `45685997204` and APK/AAB build run `45685997149` were still in progress when this log entry was drafted.
+- End-to-end dispatch is still opt-in until the same narrowly scoped fine-grained token is added as target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` and central secret `JET_AI_CROSS_REPO_READ_TOKEN`. Required permissions: central Contents write; target Actions read and Issues read.
+- No secret was created or shared in chat. Until setup, target intake continues to upload its read-only artifact and emits a warning that central dispatch is skipped.

@@ -3,8 +3,8 @@
 ## Verified baseline
 - Target repository: `majidbusy09-blip/hesabgar_man` (immutable GitHub repository ID: `1423683236`).
 - Default branch: `main`.
-- Current main commit: `7b008f8c5fb493db40ba04ad0d3c556176085471` (PR #15 read-only intake workflow merge).
-- Current application-source baseline: `9b5b324e197d806afa7365abe360c972dbeaf13a` (PR #12; PR #13 changed documentation only).
+- Current main commit: `530daceeaea180c9d2e4a3d333e3981a3dddbaad` (PR #18 read-only intake deduplication and workflow-validation path filter).
+- Current application-source baseline: `9b5b324e197d806afa7365abe360c972dbeaf13a` (PR #12; subsequent PRs #13–#18 changed documentation or CI/workflow configuration only).
 - App version in `pubspec.yaml`: `1.0.9+10` (unchanged).
 - Package: `hesabgar_man`.
 - Dedicated validation workflow pins Flutter `3.27.4`; Dart `3.6.2` is bundled with that toolchain.
@@ -39,19 +39,19 @@
 - The manual GitHub Release job was skipped; these are CI artifacts, not a published release.
 - Documentation reconciliation PR #13 merged as `423e45439fd6dbe0744c93eefc336161f16ed119`, followed by documentation-only PR #14; neither changed application source.
 - Post-merge Project Validation run [`45670351627`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45670351627) and APK/AAB build run [`45670351687`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45670351687) both succeeded on the exact PR #14 main commit.
-- Latest post-merge build run [`45675484248`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45675484248) succeeded on main SHA `7b008f8c5fb493db40ba04ad0d3c556176085471`. Artifacts (unexpired): APK 31,256,270 bytes, digest `sha256:1024afef9038f3a988234812c5d2c96a7e08a8fea4a8805f6137175b6b362cea`; AAB 64,207,679 bytes, digest `sha256:70049376081927718350a708b4993636973ae64ddc3b4fdd5ea7bc0d0f1a3c08`. The rebuild is still a workflow artifact, not a published GitHub Release.
+- Latest build on the pre-deduplication main checkpoint: run [`45677317842`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45677317842) succeeded on SHA `a8f8ca8edaab67217e0779c0579a1a703f07ac32`. Unexpired artifacts: APK 31,256,257 bytes, digest `sha256:291cab4e9f1a703f5f942da0c420b3eafe409a82d0aa5219ec99994e93541bbc`; AAB 64,207,679 bytes, digest `sha256:102af867f1f118ba0074bcb43b1b74fc3c20ebc238dddce70dad1e87cdeb1c22`. The post-PR #18 build on main SHA `530daceeaea180c9d2e4a3d333e3981a3dddbaad` is tracked separately below.
 - Earlier index statistics (6 Dart files, 1,637 declarations, 9,205 call sites, 9,094 resolved calls, 111 unresolved calls, 1,524 internal edges, zero analyzer errors) belong to an earlier pinned source revision and must not be presented as current measurements.
 
 ## Latest target-side verification after intake workflow merge
 - Target PR #15 merged as `7b008f8c5fb493db40ba04ad0d3c556176085471`; the project validation run [`45675484236`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45675484236) passed on that exact SHA.
 - Post-merge APK/AAB build [`45675484248`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45675484248) also passed. The latest APK and AAB digests are recorded above.
-- The reusable issue-intake workflow is configured in the target repository and calls the central reusable workflow at a pinned workflow commit. Its actual Issue-triggered execution has not yet been observed; central unit/integration tests verify the registered-project read-only result and the caller contract.
+- The reusable issue-intake workflow is configured in the target repository and calls the central reusable workflow at a pinned workflow commit. Its live Issue-triggered execution has now been verified; the registered-project read-only result and caller contract passed.
 - The central Hesabgar manifest now protects `.github/workflows/agent-task-intake.yml`. Its digest changed when that protected path was added; new v2 task payloads must use the current central manifest digest.
-- The workflow's only permissions are `contents: read` and `issues: read`. It can produce a `validated-awaiting-activation` intake artifact; it cannot claim a lease or authorize implementation.
+- The workflow's only permissions are `contents: read` and `issues: read`. A live Issue event produced a `validated-awaiting-activation` artifact; it did not claim a lease, invoke a model, dispatch an agent, or upload source.
 
 ## Read-only cross-repository task intake
 - Central reusable workflow PR #130 merged as `7b2d7dab0d374eed2d0d6745546f4bc2f6e266a0`. It supports a target repository calling trusted central intake tooling while preserving the target repository as the event/source context.
-- The target-side caller workflow is being added in this change. It has only `contents: read` and `issues: read` permissions.
+- The target-side caller workflow is merged and has only `contents: read` and `issues: read` permissions. Target PR #18 also added `.github/workflows/agent-task-intake.yml` to the project-validation path filters.
 - A registered project may receive a validated task artifact with status `validated-awaiting-activation`; this is an inbox record only. It does not claim a lease, start an agent, call a model, or upload source.
 - Lease claims and implementation handoffs still require `lifecycle=active`; Hesabgar remains registered and is not implementation-enabled.
 
@@ -60,5 +60,15 @@
 - CI now proves project-bound generation and Task Intelligence consumption for the Hesabgar checkout. This does **not** yet prove that the central orchestrator automatically provisions or retrieves fresh artifacts during every runtime task.
 - Project-scoped context cache is wired into task preparation; tests cover namespace separation, source/input drift, corruption rejection, and cache-hit/rebuild behavior. Handoff revalidation rebuilds context from the pinned Git tree rather than trusting the cache.
 - Central namespace and file-I/O hardening passed exact-head validation.
-- Remaining gates: automatic runtime index provisioning/retrieval with freshness enforcement; end-to-end two-repository checkout/lease/handoff isolation and differing toolchain verification (namespace/cache isolation is already covered by central PR #128); and manual Android installation/device acceptance by the owner. CI success is not device acceptance.
+- Remaining gates: automatic runtime index provisioning/retrieval with freshness enforcement; automatic, idempotent ingestion of target intake artifacts into a durable central task record/queue; end-to-end two-repository checkout/lease/handoff isolation and differing toolchain verification (namespace/cache isolation is already covered by central PR #128); and manual Android installation/device acceptance by the owner. CI success is not device acceptance.
 - Keep version `1.0.9+10`; do not publish a Release, change signing, or upload to a store without a separate explicit decision.
+
+
+## Live Issue intake evidence and duplicate-event hardening
+- Temporary Hesabgar Issue #17 exercised the actual cross-repository reusable workflow. Run [`45677327585`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45677327585) validated task `live-intake-smoke-20261125` and uploaded artifact `agent-task-17` (986 bytes, artifact ID `15052647029`, SHA-256 `684fcf539601637432ee08e861dc929ed989757ab1a47ddbab1cbe9f78471481`). The registered-project result is `validated-awaiting-activation` and not implementation-eligible; the workflow log explicitly confirms no lease was claimed and no model or implementation agent was invoked.
+- The first attempt's two runs on `opened` and `labeled` failed closed because the test payload had an incorrect manifest digest. The canonical SHA-256 binding was corrected; the workflow accepted the task only after exact manifest/repository binding validation.
+- Central PR #132 merged as `eb2ade7c18e5af3bafc67f7ee73613465d110e6d`, improving mismatch diagnostics and adding a regression fixture for the exact Hesabgar payload. Central PR #134 merged as `cd6c0f2f70927f67d11bdf00c3a84fcf187d4bab`, removing the duplicate `opened` trigger from the central first-party workflow.
+- Target PR #18 merged as `530daceeaea180c9d2e4a3d333e3981a3dddbaad`, changed the target intake trigger to `labeled` and `edited`, and added its workflow path to the project-validation filters. Exact-head PR validation run [`45678323306`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45678323306) succeeded.
+- A second live test of Issue #17 after PR #18 produced exactly one intake run [`45678817592`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45678817592), succeeded, and uploaded artifact `agent-task-17` (1,005 bytes, SHA-256 `99734bab30303c3b3c1c9a19c3481a9bd18d180228baddc0111f19196ac524c4`, artifact ID `15053470675`). The temporary Issue was closed again.
+- Post-PR #18 Project Validation run [`45678762925`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45678762925) succeeded on main. Post-PR #18 APK/AAB build run [`45678762986`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45678762986) was still running at the time of this update; do not mark its artifacts available until it completes.
+- Central orchestration still does not automatically ingest the target artifact into a durable task queue. The project remains `registered`, `source_index.strategy=none`, app version `1.0.9+10`; no lease, model call, implementation dispatch, app source change, or release occurred.

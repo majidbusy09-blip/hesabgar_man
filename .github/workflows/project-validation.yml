@@ -22,6 +22,7 @@ on:
       - "analysis_options.yaml"
       - "assets/**"
       - ".github/workflows/project-validation.yml"
+      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 permissions:

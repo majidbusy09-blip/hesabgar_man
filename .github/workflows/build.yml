@@ -486,7 +486,7 @@ jobs:
   publish-release:
     name: Publish GitHub Release (manual approval)
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_release == true
     runs-on: ubuntu-latest
     permissions:
       contents: write

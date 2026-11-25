@@ -57,5 +57,17 @@ jobs:
       - name: Static analysis
         run: flutter analyze lib test --no-pub --no-fatal-infos --no-fatal-warnings
 
+      - name: Download pinned Vazirmatn font assets
+        run: |
+          set -euo pipefail
+          mkdir -p assets/fonts
+          curl --fail --location --retry 3 --retry-all-errors \
+            --output "$RUNNER_TEMP/vazirmatn-v33.003.zip" \
+            https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip
+          unzip -j "$RUNNER_TEMP/vazirmatn-v33.003.zip" "fonts/ttf/Vazirmatn-Regular.ttf" -d assets/fonts/
+          unzip -j "$RUNNER_TEMP/vazirmatn-v33.003.zip" "fonts/ttf/Vazirmatn-Medium.ttf" -d assets/fonts/
+          unzip -j "$RUNNER_TEMP/vazirmatn-v33.003.zip" "fonts/ttf/Vazirmatn-Bold.ttf" -d assets/fonts/
+          rm -f "$RUNNER_TEMP/vazirmatn-v33.003.zip"
+
       - name: Run tests
         run: flutter test --no-pub

@@ -1,7 +1,7 @@
 # Next Steps — حسابگر من
 
 ## Priority 1 — finish multi-project onboarding gates
-1. Central PR #138 (durable importer), central PR #141 (authenticated transport), and target PR #22 (secret inheritance and pinned reusable workflow) are merged. Configure the narrowly scoped token secrets, then run a live end-to-end Issue test. Confirm the central `task-inbox` branch contains exactly one record and repeat the same event to prove idempotence. Keep Hesabgar registered; no lease or implementation dispatch.
+1. Central PR #138 (durable importer), PR #141 (authenticated transport), PR #142 (concurrency/retry), and target PR #22 (secret inheritance and pinned reusable workflow) are merged. The new caller's live read-only path passed, but central dispatch was skipped because the secrets are absent. Configure the narrowly scoped token secrets, rerun a live Issue test, and confirm the central `task-inbox` branch contains exactly one record; repeat the event to prove idempotence. Keep Hesabgar registered; no lease or implementation dispatch.
 2. Complete the central orchestrator integration so project-bound semantic indexes are generated or retrieved automatically for a pinned project/revision, then freshness- and identity-verified before use.
 3. Namespace/cache isolation across the actual JET VPN and Hesabgar manifests is covered by central PR #128. Complete the stronger end-to-end test across two checked-out repositories, including task records, context cache, indexes, impact reports, branch/lease identifiers, and distinct toolchain execution.
 4. Complete automatic source-index artifact provisioning/retrieval and freshness checks for a pinned project revision. Do not change Hesabgar `source_index.strategy=none` until this works at runtime.

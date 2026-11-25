@@ -3,7 +3,7 @@
 ## Verified baseline
 - Target repository: `majidbusy09-blip/hesabgar_man` (immutable GitHub repository ID: `1423683236`).
 - Default branch: `main`.
-- Current main commit at this PR's base: `670161b0e934badd3027ec8e53b719ff0d309242` (PR #14 documentation-only merge).
+- Current main commit: `7b008f8c5fb493db40ba04ad0d3c556176085471` (PR #15 read-only intake workflow merge).
 - Current application-source baseline: `9b5b324e197d806afa7365abe360c972dbeaf13a` (PR #12; PR #13 changed documentation only).
 - App version in `pubspec.yaml`: `1.0.9+10` (unchanged).
 - Package: `hesabgar_man`.
@@ -39,8 +39,15 @@
 - The manual GitHub Release job was skipped; these are CI artifacts, not a published release.
 - Documentation reconciliation PR #13 merged as `423e45439fd6dbe0744c93eefc336161f16ed119`, followed by documentation-only PR #14; neither changed application source.
 - Post-merge Project Validation run [`45670351627`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45670351627) and APK/AAB build run [`45670351687`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45670351687) both succeeded on the exact PR #14 main commit.
-- Latest build artifacts from run `45670351687` (unexpired): APK 31,256,266 bytes, artifact digest `sha256:84a806e02ae748acbf2fcd2316e74bdebdfbedc3a0c23e03bbb7867c7a592b70`; AAB 64,207,679 bytes, artifact digest `sha256:8743c9d465a34082f56dc59d1fd478c4ea4c0aa160bdb6c0e0538fe7293eb7f7`. The rebuild is still a workflow artifact, not a published GitHub Release.
+- Latest post-merge build run [`45675484248`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45675484248) succeeded on main SHA `7b008f8c5fb493db40ba04ad0d3c556176085471`. Artifacts (unexpired): APK 31,256,270 bytes, digest `sha256:1024afef9038f3a988234812c5d2c96a7e08a8fea4a8805f6137175b6b362cea`; AAB 64,207,679 bytes, digest `sha256:70049376081927718350a708b4993636973ae64ddc3b4fdd5ea7bc0d0f1a3c08`. The rebuild is still a workflow artifact, not a published GitHub Release.
 - Earlier index statistics (6 Dart files, 1,637 declarations, 9,205 call sites, 9,094 resolved calls, 111 unresolved calls, 1,524 internal edges, zero analyzer errors) belong to an earlier pinned source revision and must not be presented as current measurements.
+
+## Latest target-side verification after intake workflow merge
+- Target PR #15 merged as `7b008f8c5fb493db40ba04ad0d3c556176085471`; the project validation run [`45675484236`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45675484236) passed on that exact SHA.
+- Post-merge APK/AAB build [`45675484248`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45675484248) also passed. The latest APK and AAB digests are recorded above.
+- The reusable issue-intake workflow is configured in the target repository and calls the central reusable workflow at a pinned workflow commit. Its actual Issue-triggered execution has not yet been observed; central unit/integration tests verify the registered-project read-only result and the caller contract.
+- The central Hesabgar manifest now protects `.github/workflows/agent-task-intake.yml`. Its digest changed when that protected path was added; new v2 task payloads must use the current central manifest digest.
+- The workflow's only permissions are `contents: read` and `issues: read`. It can produce a `validated-awaiting-activation` intake artifact; it cannot claim a lease or authorize implementation.
 
 ## Read-only cross-repository task intake
 - Central reusable workflow PR #130 merged as `7b2d7dab0d374eed2d0d6745546f4bc2f6e266a0`. It supports a target repository calling trusted central intake tooling while preserving the target repository as the event/source context.

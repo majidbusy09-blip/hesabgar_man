@@ -43,3 +43,12 @@
 - Registered projects may create a validated inbox artifact marked `validated-awaiting-activation`; this does not claim a lease, invoke a model, upload source, or permit implementation. Lease and handoff paths still require an active lifecycle.
 - This target-side workflow change calls the reusable workflow with read-only `contents` and `issues` permissions. No application source, app version, signing, build/release, or production behavior is changed.
 - Remaining work: complete exact-head CI for this caller workflow; add the workflow path to the trusted Hesabgar manifest's protected paths; implement the separate reusable lease/handoff workflow and automatic runtime index provisioning only after their target-checkout and freshness tests are ready.
+
+
+## 2026-11-25 — PR #15 post-merge verification
+- PR #15 merged as `7b008f8c5fb493db40ba04ad0d3c556176085471`. It adds the read-only target Issue intake caller for the reusable central workflow; no application source or app version changed.
+- Post-merge Flutter Project Validation run `45675484236` succeeded on the exact main SHA.
+- Post-merge APK/AAB build run `45675484248` succeeded on the same SHA. APK: 31,256,270 bytes, artifact digest `sha256:1024afef9038f3a988234812c5d2c96a7e08a8fea4a8805f6137175b6b362cea`. AAB: 64,207,679 bytes, artifact digest `sha256:70049376081927718350a708b4993636973ae64ddc3b4fdd5ea7bc0d0f1a3c08`.
+- These are GitHub Actions artifacts, not a published Release. No release job was invoked.
+- The central manifest protects the target intake workflow. Central PR #131's actual-manifest integration test passed; a registered task is read-only and remains `validated-awaiting-activation`.
+- The GitHub Issue-triggered reusable workflow has not yet been exercised with a live Issue event. Lease claims, agent dispatch, runtime index provisioning, and Android device acceptance remain blocked/pending.

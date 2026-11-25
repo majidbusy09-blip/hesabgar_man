@@ -35,3 +35,11 @@
 - Post-merge APK/AAB build run `45668908595` succeeded on the same SHA. Latest APK: 31,256,271 bytes, SHA-256 `27188007a8fffb7bc00c38df59ddaba1b412865bfd45ce8f82372612bece8537`. Latest AAB: 64,207,679 bytes, SHA-256 `b0762cb3b27211cabb1692d9e2a8d1f6606736d71629910e9c4cb4819a3a1e34`.
 - The manual GitHub Release job was not invoked; no Release was published.
 - Version remains `1.0.9+10`. Manual Android device acceptance, automatic runtime index provisioning/retrieval, and cross-project isolation remain outstanding.
+
+
+## 2026-11-25 — reusable cross-repository read-only task intake
+- Central PR #130 introduced a reusable GitHub Actions `workflow_call` intake workflow and a read-only registered-project intake state; it merged as `7b2d7dab0d374eed2d0d6745546f4bc2f6e266a0`.
+- The intake workflow checks out the calling repository and trusted central tooling separately. V2 task identity is validated against the central project registry and the target repository's live GitHub metadata.
+- Registered projects may create a validated inbox artifact marked `validated-awaiting-activation`; this does not claim a lease, invoke a model, upload source, or permit implementation. Lease and handoff paths still require an active lifecycle.
+- This target-side workflow change calls the reusable workflow with read-only `contents` and `issues` permissions. No application source, app version, signing, build/release, or production behavior is changed.
+- Remaining work: complete exact-head CI for this caller workflow; add the workflow path to the trusted Hesabgar manifest's protected paths; implement the separate reusable lease/handoff workflow and automatic runtime index provisioning only after their target-checkout and freshness tests are ready.

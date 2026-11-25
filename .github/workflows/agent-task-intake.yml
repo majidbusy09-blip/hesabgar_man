@@ -1,0 +1,16 @@
+name: JET AI - Hesabgar Read-Only Task Intake
+
+on:
+  issues:
+    types: [opened, labeled, edited]
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  validate-and-package:
+    uses: majidbusy09-blip/jetconfig-vpn/.github/workflows/agent-task-intake-reusable.yml@7b2d7dab0d374eed2d0d6745546f4bc2f6e266a0
+    permissions:
+      contents: read
+      issues: read

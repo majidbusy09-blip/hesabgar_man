@@ -3,7 +3,7 @@
 ## Verified baseline
 - Target repository: `majidbusy09-blip/hesabgar_man` (immutable GitHub repository ID: `1423683236`).
 - Default branch: `main`.
-- Current verified main baseline: `f3fb9f0e5befdb9240f5eac1234b4487302b4a30`.
+- Current verified main baseline: `8f84499f68aab7a886da4326a353e104f77e705b`.
 - App version in `pubspec.yaml`: `1.0.9+10` (unchanged).
 - Package: `hesabgar_man`.
 - The dedicated validation workflow pins Flutter `3.27.4`; Dart version is supplied by that Flutter toolchain.
@@ -31,9 +31,9 @@
 - Project-bound resolved-index smoke-test PR #5 passed run `45608067689` and merged.
 - Task-intelligence smoke-test PR #6 passed run `45608976561` and merged as `f3fb9f0e5befdb9240f5eac1234b4487302b4a30`.
 - Run #25 validated the actual Hesabgar checkout against the immutable repository ID and pinned source SHA, generated the project-bound resolved index and curated application-startup critical-path report, and exercised the central context selector and impact analyzer against `lib/main.dart`.
-- The generated source index covered 6 Dart files. The earlier exact artifact recorded 1,637 declarations, 9,205 call sites, 9,094 resolved calls, 111 unresolved calls, 1,524 internal edges, and zero analyzer errors.
+- The generated source index covered 6 Dart files. The exact current `main` HEAD was revalidated by Project Validation run `45609756813` (run #31); the Flutter analysis/tests job succeeded. The corresponding build workflow run `45609756943` (run #343) succeeded, with the manual GitHub Release job skipped. The earlier exact artifact recorded 1,637 declarations, 9,205 call sites, 9,094 resolved calls, 111 unresolved calls, 1,524 internal edges, and zero analyzer errors.
 - Project-bound index artifacts are CI outputs only; generated JSON is not committed into application source.
-- `pubspec.lock` is still absent from `main`. CI artifact `15018193165` contains the verified lockfile; its SHA-256 is `5e758df74d809f0b11c56f834364456d16d7d1bf48534312bc08dd84fa542cac`. It is a review artifact, not yet committed.
+- `pubspec.lock` is still absent from `main`. CI artifact `15020045844` contains the verified lockfile; its SHA-256 is `5e758df74d809f0b11c56f834364456d16d7d1bf48534312bc08dd84fa542cac`. It is a review artifact, not yet committed.
 
 ## Operational status and remaining acceptance
 - No app version increment, signing change, store upload, production change, or release publication was performed.

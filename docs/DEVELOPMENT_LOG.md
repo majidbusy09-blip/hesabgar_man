@@ -8,3 +8,10 @@
 - Added project operating instructions and baseline memory documents.
 - Added a dedicated read-only pull-request validation workflow using Flutter 3.27.4 for static analysis and tests. This does not publish an APK/AAB or access signing secrets.
 - CI and dependency reproducibility status must be updated from exact-run evidence; no test pass is assumed by this entry.
+
+
+## 2026-11-25 — exact main-head reconciliation
+- Reconciled this document set against target `main` HEAD `8f84499f68aab7a886da4326a353e104f77e705b`.
+- Project Validation run `45609756813` (run #31) succeeded on that exact `main` SHA, including project-bound resolved-index generation, critical-path generation, Task Intelligence smoke, static analysis and Flutter tests.
+- Build workflow run `45609756943` (run #343) succeeded on the same SHA; the manual GitHub Release job was skipped. No Release was published.
+- Latest lockfile artifact is `15020045844`; extracted `pubspec.lock` SHA-256 is `5e758df74d809f0b11c56f834364456d16d7d1bf48534312bc08dd84fa542cac`. The file remains absent from `main` and still requires a reviewable commit.

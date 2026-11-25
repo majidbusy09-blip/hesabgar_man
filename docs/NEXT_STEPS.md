@@ -1,10 +1,11 @@
 # Next Steps — حسابگر من
 
-## Priority 1 — establish a reliable baseline
-1. Run the new pinned Flutter analysis and test workflow on the onboarding PR.
-2. Resolve any baseline failures without changing unrelated application behavior.
-3. Decide whether to add and commit a reviewed `pubspec.lock` so dependency resolution is reproducible.
-4. Perform a manual Android installation/smoke test after the owner reviews the PR.
+## Priority 1 — reproducible baseline and onboarding
+1. Review the generated `pubspec.lock` artifact from successful pinned CI run `45599635131`, then commit the exact reviewed lockfile without changing `pubspec.yaml` or app version.
+2. Verify the generic Dart resolved-index CLI against this exact repository checkout, immutable repository ID `1423683236`, manifest digest, and full source SHA before enabling any source-index strategy.
+3. Complete an independent adversarial review of project namespace path handling, including symlink races/TOCTOU and output-file handling.
+4. Keep the central project lifecycle at `registered` until all readiness gates pass.
+5. Perform manual Android installation/smoke testing after CI and documentation review.
 
 ## Priority 2 — calculator correctness
 1. Add focused regression coverage for inverse-trigonometric functions and DEG/RAD round trips, including `sin(asin(0.5))`.

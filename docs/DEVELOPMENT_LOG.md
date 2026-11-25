@@ -27,3 +27,11 @@
 - Post-merge APK/AAB build run `45665085751` also succeeded on that SHA. APK artifact: 31,256,270 bytes, SHA-256 `65578700d44e2bfaf4b31ac7458105b9690b2904d90d857a0ceca2aa1da37b73`. AAB artifact: 64,207,679 bytes, SHA-256 `a41443b46c2770019d42cd526250c9efce2e22a6cd86ca5d3e3ebe1c75953ed5`.
 - Artifacts are GitHub Actions outputs; the manual GitHub Release job was skipped and no release was published.
 - Central lifecycle remains `registered` and source-index strategy remains `none`. CI generation/consumption is verified, but automatic runtime artifact provisioning and cross-project isolation remain open gates. Manual Android device acceptance is also pending.
+
+
+## 2026-11-25 — documentation PR #13 and final post-merge CI
+- PR #13 reconciled the project memory with PR #12's source-index checks and the remaining runtime/device gates; merged as `423e45439fd6dbe0744c93eefc336161f16ed119`. No application source or app version changed.
+- Post-merge Project Validation run `45668908682` succeeded on that exact main SHA.
+- Post-merge APK/AAB build run `45668908595` succeeded on the same SHA. Latest APK: 31,256,271 bytes, SHA-256 `27188007a8fffb7bc00c38df59ddaba1b412865bfd45ce8f82372612bece8537`. Latest AAB: 64,207,679 bytes, SHA-256 `b0762cb3b27211cabb1692d9e2a8d1f6606736d71629910e9c4cb4819a3a1e34`.
+- The manual GitHub Release job was not invoked; no Release was published.
+- Version remains `1.0.9+10`. Manual Android device acceptance, automatic runtime index provisioning/retrieval, and cross-project isolation remain outstanding.

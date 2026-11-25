@@ -3,7 +3,8 @@
 ## Verified baseline
 - Target repository: `majidbusy09-blip/hesabgar_man` (immutable GitHub repository ID: `1423683236`).
 - Default branch: `main`.
-- Current main baseline: `9b5b324e197d806afa7365abe360c972dbeaf13a` (PR #12 merge).
+- Current main commit: `423e45439fd6dbe0744c93eefc336161f16ed119` (PR #13 documentation-only merge).
+- Current application-source baseline: `9b5b324e197d806afa7365abe360c972dbeaf13a` (PR #12; PR #13 changed documentation only).
 - App version in `pubspec.yaml`: `1.0.9+10` (unchanged).
 - Package: `hesabgar_man`.
 - Dedicated validation workflow pins Flutter `3.27.4`; Dart `3.6.2` is bundled with that toolchain.
@@ -36,6 +37,9 @@
   - APK: 31,256,270 bytes; SHA-256 `65578700d44e2bfaf4b31ac7458105b9690b2904d90d857a0ceca2aa1da37b73`.
   - AAB: 64,207,679 bytes; SHA-256 `a41443b46c2770019d42cd526250c9efce2e22a6cd86ca5d3e3ebe1c75953ed5`.
 - The manual GitHub Release job was skipped; these are CI artifacts, not a published release.
+- Documentation reconciliation PR #13 merged as `423e45439fd6dbe0744c93eefc336161f16ed119` without changing application source.
+- Post-merge Project Validation run [`45668908682`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45668908682) and APK/AAB build run [`45668908595`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45668908595) both succeeded on the exact latest main commit.
+- Latest build artifacts (unexpired): APK 31,256,271 bytes, SHA-256 `27188007a8fffb7bc00c38df59ddaba1b412865bfd45ce8f82372612bece8537`; AAB 64,207,679 bytes, SHA-256 `b0762cb3b27211cabb1692d9e2a8d1f6606736d71629910e9c4cb4819a3a1e34`. The rebuild is still a workflow artifact, not a published GitHub Release.
 - Earlier index statistics (6 Dart files, 1,637 declarations, 9,205 call sites, 9,094 resolved calls, 111 unresolved calls, 1,524 internal edges, zero analyzer errors) belong to an earlier pinned source revision and must not be presented as current measurements.
 
 ## JET AI onboarding and remaining acceptance

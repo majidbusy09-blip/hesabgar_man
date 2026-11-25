@@ -15,3 +15,10 @@
 - Project Validation run `45609756813` (run #31) succeeded on that exact `main` SHA, including project-bound resolved-index generation, critical-path generation, Task Intelligence smoke, static analysis and Flutter tests.
 - Build workflow run `45609756943` (run #343) succeeded on the same SHA; the manual GitHub Release job was skipped. No Release was published.
 - Latest lockfile artifact is `15020045844`; extracted `pubspec.lock` SHA-256 is `5e758df74d809f0b11c56f834364456d16d7d1bf48534312bc08dd84fa542cac`. The file remains absent from `main` and still requires a reviewable commit.
+
+
+## 2026-11-25 — post-merge main validation
+- Documentation PR #8 merged as `cbb94ce66e543b41e82c6e34f35a0875b99a8d77`.
+- Project Validation run `45617630092` (run #36) succeeded on that exact main SHA.
+- Build workflow run `45617630206` (run #344) succeeded on the same SHA. The manual GitHub Release job was not invoked; no Release was published.
+- `pubspec.lock` remains absent from `main`; the verified CI artifact and SHA-256 are unchanged. App version remains `1.0.9+10`.

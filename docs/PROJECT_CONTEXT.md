@@ -7,7 +7,7 @@
 - Repository: `majidbusy09-blip/hesabgar_man`
 - Immutable GitHub repository ID: `1423683236`
 - Default branch: `main`
-- Current verified baseline: `3e215d93dffc87ec3d759dc557a179d7fb1fc873`
+- Current verified main baseline: `f3fb9f0e5befdb9240f5eac1234b4487302b4a30`
 - `pubspec.yaml` version: `1.0.9+10` (preserved; do not bump without explicit owner request)
 - Package name: `hesabgar_man`
 - Dart SDK constraint: `>=3.0.0 <4.0.0`
@@ -38,11 +38,14 @@
 - Do not broaden network transmission of personal financial data without an explicit privacy review and owner approval.
 - Signing configuration and secrets must remain outside source control.
 
-## CI and release boundaries
+## CI, source indexing and release boundaries
 - `.github/workflows/project-validation.yml` pins Flutter 3.27.4 and runs dependency resolution, static analysis, and tests.
+- The workflow checks out central JET AI semantic tooling at a fixed reviewed commit, verifies the live immutable repository ID and exact source SHA, and generates a project-bound resolved index and curated critical-path report in the CI workspace.
+- The central context selector and impact analyzer have passed an actual-data smoke test against the Hesabgar index, including Git blob verification for `lib/main.dart`.
+- These generated indexes are CI artifacts, not committed application files; central manifest lifecycle remains `registered` and `source_index.strategy=none`.
 - `.github/workflows/build.yml` may build APK/AAB artifacts on ordinary pushes, but GitHub Release publication is separated into a manual `workflow_dispatch` job that requires explicit `publish_release=true` on `main`.
-- The successful validation run for PR head `41476246df42bf7c4147fc79b1d4a656ad6eeeb5` is run `45599635131`.
-- The generated lockfile is currently a CI artifact for review; it is not yet committed to `main`.
+- The successful end-to-end validation is run `45608976561` (run #25), for PR merge ref `c6962a707b6a758e151341a2c0e913b45d8c2376`.
+- The generated lockfile remains a CI artifact for review; it is not yet committed to `main`.
 
 ## Architecture and maintenance
 - Keep calculator/finance business logic testable independently of widgets.

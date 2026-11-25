@@ -1,7 +1,7 @@
 # Next Steps — حسابگر من
 
 ## Priority 1 — finish multi-project onboarding gates
-1. Complete the central orchestrator integration so project-bound semantic indexes are generated or retrieved automatically for a pinned project/revision, then freshness- and identity-verified before use.
+1. Read-only cross-repository Issue intake is live and verified by temporary Issue #17; do not treat intake artifacts as execution authorization. Next, complete the central orchestrator integration so project-bound semantic indexes are generated or retrieved automatically for a pinned project/revision, then freshness- and identity-verified before use.
 2. Namespace/cache isolation across the actual JET VPN and Hesabgar manifests is covered by central PR #128. Complete the stronger end-to-end test across two checked-out repositories, including task records, context cache, indexes, impact reports, branch/lease identifiers, and distinct toolchain execution.
 3. Complete automatic source-index artifact provisioning/retrieval and freshness checks for a pinned project revision. Do not change Hesabgar `source_index.strategy=none` until this works at runtime.
 4. Complete the reusable cross-repository lease/handoff path with separate target-repository and trusted-control-plane checkouts; keep registered projects blocked from lease claims and implementation.

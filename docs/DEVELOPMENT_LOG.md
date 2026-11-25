@@ -52,3 +52,12 @@
 - These are GitHub Actions artifacts, not a published Release. No release job was invoked.
 - The central manifest protects the target intake workflow. Central PR #131's actual-manifest integration test passed; a registered task is read-only and remains `validated-awaiting-activation`.
 - The GitHub Issue-triggered reusable workflow has not yet been exercised with a live Issue event. Lease claims, agent dispatch, runtime index provisioning, and Android device acceptance remain blocked/pending.
+
+
+## 2026-11-25 — live read-only task intake smoke test
+- Temporary Issue #17 triggered the target-side workflow and central reusable intake successfully in run `45677327585`.
+- The workflow uploaded `agent-task-17` (artifact ID `15052647029`, 986 bytes, SHA-256 `684fcf539601637432ee08e861dc929ed989757ab1a47ddbab1cbe9f78471481`). The artifact was inspected and confirms `execution.status=validated-awaiting-activation`, `implementation_eligible=false`, `lease_claimed=false`, `agent_dispatched=false`, `model_called=false`, and `source_uploaded=false`.
+- The workflow log explicitly confirmed no lease was claimed and no model/implementation agent was invoked. The temporary issue was closed; no branch, PR, source upload, or implementation change occurred.
+- Two earlier attempts failed closed on a stale project-binding comparison. The later edited-event retry passed. Central PR #132 added field-level mismatch diagnostics and exact-payload regression coverage.
+- Post-merge Project Validation run `45677317662` and APK/AAB build run `45677317842` succeeded on main `a8f8ca8edaab67217e0779c0579a1a703f07ac32`. Latest artifact digests are recorded in `docs/CURRENT_STATUS.md`.
+- This verifies read-only task intake only. Reusable lease/handoff, target workspace preparation, automatic source-index provisioning, and Android device acceptance remain open gates.

@@ -7,10 +7,11 @@
 - Repository: `majidbusy09-blip/hesabgar_man`
 - Immutable GitHub repository ID: `1423683236`
 - Default branch: `main`
-- Onboarding source revision: `a07992d3f4721fe1524bd093502f08171dafc92b`
-- `pubspec.yaml` version: `1.0.9+10`
+- Current verified baseline: `3e215d93dffc87ec3d759dc557a179d7fb1fc873`
+- `pubspec.yaml` version: `1.0.9+10` (preserved; do not bump without explicit owner request)
 - Package name: `hesabgar_man`
 - Dart SDK constraint: `>=3.0.0 <4.0.0`
+- CI Flutter toolchain: `3.27.4`
 - Primary source directory: `lib/`
 - Automated tests: `test/`
 
@@ -36,6 +37,12 @@
 - Gold-price retrieval is the documented online data flow.
 - Do not broaden network transmission of personal financial data without an explicit privacy review and owner approval.
 - Signing configuration and secrets must remain outside source control.
+
+## CI and release boundaries
+- `.github/workflows/project-validation.yml` pins Flutter 3.27.4 and runs dependency resolution, static analysis, and tests.
+- `.github/workflows/build.yml` may build APK/AAB artifacts on ordinary pushes, but GitHub Release publication is separated into a manual `workflow_dispatch` job that requires explicit `publish_release=true` on `main`.
+- The successful validation run for PR head `41476246df42bf7c4147fc79b1d4a656ad6eeeb5` is run `45599635131`.
+- The generated lockfile is currently a CI artifact for review; it is not yet committed to `main`.
 
 ## Architecture and maintenance
 - Keep calculator/finance business logic testable independently of widgets.

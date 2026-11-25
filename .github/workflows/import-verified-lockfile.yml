@@ -1,0 +1,44 @@
+name: Import verified Hesabgar lockfile artifact
+
+on:
+  push:
+    branches:
+      - jet-ai/lockfile-artifact-import
+    paths:
+      - .github/workflows/import-verified-lockfile.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout lockfile import branch
+        uses: actions/checkout@v4
+        with:
+          ref: jet-ai/lockfile-artifact-import
+          fetch-depth: 0
+
+      - name: Import exact lockfile from successful pinned CI artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          expected='5e758df74d809f0b11c56f834364456d16d7d1bf48534312bc08dd84fa542cac'
+          if [ -f pubspec.lock ]; then
+            printf '%s  %s\n' "$expected" pubspec.lock | sha256sum --check
+            echo "Verified lockfile already exists; no write needed."
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/verified-lock"
+          gh run download 45608067689 --repo "$GITHUB_REPOSITORY" \
+            --name hesabgar-pubspec-lock --dir "$RUNNER_TEMP/verified-lock"
+          test -f "$RUNNER_TEMP/verified-lock/pubspec.lock"
+          printf '%s  %s\n' "$expected" "$RUNNER_TEMP/verified-lock/pubspec.lock" | sha256sum --check
+          cp "$RUNNER_TEMP/verified-lock/pubspec.lock" pubspec.lock
+          git add pubspec.lock
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "chore: pin verified Flutter dependencies"
+          git push origin HEAD:refs/heads/jet-ai/lockfile-artifact-import

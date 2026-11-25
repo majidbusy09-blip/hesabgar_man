@@ -3,7 +3,7 @@
 ## Verified baseline
 - Target repository: `majidbusy09-blip/hesabgar_man` (immutable GitHub repository ID: `1423683236`).
 - Default branch: `main`.
-- Current main commit: `530daceeaea180c9d2e4a3d333e3981a3dddbaad` (PR #18 read-only intake deduplication and workflow-validation path filter).
+- Current main commit: `d1b850c8abbb8bb5f0131c3dc85522bd6e65a8b5` (PR #20 documentation reconciliation after live intake deduplication).
 - Current application-source baseline: `9b5b324e197d806afa7365abe360c972dbeaf13a` (PR #12; subsequent PRs #13–#18 changed documentation or CI/workflow configuration only).
 - App version in `pubspec.yaml`: `1.0.9+10` (unchanged).
 - Package: `hesabgar_man`.
@@ -71,4 +71,4 @@
 - Target PR #18 merged as `530daceeaea180c9d2e4a3d333e3981a3dddbaad`, changed the target intake trigger to `labeled` and `edited`, and added its workflow path to the project-validation filters. Exact-head PR validation run [`45678323306`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45678323306) succeeded.
 - A second live test of Issue #17 after PR #18 produced exactly one intake run [`45678817592`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45678817592), succeeded, and uploaded artifact `agent-task-17` (1,005 bytes, SHA-256 `99734bab30303c3b3c1c9a19c3481a9bd18d180228baddc0111f19196ac524c4`, artifact ID `15053470675`). The temporary Issue was closed again.
 - Post-PR #18 Project Validation run [`45678762925`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45678762925) succeeded on main. Post-PR #18 APK/AAB build run [`45678762986`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45678762986) was still running at the time of this update; do not mark its artifacts available until it completes.
-- Central orchestration still does not automatically ingest the target artifact into a durable task queue. The project remains `registered`, `source_index.strategy=none`, app version `1.0.9+10`; no lease, model call, implementation dispatch, app source change, or release occurred.
+- Central durable inbox importer is under review in central PR #138; it validates artifact, repository ID, Issue identity, task protocol, manifest binding/lifecycle, and no-execution flags, then stores a project-scoped record idempotently. Remote artifact transport is still a separate gate because the target workflow currently has no cross-repository dispatch credential. The project remains `registered`, `source_index.strategy=none`, app version `1.0.9+10`; no lease, model call, implementation dispatch, app source change, or release occurred.

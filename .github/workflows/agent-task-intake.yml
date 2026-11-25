@@ -2,7 +2,9 @@ name: JET AI - Hesabgar Read-Only Task Intake
 
 on:
   issues:
-    types: [opened, labeled, edited]
+    # A task is admitted when the agent-task label is added; "opened" would
+    # duplicate the labeled event when an issue is created with that label.
+    types: [labeled, edited]
 
 permissions:
   contents: read

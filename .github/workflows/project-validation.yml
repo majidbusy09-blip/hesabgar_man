@@ -2,7 +2,7 @@ name: حسابگر من — Flutter Pull Request Validation
 
 on:
   push:
-    branches: [jet-ai/onboarding-memory-and-ci]
+    branches: [main, jet-ai/onboarding-memory-and-ci]
     paths:
       - "lib/**"
       - "test/**"

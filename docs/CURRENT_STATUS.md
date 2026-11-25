@@ -3,7 +3,7 @@
 ## Verified baseline
 - Target repository: `majidbusy09-blip/hesabgar_man` (immutable GitHub repository ID: `1423683236`).
 - Default branch: `main`.
-- Current main commit: `7b008f8c5fb493db40ba04ad0d3c556176085471` (PR #15 read-only intake workflow merge).
+- Current main commit: `530daceeaea180c9d2e4a3d333e3981a3dddbaad` (PR #18 duplicate-event hardening).
 - Current application-source baseline: `9b5b324e197d806afa7365abe360c972dbeaf13a` (PR #12; PR #13 changed documentation only).
 - App version in `pubspec.yaml`: `1.0.9+10` (unchanged).
 - Package: `hesabgar_man`.

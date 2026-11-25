@@ -52,3 +52,17 @@
 - These are GitHub Actions artifacts, not a published Release. No release job was invoked.
 - The central manifest protects the target intake workflow. Central PR #131's actual-manifest integration test passed; a registered task is read-only and remains `validated-awaiting-activation`.
 - The GitHub Issue-triggered reusable workflow has not yet been exercised with a live Issue event. Lease claims, agent dispatch, runtime index provisioning, and Android device acceptance remain blocked/pending.
+
+
+## 2026-11-25 — live intake retry and duplicate-event fix
+- Temporary Issue #17 successfully invoked the target caller and central reusable intake in runs `45677327585` and `45678817592`.
+- The second run uploaded artifact `agent-task-17` ID `15053470675` (1,005 bytes). The artifact was downloaded and inspected; it confirms `validated-awaiting-activation`, `implementation_eligible=false`, `lease_claimed=false`, `agent_dispatched=false`, `model_called=false`, and `source_uploaded=false`.
+- Both successful run logs confirm no lease was claimed and no model/implementation agent was invoked. The temporary issue is closed.
+- Target PR #18 merged as `530daceeaea180c9d2e4a3d333e3981a3dddbaad`; it removes the `opened` trigger and retains `labeled` for single admission plus `edited` for task-body changes. It also ensures edits to the intake workflow trigger project validation.
+- No app source, version, signing, release, or production behavior changed. Remaining work: reusable cross-repository lease/handoff, trusted target workspace preparation, automatic source-index provisioning/retrieval, full runtime isolation, and manual Android acceptance.
+
+
+## 2026-11-25 — PR #18 post-merge build
+- Post-merge Project Validation run `45678762925` succeeded on main SHA `530daceeaea180c9d2e4a3d333e3981a3dddbaad`.
+- Post-merge APK/AAB build run `45678762986` also succeeded. APK: 31,256,262 bytes, digest `sha256:a674589e10a9c1f740a0c73ab605f6a45f2adb6fa57a288bea37406211c2a5af`. AAB: 64,207,679 bytes, digest `sha256:fcba275bdb9d53f01e60c540996bb7951c189d4c09a523e259caf283b00c8859`.
+- App version remains `1.0.9+10`; no release was published.

@@ -1,11 +1,11 @@
 # Next Steps — حسابگر من
 
-## Priority 1 — reproducible baseline and onboarding
-1. Review the generated `pubspec.lock` artifact from successful pinned CI run `45599635131`, then commit the exact reviewed lockfile without changing `pubspec.yaml` or app version.
-2. Verify the generic Dart resolved-index CLI against this exact repository checkout, immutable repository ID `1423683236`, manifest digest, and full source SHA before enabling any source-index strategy.
-3. Complete an independent adversarial review of project namespace path handling, including symlink races/TOCTOU and output-file handling.
-4. Keep the central project lifecycle at `registered` until all readiness gates pass.
-5. Perform manual Android installation/smoke testing after CI and documentation review.
+## Priority 1 — reproducible baseline and project isolation
+1. Commit the exact verified `pubspec.lock` from the pinned Flutter 3.27.4 CI artifact; SHA-256: `5e758df74d809f0b11c56f834364456d16d7d1bf48534312bc08dd84fa542cac`. Do not change `pubspec.yaml` or app version.
+2. Complete an independent adversarial review of output-path TOCTOU and symlink races. The current source-indexer rejects static symlink traversal, but this is not a complete race-free filesystem guarantee.
+3. Identify or implement a real project-bound cache backend/consumer. Existing namespace helpers and unit tests prove key/path separation by project and source revision, but helper APIs alone do not establish runtime cache isolation.
+4. Keep the central project lifecycle at `registered` and `source_index.strategy=none` until lockfile, cache isolation and security gates are complete.
+5. Perform manual Android installation and device acceptance.
 
 ## Priority 2 — calculator correctness
 1. Add focused regression coverage for inverse-trigonometric functions and DEG/RAD round trips, including `sin(asin(0.5))`.

@@ -1,0 +1,81 @@
+name: حسابگر من — Flutter Pull Request Validation
+
+on:
+  push:
+    branches: [main, jet-ai/onboarding-memory-and-ci]
+    paths:
+      - "lib/**"
+      - "test/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - "analysis_options.yaml"
+      - "assets/**"
+      - ".github/workflows/project-validation.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "lib/**"
+      - "test/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - "analysis_options.yaml"
+      - "assets/**"
+      - ".github/workflows/project-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hesabgar-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: Flutter analysis and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.27.4"
+          channel: stable
+          cache: true
+
+      - name: Report toolchain
+        run: |
+          flutter --version
+          dart --version
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Preserve resolved dependency lockfile for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: hesabgar-pubspec-lock
+          path: pubspec.lock
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Static analysis
+        run: flutter analyze lib test --no-pub --no-fatal-infos --no-fatal-warnings
+
+      - name: Download pinned Vazirmatn font assets
+        run: |
+          set -euo pipefail
+          mkdir -p assets/fonts
+          curl --fail --location --retry 3 --retry-all-errors \
+            --output "$RUNNER_TEMP/vazirmatn-v33.003.zip" \
+            https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip
+          unzip -j "$RUNNER_TEMP/vazirmatn-v33.003.zip" "fonts/ttf/Vazirmatn-Regular.ttf" -d assets/fonts/
+          unzip -j "$RUNNER_TEMP/vazirmatn-v33.003.zip" "fonts/ttf/Vazirmatn-Medium.ttf" -d assets/fonts/
+          unzip -j "$RUNNER_TEMP/vazirmatn-v33.003.zip" "fonts/ttf/Vazirmatn-Bold.ttf" -d assets/fonts/
+          rm -f "$RUNNER_TEMP/vazirmatn-v33.003.zip"
+
+      - name: Run tests
+        run: flutter test --no-pub

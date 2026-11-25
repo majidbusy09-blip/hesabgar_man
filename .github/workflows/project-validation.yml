@@ -85,6 +85,10 @@ jobs:
             --repository-root="$GITHUB_WORKSPACE" \
             --project-manifest="$manifest" \
             --source-revision="$GITHUB_SHA"
+          dart run bin/resolve.dart --check \
+            --repository-root="$GITHUB_WORKSPACE" \
+            --project-manifest="$manifest" \
+            --source-revision="$GITHUB_SHA"
           test -n "$(find "$GITHUB_WORKSPACE/docs/generated/projects/hesabgar-man/$EXPECTED_REPOSITORY_ID" -type f -path '*/indexes/resolved_index.json' -print -quit)"
 
       - name: Generate project-bound critical-path report
@@ -112,6 +116,11 @@ jobs:
           JSON
           manifest="$GITHUB_WORKSPACE/.jet-ai/central/docs/projects/hesabgar-man/manifest.json"
           dart run bin/critical_paths.dart --write \
+            --repository-root="$GITHUB_WORKSPACE" \
+            --project-manifest="$manifest" \
+            --source-revision="$GITHUB_SHA" \
+            --critical-paths-manifest="$RUNNER_TEMP/hesabgar-critical-paths.json"
+          dart run bin/critical_paths.dart --check \
             --repository-root="$GITHUB_WORKSPACE" \
             --project-manifest="$manifest" \
             --source-revision="$GITHUB_SHA" \
@@ -145,7 +154,26 @@ jobs:
           resolved = matches[0]
           critical = resolved.parent / "critical_paths.json"
           index = json.loads(resolved.read_text(encoding="utf-8"))
-          binding = dict(index["project_binding"])
+          critical_report = json.loads(critical.read_text(encoding="utf-8"))
+          index_binding = index.get("project_binding")
+          if not isinstance(index_binding, dict):
+              raise SystemExit("Resolved index has no project binding.")
+          if index.get("source_revision") != revision or index_binding.get("base_sha") != revision:
+              raise SystemExit("Resolved index is not pinned to the exact checked-out source revision.")
+          if index_binding.get("repository_id") != repository_id:
+              raise SystemExit("Resolved index repository ID does not match the live GitHub repository.")
+          source = index.get("source", {})
+          files = source.get("files", []) if isinstance(source, dict) else []
+          if not files or any(not item.get("git_blob_sha") for item in files):
+              raise SystemExit("Resolved index is missing tracked source Git blob fingerprints.")
+          analyzer = index.get("analyzer", {})
+          if analyzer.get("error_count") != 0:
+              raise SystemExit("Resolved index reports analyzer errors.")
+          if critical_report.get("project_binding") != index_binding:
+              raise SystemExit("Critical-path report project binding differs from the resolved index.")
+          if critical_report.get("source_revision") != revision:
+              raise SystemExit("Critical-path report is not pinned to the exact source revision.")
+          binding = dict(index_binding)
           binding.pop("base_sha", None)
           task = {
               "task_id": "ci-hesabgar-task-intelligence-smoke",

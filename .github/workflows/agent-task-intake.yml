@@ -16,3 +16,4 @@ jobs:
     permissions:
       contents: read
       issues: read
+    secrets: inherit

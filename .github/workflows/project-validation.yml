@@ -1,6 +1,16 @@
 name: حسابگر من — Flutter Pull Request Validation
 
 on:
+  push:
+    branches: [jet-ai/onboarding-memory-and-ci]
+    paths:
+      - "lib/**"
+      - "test/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - "analysis_options.yaml"
+      - "assets/**"
+      - ".github/workflows/project-validation.yml"
   pull_request:
     branches: [main]
     paths:

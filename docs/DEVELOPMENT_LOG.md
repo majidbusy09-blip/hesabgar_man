@@ -86,3 +86,12 @@
 - Exact-head target PR validation run `45685677330` passed. Post-merge validation run `45685997204` and APK/AAB build run `45685997149` were still in progress when this log entry was drafted.
 - End-to-end dispatch is still opt-in until the same narrowly scoped fine-grained token is added as target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` and central secret `JET_AI_CROSS_REPO_READ_TOKEN`. Required permissions: central Contents write; target Actions read and Issues read.
 - No secret was created or shared in chat. Until setup, target intake continues to upload its read-only artifact and emits a warning that central dispatch is skipped.
+
+
+## 2026-11-25 — live test of the pinned central-dispatch caller
+- Central PR #142 merged as `a67ce545db259a94bc4ec243d4ec2858dbb80455`. It uses per-repository/per-Issue concurrency and retries pushes to the shared `task-inbox` branch after rebasing, avoiding a single global pending slot.
+- Target PR #22 merged as `4195c58176bab1d0eab2d614d0125913c5e30f09`, passing inherited secrets and pinning the reusable workflow to central commit `3e5409e5dd6991ec3f6921ae1996d53dd6849f8d`.
+- A fresh live test after PR #22 ran as `45687022313` and succeeded. Artifact `agent-task-17`: 1,005 bytes, SHA-256 `a59c8a2eb941a112255666e1b8b7c3582a82bc764688088eec372f46dd22d0e2`, artifact ID `15056447830`.
+- The reusable workflow's optional central dispatch step was skipped because target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` is not configured. The workflow emitted its expected warning; artifact upload and validation still succeeded. No central inbox record was created, no lease was claimed, and no model/agent was invoked.
+- Temporary Issue #17 was closed after the retest. To activate automatic transport, configure the same fine-grained token as target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` (central Contents write) and central secret `JET_AI_CROSS_REPO_READ_TOKEN` (target Actions read + Issues read). Never paste the token into chat or commit it.
+- Post-merge target validation `45686596443` succeeded. Post-merge APK/AAB build `45686596413` was still running when this entry was drafted.

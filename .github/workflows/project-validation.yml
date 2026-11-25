@@ -63,6 +63,38 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      - name: Checkout pinned JET AI semantic tooling
+        uses: actions/checkout@v4
+        with:
+          repository: majidbusy09-blip/jetconfig-vpn
+          ref: a9a5f7a719f2011227fa5b3ff520056b4466d6a7
+          path: .jet-ai/central
+
+      - name: Run project-bound resolved source-index smoke test
+        working-directory: .jet-ai/central/tools/project_memory/semantic
+        env:
+          EXPECTED_REPOSITORY_ID: ${{ github.repository_id }}
+        run: |
+          set -euo pipefail
+          manifest="$GITHUB_WORKSPACE/.jet-ai/central/docs/projects/hesabgar-man/manifest.json"
+          manifest_repository_id="$(jq -r '.repository.repository_id' "$manifest")"
+          test "$EXPECTED_REPOSITORY_ID" = "$manifest_repository_id"
+          test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)" = "$GITHUB_SHA"
+          dart pub get --enforce-lockfile
+          dart run bin/resolve.dart --write \
+            --repository-root="$GITHUB_WORKSPACE" \
+            --project-manifest="$manifest" \
+            --source-revision="$GITHUB_SHA"
+          test -n "$(find "$GITHUB_WORKSPACE/docs/generated/projects/hesabgar-man/$EXPECTED_REPOSITORY_ID" -type f -path '*/indexes/resolved_index.json' -print -quit)"
+
+      - name: Preserve project-bound resolved source index
+        uses: actions/upload-artifact@v4
+        with:
+          name: hesabgar-man-resolved-index
+          path: docs/generated/projects/hesabgar-man/${{ github.repository_id }}/**/indexes/resolved_index.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Preserve resolved dependency lockfile for review
         uses: actions/upload-artifact@v4
         with:

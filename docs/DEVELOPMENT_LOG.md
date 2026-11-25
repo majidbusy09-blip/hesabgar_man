@@ -70,3 +70,12 @@
 - Central PR #138 is implementing the read-only durable inbox persistence primitive. It stores validated artifacts under `.agent/inbox/{repository_id}/{issue_number}.json`, uses atomic no-follow writes, revalidates manifest and repository identity, rejects conflicting updates, and deduplicates task IDs. Exact-head checks are pending.
 - Automatic artifact transport remains unimplemented. The target workflow's default `GITHUB_TOKEN` is restricted to the target repository and has read-only permissions; it cannot dispatch a workflow or write a durable record in the central repository. A narrowly scoped cross-repository GitHub App/PAT credential or equivalent broker is required. Do not put credentials in manifests or source files.
 - Lifecycle remains `registered`, source index strategy remains `none`, app version remains `1.0.9+10`; no lease, agent, model, app source change, or release.
+
+
+## 2026-11-25 — durable central inbox and authenticated transport
+- Central PR #138 merged as `6b465eec6b5c7c67cd2361146c78182e9b969139`. The central importer validates task protocol, repository/Issue identity, current manifest digest and lifecycle, and no-execution flags; it persists atomically under `.agent/inbox/{repository_id}/{issue_number}.json`, is idempotent for identical artifacts, and rejects conflicting records or duplicate task IDs.
+- Central PR #141 merged as `3e5409e5dd6991ec3f6921ae1996d53dd6849f8d`. The transport workflow validates the registered repository, artifact identity/name/size/expiry, workflow run and source SHA, safely reads one bounded task JSON entry, and re-fetches the live Issue to verify it is still open, still labeled `agent-task`, and its exact body/task payload has not changed.
+- Central workflow stores durable records on the dedicated `task-inbox` branch, not application source or `main`.
+- Target PR #22 passes `secrets: inherit` to the reusable intake workflow and pins it to the reviewed central commit. Its exact-head CI is pending.
+- Automatic transport requires one fine-grained token or GitHub App token stored as `JET_AI_CENTRAL_DISPATCH_TOKEN` in each target repository and `JET_AI_CROSS_REPO_READ_TOKEN` in the central repository. Required scopes: central `Contents: write`; each target `Actions: read` and `Issues: read`. Without the secrets, existing target artifact upload remains functional and central dispatch is skipped.
+- No token was committed; no lease, agent, or model was invoked. Hesabgar remains `registered`, source-index strategy `none`, app version `1.0.9+10`; no app source or release change.

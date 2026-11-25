@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   validate-and-package:
-    uses: majidbusy09-blip/jetconfig-vpn/.github/workflows/agent-task-intake-reusable.yml@7b2d7dab0d374eed2d0d6745546f4bc2f6e266a0
+    uses: majidbusy09-blip/jetconfig-vpn/.github/workflows/agent-task-intake-reusable.yml@3e5409e5dd6991ec3f6921ae1996d53dd6849f8d
     permissions:
       contents: read
       issues: read
+    secrets: inherit

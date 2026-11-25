@@ -54,6 +54,14 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      - name: Preserve resolved dependency lockfile for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: hesabgar-pubspec-lock
+          path: pubspec.lock
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Static analysis
         run: flutter analyze lib test --no-pub --no-fatal-infos --no-fatal-warnings
 

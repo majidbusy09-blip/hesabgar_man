@@ -48,6 +48,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Validate release workflow YAML syntax
+        run: ruby -e 'require "yaml"; YAML.load_file(".github/workflows/build.yml")'
+
       - name: Report toolchain
         run: |
           flutter --version

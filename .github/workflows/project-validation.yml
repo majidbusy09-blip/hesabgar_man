@@ -12,6 +12,7 @@ on:
       - "assets/**"
       - "AGENTS.md"
       - "docs/**/*.md"
+      - "docs/**/*.json"
       - ".github/workflows/project-validation.yml"
       - ".github/workflows/build.yml"
       - ".github/workflows/agent-task-intake.yml"
@@ -26,6 +27,7 @@ on:
       - "assets/**"
       - "AGENTS.md"
       - "docs/**/*.md"
+      - "docs/**/*.json"
       - ".github/workflows/project-validation.yml"
       - ".github/workflows/build.yml"
       - ".github/workflows/agent-task-intake.yml"
@@ -97,36 +99,19 @@ jobs:
         working-directory: .jet-ai/central/tools/project_memory/semantic
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/hesabgar-critical-paths.json" <<'JSON'
-          {
-            "paths": [
-              {
-                "id": "app-startup",
-                "title": "Application startup",
-                "description": "Flutter application startup and root widget initialization",
-                "entrypoints": [
-                  {
-                    "source_path": "lib/main.dart",
-                    "kind": "function",
-                    "owner": null,
-                    "name": "main"
-                  }
-                ]
-              }
-            ]
-          }
-          JSON
+          critical_paths_manifest="$GITHUB_WORKSPACE/docs/critical_paths.json"
+          test -f "$critical_paths_manifest"
           manifest="$GITHUB_WORKSPACE/.jet-ai/central/docs/projects/hesabgar-man/manifest.json"
           dart run bin/critical_paths.dart --write \
             --repository-root="$GITHUB_WORKSPACE" \
             --project-manifest="$manifest" \
             --source-revision="$GITHUB_SHA" \
-            --critical-paths-manifest="$RUNNER_TEMP/hesabgar-critical-paths.json"
+            --critical-paths-manifest="$critical_paths_manifest"
           dart run bin/critical_paths.dart --check \
             --repository-root="$GITHUB_WORKSPACE" \
             --project-manifest="$manifest" \
             --source-revision="$GITHUB_SHA" \
-            --critical-paths-manifest="$RUNNER_TEMP/hesabgar-critical-paths.json"
+            --critical-paths-manifest="$critical_paths_manifest"
 
       - name: Smoke-test task intelligence against real Hesabgar artifacts
         working-directory: .jet-ai/central

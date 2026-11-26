@@ -105,3 +105,13 @@
 - Central dispatch was skipped because `JET_AI_CENTRAL_DISPATCH_TOKEN` is not configured. The target workflow emitted the expected warning; no central inbox record was created, no lease was claimed, and no agent/model was invoked. Temporary Issue #17 was closed again.
 - Post-PR #28 target main validation `45689865694` and APK/AAB build `45689865817` were still running when this log entry was written.
 - Remaining external setup: two separate least-privilege fine-grained tokens. The target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` must be scoped only to central `Contents: write`; the central secret `JET_AI_CROSS_REPO_READ_TOKEN` must be scoped only to registered targets' `Actions: read` + `Issues: read`. Do not send credentials in chat or commit them.
+
+
+## 2026-11-26 — PR #30 and current-main checkpoint
+- Target PR #30 clarified the cross-repository credential boundary: two separate fine-grained tokens are required, not one reused token.
+- Exact-head validation run PR validation run `45690735051` succeeded on PR head `01dc9688363cfede7af9974906356cb6976baf40`.
+- PR #30 squash-merged as `76c26c6247873228745c45aad5c3df194669054c`.
+- Post-merge validation run `45740186844` and APK/AAB build run `45740186841` started on that exact main SHA; both were still running when this entry was recorded.
+- No app source/version/signing/release changes. Lifecycle remains `registered`; source-index strategy remains `none`.
+- External gate remains: configure target `JET_AI_CENTRAL_DISPATCH_TOKEN` with central `Contents: write` only, and central `JET_AI_CROSS_REPO_READ_TOKEN` with registered-target `Actions: read` + `Issues: read` only. Do not reuse credentials across repositories or share them in chat.
+- Runtime source-index provisioning, end-to-end multi-repository isolation, lease/handoff, and Android device acceptance remain pending.

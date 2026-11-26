@@ -3,12 +3,19 @@
 ## Verified baseline
 - Target repository: `majidbusy09-blip/hesabgar_man` (immutable GitHub repository ID: `1423683236`).
 - Default branch: `main`.
-- Current main commit: `38057c24504d45829ad3df6f6006c6c04d300f2b` (PR #28 pins the target caller to the corrected central reusable workflow revision).
+- Current main commit: `76c26c6247873228745c45aad5c3df194669054c` (PR #30 clarifies the separate least-privilege credentials required by the cross-repository bridge).
 - Current application-source baseline: `9b5b324e197d806afa7365abe360c972dbeaf13a` (PR #12; subsequent PRs #13–#18 changed documentation or CI/workflow configuration only).
 - App version in `pubspec.yaml`: `1.0.9+10` (unchanged).
 - Package: `hesabgar_man`.
 - Dedicated validation workflow pins Flutter `3.27.4`; Dart `3.6.2` is bundled with that toolchain.
 - Reviewed `pubspec.lock` is committed. Its SHA-256 is `5e758df74d809f0b11c56f834364456d16d7d1bf48534312bc08dd84fa542cac`.
+
+## Latest verified checkpoint — 2026-11-26
+- Target PR #30 (separate least-privilege token documentation) passed exact-head Project Validation run [`45690735051`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45690735051) and merged as `76c26c6247873228745c45aad5c3df194669054c`.
+- Post-merge validation [`45740186844`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45740186844) and APK/AAB build [`45740186841`](https://github.com/majidbusy09-blip/hesabgar_man/actions/runs/45740186841) were running on this exact main SHA when this checkpoint was recorded.
+- The two required credentials are separate: target secret `JET_AI_CENTRAL_DISPATCH_TOKEN` is scoped only to central-repository `Contents: write`; central secret `JET_AI_CROSS_REPO_READ_TOKEN` is scoped only to registered target repositories' `Actions: read` and `Issues: read`. Neither credential is present yet.
+- The final read-only intake test passed, but central dispatch was skipped because the target dispatch secret is absent. No central inbox record, lease, model call, or implementation dispatch exists.
+- Keep lifecycle `registered`, `source_index.strategy=none`, and app version `1.0.9+10`. Runtime source-index provisioning, two-repository end-to-end isolation, reusable lease/handoff, and manual Android device acceptance remain open gates.
 
 ## Repository structure and release safety
 - Application source: `lib/`; automated tests: `test/`.

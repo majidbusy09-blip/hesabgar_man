@@ -71,7 +71,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: majidbusy09-blip/jetconfig-vpn
-          ref: a9a5f7a719f2011227fa5b3ff520056b4466d6a7
+          ref: 69ae924cdcd768747e7f99aa996b6d4e45266b6c
           path: .jet-ai/central
 
       - name: Run project-bound resolved source-index smoke test
